@@ -13,6 +13,7 @@ import (
 	"eva-mind/internal/config"
 	"eva-mind/internal/database"
 	"eva-mind/internal/gemini"
+	"eva-mind/internal/logger"
 	"eva-mind/internal/push"
 	"eva-mind/internal/scheduler"
 	"eva-mind/internal/signaling"
@@ -68,11 +69,25 @@ func NewSignalingServer(cfg *config.Config, db *database.DB, pushService *push.F
 
 func main() {
 	startTime = time.Now()
-	log.Printf("🚀 EVA-Mind 2026-1")
+
+	// Inicializar logger estruturado
+	environment := os.Getenv("ENVIRONMENT")
+	if environment == "" {
+		environment = "development"
+	}
+
+	logLevel := logger.InfoLevel
+	if environment == "development" {
+		logLevel = logger.DebugLevel
+	}
+
+	logger.Init(logLevel, environment)
+	appLog := logger.Logger
+	appLog.Info().Msg("🚀 EVA-Mind 2026-1")
 
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("❌ Config error: %v", err)
+		appLog.Fatal().Err(err).Msg("Config error")
 	}
 
 	db, err = database.NewDB(cfg.DatabaseURL)
@@ -200,12 +215,15 @@ func (s *SignalingServer) handleClientMessages(client *PCMClient) {
 
 func (s *SignalingServer) registerClient(client *PCMClient, data map[string]interface{}) {
 	cpf, _ := data["cpf"].(string)
-	log.Printf("📝 Registrando CPF: %s", cpf)
+	log.Printf("🔍 Registrando CPF: %s", cpf)
 
 	idoso, err := s.db.GetIdosoByCPF(cpf)
 	if err != nil {
-		log.Printf("❌ CPF não encontrado: %s", cpf)
-		s.sendJSON(client, map[string]string{"type": "error", "message": "CPF não cadastrado"})
+		log.Printf("❌ CPF não encontrado: %s - %v", cpf, err)
+		s.sendJSON(client, map[string]string{
+			"type":    "error",
+			"message": "CPF não cadastrado",
+		})
 		return
 	}
 
@@ -216,11 +234,13 @@ func (s *SignalingServer) registerClient(client *PCMClient, data map[string]inte
 	s.clients[idoso.CPF] = client
 	s.mu.Unlock()
 
+	log.Printf("✅ Cliente registrado: %s (ID: %d)", idoso.CPF, idoso.ID)
+
+	// ✅ SEMPRE retornar CPF do banco (não do input)
 	s.sendJSON(client, map[string]interface{}{
 		"type": "registered",
-		"cpf":  cpf,
+		"cpf":  idoso.CPF, // ✅ CPF do banco, sempre válido
 	})
-	log.Printf("✅ Cliente registrado: %s", cpf)
 }
 
 func (s *SignalingServer) startGeminiSession(client *PCMClient) {

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"runtime/debug"
 	"time"
 
 	"eva-mind/internal/config"
@@ -58,19 +59,59 @@ func (s *Scheduler) Start(ctx context.Context) {
 
 	log.Println("⏰ Scheduler iniciado (verifica chamadas a cada 30s, alertas a cada 2min)")
 
+	// ✅ NOVO: Recovery global
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("🚨 PANIC no scheduler: %v", r)
+			log.Printf("Stack trace: %s", debug.Stack())
+
+			// Tentar reiniciar após 10 segundos
+			time.Sleep(10 * time.Second)
+			log.Println("🔄 Reiniciando scheduler...")
+			go s.Start(ctx)
+		}
+	}()
+
 	for {
 		select {
 		case <-ctx.Done():
+			log.Println("🛑 Scheduler parado por contexto")
 			return
 		case <-s.stopChan:
+			log.Println("🛑 Scheduler parado por stopChan")
 			return
 		case <-ticker.C:
-			s.checkAndTriggerCalls()
-			s.checkMissedCalls()
+			// ✅ Executar com recovery individual
+			s.safeExecute("checkAndTriggerCalls", s.checkAndTriggerCalls)
+			s.safeExecute("checkMissedCalls", s.checkMissedCalls)
 		case <-alertTicker.C:
-			s.checkUnacknowledgedAlerts()
+			s.safeExecute("checkUnacknowledgedAlerts", s.checkUnacknowledgedAlerts)
 		}
 	}
+}
+
+// ✅ NOVO: Wrapper com recovery
+func (s *Scheduler) safeExecute(name string, fn func()) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("🚨 PANIC em %s: %v", name, r)
+			log.Printf("Stack trace: %s", debug.Stack())
+
+			// Registrar erro no banco
+			_, _ = s.db.Exec(`
+				INSERT INTO system_errors (
+					component,
+					error_type,
+					error_message,
+					stack_trace,
+					created_at
+				) VALUES ($1, 'panic', $2, $3, NOW())
+				ON CONFLICT DO NOTHING
+			`, name, fmt.Sprintf("%v", r), string(debug.Stack()))
+		}
+	}()
+
+	fn()
 }
 
 func (s *Scheduler) Stop() {

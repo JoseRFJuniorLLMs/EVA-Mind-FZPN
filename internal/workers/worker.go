@@ -111,25 +111,3 @@ func (wm *WorkerManager) Stop() {
 func (wm *WorkerManager) GetDB() *sql.DB {
 	return wm.db
 }
-
-// WorkerStats retorna estatísticas dos workers
-type WorkerStats struct {
-	TotalWorkers int
-	WorkerNames  []string
-}
-
-// GetStats retorna estatísticas dos workers
-func (wm *WorkerManager) GetStats() WorkerStats {
-	wm.mu.Lock()
-	defer wm.mu.Unlock()
-
-	names := make([]string, len(wm.workers))
-	for i, w := range wm.workers {
-		names[i] = w.Name()
-	}
-
-	return WorkerStats{
-		TotalWorkers: len(wm.workers),
-		WorkerNames:  names,
-	}
-}

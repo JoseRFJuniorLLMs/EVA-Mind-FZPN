@@ -13,7 +13,7 @@ import (
 
 type FirebaseService struct {
 	client *messaging.Client
-	ctx    context.Context
+	// ctx removido - usar contextos locais
 }
 
 type AlertResult struct {
@@ -26,7 +26,8 @@ type AlertResult struct {
 
 // NewFirebaseService inicializa o cliente Firebase com suporte a FCM
 func NewFirebaseService(credentialsPath string) (*FirebaseService, error) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 
 	opt := option.WithCredentialsFile(credentialsPath)
 	app, err := firebase.NewApp(ctx, nil, opt)
@@ -43,7 +44,6 @@ func NewFirebaseService(credentialsPath string) (*FirebaseService, error) {
 
 	return &FirebaseService{
 		client: client,
-		ctx:    ctx,
 	}, nil
 }
 
@@ -52,6 +52,10 @@ func (s *FirebaseService) SendCallNotification(deviceToken, sessionID, elderName
 	if deviceToken == "" {
 		return fmt.Errorf("device token is empty")
 	}
+
+	// ✅ Criar contexto com timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
 	ttl := time.Duration(0)
 
@@ -81,7 +85,8 @@ func (s *FirebaseService) SendCallNotification(deviceToken, sessionID, elderName
 		},
 	}
 
-	response, err := s.client.Send(s.ctx, message)
+	// ✅ Usar contexto local
+	response, err := s.client.Send(ctx, message)
 	if err != nil {
 		return fmt.Errorf("error sending call push: %w", err)
 	}
@@ -100,6 +105,10 @@ func (s *FirebaseService) SendAlertNotification(deviceToken, elderName, reason s
 			DeliveryType: "push",
 		}, fmt.Errorf("device token is empty")
 	}
+
+	// ✅ Criar contexto com timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
 	message := &messaging.Message{
 		Token: deviceToken,
@@ -126,7 +135,7 @@ func (s *FirebaseService) SendAlertNotification(deviceToken, elderName, reason s
 		},
 	}
 
-	response, err := s.client.Send(s.ctx, message)
+	response, err := s.client.Send(ctx, message)
 
 	result := &AlertResult{
 		Success:      err == nil,
@@ -166,6 +175,10 @@ func (s *FirebaseService) SendMedicationConfirmation(deviceToken, elderName, med
 		return fmt.Errorf("device token is empty")
 	}
 
+	// ✅ Criar contexto com timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
 	message := &messaging.Message{
 		Token: deviceToken,
 		Notification: &messaging.Notification{
@@ -188,7 +201,7 @@ func (s *FirebaseService) SendMedicationConfirmation(deviceToken, elderName, med
 		},
 	}
 
-	response, err := s.client.Send(s.ctx, message)
+	response, err := s.client.Send(ctx, message)
 	if err != nil {
 		return fmt.Errorf("error sending medication push: %w", err)
 	}
@@ -202,6 +215,10 @@ func (s *FirebaseService) SendMissedCallAlert(deviceToken, elderName string) err
 	if deviceToken == "" {
 		return fmt.Errorf("device token is empty")
 	}
+
+	// ✅ Criar contexto com timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
 	message := &messaging.Message{
 		Token: deviceToken,
@@ -227,7 +244,7 @@ func (s *FirebaseService) SendMissedCallAlert(deviceToken, elderName string) err
 		},
 	}
 
-	response, err := s.client.Send(s.ctx, message)
+	response, err := s.client.Send(ctx, message)
 	if err != nil {
 		return fmt.Errorf("error sending missed call alert: %w", err)
 	}
@@ -242,6 +259,10 @@ func (s *FirebaseService) ValidateToken(deviceToken string) bool {
 		return false
 	}
 
+	// ✅ Criar contexto com timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
 	// Tenta enviar uma mensagem de teste silenciosa
 	message := &messaging.Message{
 		Token: deviceToken,
@@ -253,7 +274,7 @@ func (s *FirebaseService) ValidateToken(deviceToken string) bool {
 		},
 	}
 
-	response, err := s.client.Send(s.ctx, message)
+	response, err := s.client.Send(ctx, message)
 	if err != nil {
 		log.Printf("❌ ValidateToken failed for token %s...: %v", deviceToken[:10], err)
 		return false
@@ -262,9 +283,8 @@ func (s *FirebaseService) ValidateToken(deviceToken string) bool {
 	return true
 }
 
-// GetClient e GetContext para flexibilidade em outros módulos
+// GetClient para flexibilidade em outros módulos
 func (s *FirebaseService) GetClient() *messaging.Client { return s.client }
-func (s *FirebaseService) GetContext() context.Context  { return s.ctx }
 
 // IsInvalidTokenError verifica se o erro retornado pelo Firebase indica que o token é inválido
 func IsInvalidTokenError(err error) bool {

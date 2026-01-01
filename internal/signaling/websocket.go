@@ -515,35 +515,6 @@ func (s *SignalingServer) analyzeAndSaveConversation(idosoID int64) {
 	}
 }
 
-// getSentimentIntensity converte análise em escala 1-10
-func getSentimentIntensity(analysis *gemini.ConversationAnalysis) int {
-	intensity := 5 // neutro
-
-	if analysis.EmergencySymptoms {
-		return 10
-	}
-
-	if analysis.Depression {
-		intensity = 8
-	} else if analysis.MoodState == "triste" {
-		intensity = 7
-	} else if analysis.MoodState == "ansioso" {
-		intensity = 6
-	} else if analysis.MoodState == "feliz" {
-		intensity = 3
-	}
-
-	if analysis.ReportedPain {
-		intensity += analysis.PainIntensity / 3
-	}
-
-	if intensity > 10 {
-		intensity = 10
-	}
-
-	return intensity
-}
-
 func (s *SignalingServer) cleanupDeadSessions() {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()

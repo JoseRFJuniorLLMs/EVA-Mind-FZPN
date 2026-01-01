@@ -1,6 +1,7 @@
 package gemini
 
 import (
+	"context"
 	"database/sql"
 	"eva-mind/internal/push"
 	"fmt"
@@ -277,7 +278,11 @@ func ConfirmMedication(db *sql.DB, pushService *push.FirebaseService, idosoID in
 			},
 		}
 
-		_, err = pushService.GetClient().Send(pushService.GetContext(), message)
+		// ✅ Criar contexto local com timeout
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		_, err = pushService.GetClient().Send(ctx, message)
 		if err != nil {
 			log.Printf("⚠️ Failed to notify caregiver: %v", err)
 		} else {
