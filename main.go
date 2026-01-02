@@ -438,10 +438,6 @@ func (s *SignalingServer) processGeminiResponse(client *PCMClient, resp map[stri
 			}
 		}
 	}
-
-	if audioCount > 0 {
-		log.Printf("✅ [%s] %d áudios enfileirados", client.CPF, audioCount)
-	}
 }
 
 func (s *SignalingServer) handleClientSend(client *PCMClient) {
@@ -453,11 +449,6 @@ func (s *SignalingServer) handleClientSend(client *PCMClient) {
 			return
 		case audio := <-client.SendCh:
 			sentCount++
-
-			// Log apenas a cada 20 envios
-			if sentCount%20 == 0 {
-				log.Printf("📤 [%s] Sent #%d", client.CPF, sentCount)
-			}
 
 			client.mu.Lock()
 			err := client.Conn.WriteMessage(websocket.BinaryMessage, audio)
