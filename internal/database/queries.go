@@ -28,8 +28,8 @@ type Idoso struct {
 	DeviceToken         string
 	Ativo               bool
 	NivelCognitivo      string
-	LimitacoesAuditivas bool
-	UsaAparelhoAuditivo bool
+	LimitacoesAuditivas sql.NullBool // ✅ Pode ser NULL
+	UsaAparelhoAuditivo sql.NullBool // ✅ Pode ser NULL
 	TomVoz              string
 	PreferenciaHorario  string
 }
@@ -113,27 +113,25 @@ func (db *DB) UpdateAgendamentoStatus(id int64, status string) error {
 }
 
 func (db *DB) GetIdosoByCPF(cpf string) (*Idoso, error) {
-	// Esta query usa regexp_replace para ignorar pontos, traços e espaços
-	// tanto no banco quanto no que o usuário digitou.
+	// ✅ Query otimizada: apenas campos necessários para validação
 	query := `
 		SELECT 
-			id, nome, data_nascimento, telefone, cpf, device_token, 
-			ativo, nivel_cognitivo, limitacoes_auditivas, usa_aparelho_auditivo, 
-			tom_voz, preferencia_horario_ligacao 
+			id, cpf, ativo
 		FROM idosos 
 		WHERE regexp_replace(cpf, '\D', '', 'g') = regexp_replace($1, '\D', '', 'g')
+			AND ativo = true
 	`
 
 	var idoso Idoso
 	err := db.conn.QueryRow(query, cpf).Scan(
-		&idoso.ID, &idoso.Nome, &idoso.DataNascimento, &idoso.Telefone, &idoso.CPF, &idoso.DeviceToken,
-		&idoso.Ativo, &idoso.NivelCognitivo, &idoso.LimitacoesAuditivas, &idoso.UsaAparelhoAuditivo,
-		&idoso.TomVoz, &idoso.PreferenciaHorario,
+		&idoso.ID,
+		&idoso.CPF,
+		&idoso.Ativo,
 	)
 
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("idoso não encontrado com CPF: %s", cpf)
+			return nil, fmt.Errorf("idoso não encontrado ou inativo com CPF: %s", cpf)
 		}
 		return nil, fmt.Errorf("erro ao consultar CPF: %w", err)
 	}
