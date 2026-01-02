@@ -5,233 +5,235 @@ import (
 	"encoding/base64"
 	"eva-mind/internal/config"
 	"fmt"
-	"log"
-	"runtime/debug"
 	"sync"
 	"time"
 
-	"github.com/google/generative-ai-go/genai"
-	"google.golang.org/api/iterator"
-	"google.golang.org/api/option"
+	"github.com/gorilla/websocket"
 )
 
+// AudioCallback é chamado quando áudio é recebido do Gemini
+type AudioCallback func(audioBytes []byte)
+
+// ToolCallCallback é chamado quando uma ferramenta precisa ser executada
+type ToolCallCallback func(name string, args map[string]interface{}) map[string]interface{}
+
+// Client gerencia a conexão WebSocket com Gemini Live API
 type Client struct {
-	genaiClient *genai.Client
-	session     *genai.ChatSession
-	cfg         *config.Config
-	mu          sync.Mutex
-
-	// Canal para enviar respostas decodificadas
-	RespChan chan map[string]interface{}
-	stopChan chan struct{}
-
-	// ✅ NOVO: Controle de concorrência
-	ctx      context.Context
-	cancel   context.CancelFunc
-	audioSem chan struct{} // Limita goroutines concorrentes
-	wg       sync.WaitGroup
-
-	// ✅ NOVO: Métricas
-	audioSent     int64
-	audioErrors   int64
-	lastErrorTime time.Time
+	conn          *websocket.Conn
+	mu            sync.Mutex
+	cfg           *config.Config
+	onAudio       AudioCallback
+	onToolCall    ToolCallCallback
+	setupComplete bool
 }
 
+// NewClient cria um novo cliente Gemini usando WebSocket direto
 func NewClient(ctx context.Context, cfg *config.Config) (*Client, error) {
-	log.Printf("🔌 Inicializando Gemini SDK Client...")
-	client, err := genai.NewClient(ctx, option.WithAPIKey(cfg.GoogleAPIKey))
+	dialer := websocket.Dialer{
+		HandshakeTimeout: 10 * time.Second,
+	}
+
+	url := fmt.Sprintf("wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=%s", cfg.GoogleAPIKey)
+	conn, _, err := dialer.DialContext(ctx, url, nil)
 	if err != nil {
-		log.Printf("❌ Erro ao criar cliente Gemini: %v", err)
 		return nil, err
 	}
 
-	clientCtx, cancel := context.WithCancel(ctx)
-
-	return &Client{
-		genaiClient: client,
-		cfg:         cfg,
-		RespChan:    make(chan map[string]interface{}, 100),
-		stopChan:    make(chan struct{}),
-		ctx:         clientCtx,
-		cancel:      cancel,
-		audioSem:    make(chan struct{}, 5), // Máximo 5 goroutines concorrentes
-	}, nil
+	return &Client{conn: conn, cfg: cfg}, nil
 }
 
+// SendSetup envia configuração inicial para o Gemini
 func (c *Client) SendSetup(instructions string, tools []interface{}) error {
+	setupMsg := map[string]interface{}{
+		"setup": map[string]interface{}{
+			"model": fmt.Sprintf("models/%s", c.cfg.ModelID),
+			"generation_config": map[string]interface{}{
+				"response_modalities": []string{"AUDIO"},
+				"speech_config": map[string]interface{}{
+					"voice_config": map[string]interface{}{
+						"prebuilt_voice_config": map[string]string{
+							"voice_name": "Aoede",
+						},
+					},
+				},
+			},
+			"system_instruction": map[string]interface{}{
+				"parts": []map[string]string{
+					{"text": instructions},
+				},
+			},
+			"tools": tools,
+		},
+	}
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	log.Printf("⚙️ Configurando Modelo Gemini: %s", c.cfg.ModelID)
-	model := c.genaiClient.GenerativeModel(c.cfg.ModelID)
-
-	model.SystemInstruction = genai.NewUserContent(genai.Text(instructions))
-
-	log.Printf("🚀 Iniciando Chat Session...")
-	c.session = model.StartChat()
+	if err := c.conn.WriteJSON(setupMsg); err != nil {
+		return fmt.Errorf("failed to send setup: %w", err)
+	}
 
 	return nil
 }
 
+// StartSession é um alias para SendSetup (compatibilidade)
+func (c *Client) StartSession(instructions string, tools []interface{}) error {
+	return c.SendSetup(instructions, tools)
+}
+
+// SendAudio envia dados de áudio PCM para o Gemini
 func (c *Client) SendAudio(audioData []byte) error {
-	c.mu.Lock()
-	session := c.session
-	c.mu.Unlock()
+	encoded := base64.StdEncoding.EncodeToString(audioData)
 
-	if session == nil {
-		return fmt.Errorf("sessão não iniciada")
-	}
-
-	// ✅ Controle de concorrência
-	select {
-	case c.audioSem <- struct{}{}:
-		// Got semaphore
-	case <-c.ctx.Done():
-		return fmt.Errorf("client closed")
-	default:
-		// Backpressure: se já tem 5 goroutines, rejeita
-		log.Printf("⚠️ Too many concurrent audio requests, rejecting")
-		return fmt.Errorf("too many concurrent audio requests")
-	}
-
-	c.wg.Add(1)
-	go func() {
-		defer c.wg.Done()
-		defer func() { <-c.audioSem }()
-
-		// ✅ Recovery para evitar panic
-		defer func() {
-			if r := recover(); r != nil {
-				log.Printf("🚨 PANIC in SendAudio goroutine: %v", r)
-				log.Printf("Stack trace: %s", debug.Stack())
-				c.audioErrors++
-			}
-		}()
-
-		// ✅ Usar contexto do client com timeout
-		ctx, cancel := context.WithTimeout(c.ctx, 15*time.Second)
-		defer cancel()
-
-		iter := session.SendMessageStream(ctx, genai.Blob{
-			MIMEType: "audio/pcm;rate=16000",
-			Data:     audioData,
-		})
-
-		for {
-			resp, err := iter.Next()
-			if err != nil {
-				if err == iterator.Done {
-					// Normal termination
-					break
-				}
-
-				// ✅ Log apropriado
-				c.audioErrors++
-				c.lastErrorTime = time.Now()
-
-				// Log apenas a cada 5 segundos para não inundar
-				if time.Since(c.lastErrorTime) > 5*time.Second {
-					log.Printf("⚠️ Gemini stream error: %v", err)
-				}
-				break
-			}
-
-			c.audioSent++
-			c.processResponse(resp)
-		}
-	}()
-
-	return nil
-}
-
-func (c *Client) processResponse(resp *genai.GenerateContentResponse) {
-	if resp == nil || len(resp.Candidates) == 0 {
-		return
-	}
-
-	candidate := resp.Candidates[0]
-	if candidate.Content == nil {
-		return
-	}
-
-	partsSlice := []interface{}{}
-
-	for _, part := range candidate.Content.Parts {
-		if txt, ok := part.(genai.Text); ok {
-			partsSlice = append(partsSlice, map[string]interface{}{
-				"text": string(txt),
-			})
-		} else if blob, ok := part.(genai.Blob); ok {
-			// Encode bytes to base64 string for handler compatibility
-			encoded := base64.StdEncoding.EncodeToString(blob.Data)
-
-			partsSlice = append(partsSlice, map[string]interface{}{
-				"inlineData": map[string]interface{}{
-					"mimeType": blob.MIMEType,
-					"data":     encoded,
+	msg := map[string]interface{}{
+		"realtime_input": map[string]interface{}{
+			"media_chunks": []map[string]string{
+				{
+					"mime_type": "audio/pcm;rate=16000",
+					"data":      encoded,
 				},
-			})
-		}
-	}
-
-	responseMap := map[string]interface{}{
-		"serverContent": map[string]interface{}{
-			"modelTurn": map[string]interface{}{
-				"parts": partsSlice,
 			},
 		},
 	}
 
-	select {
-	case c.RespChan <- responseMap:
-	default:
-		log.Printf("⚠️ Canal de resposta cheio, dropando msg")
-	}
-}
-
-func (c *Client) ReadResponse() (map[string]interface{}, error) {
-	select {
-	case resp := <-c.RespChan:
-		return resp, nil
-	case <-time.After(100 * time.Millisecond):
-		return nil, nil
-	}
-}
-
-func (c *Client) Close() error {
-	log.Printf("🧹 Closing Gemini client...")
-
-	close(c.stopChan)
-	c.cancel() // Cancela todas as goroutines
-
-	// ✅ Aguarda todas as goroutines terminarem
-	done := make(chan struct{})
-	go func() {
-		c.wg.Wait()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		log.Printf("✅ Todas as goroutines Gemini finalizadas")
-	case <-time.After(5 * time.Second):
-		log.Printf("⚠️ Timeout aguardando goroutines Gemini")
-	}
-
-	if c.genaiClient != nil {
-		return c.genaiClient.Close()
-	}
-	return nil
-}
-
-// ✅ NOVO: Método para obter estatísticas
-func (c *Client) GetStats() map[string]interface{} {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	return c.conn.WriteJSON(msg)
+}
 
-	return map[string]interface{}{
-		"audio_sent":      c.audioSent,
-		"audio_errors":    c.audioErrors,
-		"last_error_time": c.lastErrorTime,
+// ReadResponse lê a próxima resposta do Gemini (SÍNCRONO - SEM TIMEOUT)
+func (c *Client) ReadResponse() (map[string]interface{}, error) {
+	var response map[string]interface{}
+	err := c.conn.ReadJSON(&response)
+	if err != nil {
+		return nil, err
 	}
+	return response, nil
+}
+
+// SetCallbacks configura os callbacks para áudio e tool calls
+func (c *Client) SetCallbacks(onAudio AudioCallback, onToolCall ToolCallCallback) {
+	c.onAudio = onAudio
+	c.onToolCall = onToolCall
+}
+
+// HandleResponses processa respostas do Gemini em loop (versão melhorada)
+func (c *Client) HandleResponses(ctx context.Context) error {
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			resp, err := c.ReadResponse()
+			if err != nil {
+				return fmt.Errorf("erro na leitura do websocket: %w", err)
+			}
+
+			// 1. Confirmação de Setup (Acontece uma vez no início)
+			if _, ok := resp["setupComplete"]; ok {
+				c.setupComplete = true
+				fmt.Println("✅ Gemini Live: Conexão estabelecida e configurada.")
+				continue
+			}
+
+			// 2. Conteúdo do Servidor (Áudio e Transcrição)
+			if serverContent, ok := resp["serverContent"].(map[string]interface{}); ok {
+
+				// Verifica interrupção (O usuário começou a falar)
+				if _, interrupted := serverContent["interrupted"]; interrupted {
+					fmt.Println("⚠️ IA Interrompida pelo usuário.")
+					// TODO: Parar de tocar o áudio atual no player
+					continue
+				}
+
+				if modelTurn, ok := serverContent["modelTurn"].(map[string]interface{}); ok {
+					parts, _ := modelTurn["parts"].([]interface{})
+					for _, part := range parts {
+						p, ok := part.(map[string]interface{})
+						if !ok {
+							continue
+						}
+
+						// Áudio Nativo (Base64 -> Bytes)
+						if inlineData, ok := p["inlineData"].(map[string]interface{}); ok {
+							audioBase64, _ := inlineData["data"].(string)
+							audioBytes, err := base64.StdEncoding.DecodeString(audioBase64)
+							if err == nil && c.onAudio != nil {
+								// ENVIAR PARA O PLAYER OU FRONTEND
+								// O áudio de saída do Gemini Live é PCM 24kHz Mono
+								c.onAudio(audioBytes)
+							}
+						}
+
+						// Transcrição de texto
+						if text, ok := p["text"].(string); ok {
+							fmt.Printf("💬 Gemini: %s\n", text)
+						}
+					}
+				}
+			}
+
+			// 3. Chamada de Ferramentas (Tool Calls)
+			if toolCall, ok := resp["toolCall"].(map[string]interface{}); ok {
+				c.handleToolCalls(toolCall)
+			}
+
+			// 4. Erros do Servidor
+			if serverError, ok := resp["error"].(map[string]interface{}); ok {
+				return fmt.Errorf("erro do servidor Gemini: %v", serverError["message"])
+			}
+		}
+	}
+}
+
+// handleToolCalls processa chamadas de ferramentas
+func (c *Client) handleToolCalls(toolCall map[string]interface{}) {
+	functionCalls, ok := toolCall["functionCalls"].([]interface{})
+	if !ok {
+		return
+	}
+
+	for _, fc := range functionCalls {
+		call, ok := fc.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		name, _ := call["name"].(string)
+		args, _ := call["args"].(map[string]interface{})
+
+		fmt.Printf("🛠️ Executando ferramenta: %s com args: %v\n", name, args)
+
+		if c.onToolCall != nil {
+			result := c.onToolCall(name, args)
+			// TODO: Enviar toolResponse de volta para o Gemini
+			c.sendToolResponse(name, result)
+		}
+	}
+}
+
+// sendToolResponse envia resposta de ferramenta de volta ao Gemini
+func (c *Client) sendToolResponse(name string, result map[string]interface{}) error {
+	msg := map[string]interface{}{
+		"toolResponse": map[string]interface{}{
+			"functionResponses": []map[string]interface{}{
+				{
+					"name":     name,
+					"response": result,
+				},
+			},
+		},
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.conn.WriteJSON(msg)
+}
+
+// Close fecha a conexão
+func (c *Client) Close() error {
+	if c.conn != nil {
+		return c.conn.Close()
+	}
+	return nil
 }

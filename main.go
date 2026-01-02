@@ -120,6 +120,12 @@ func main() {
 	api := router.PathPrefix("/api").Subrouter()
 	api.HandleFunc("/stats", statsHandler).Methods("GET")
 	api.HandleFunc("/health", healthCheckHandler).Methods("GET")
+	api.HandleFunc("/config", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{
+			"wsUrl": "ws://localhost:8080/ws/pcm",
+		})
+	}).Methods("GET")
 
 	router.PathPrefix("/").Handler(http.FileServer(http.Dir("./web")))
 
@@ -236,14 +242,7 @@ func (s *SignalingServer) registerClient(client *PCMClient, data map[string]inte
 
 	log.Printf("✅ Cliente registrado: %s (ID: %d)", idoso.CPF, idoso.ID)
 
-	// ✅ SEMPRE retornar CPF do banco (não do input)
-	s.sendJSON(client, map[string]interface{}{
-		"type": "registered",
-		"cpf":  idoso.CPF, // ✅ CPF do banco, sempre válido
-	})
-}
-
-func (s *SignalingServer) startGeminiSession(client *PCMClient) {
+	// ✅ CRIAR SESSÃO GEMINI IMEDIATAMENTE (não esperar start_call)
 	log.Printf("🤖 Iniciando Gemini para %s", client.CPF)
 
 	gemClient, err := gemini.NewClient(client.ctx, s.cfg)
@@ -258,12 +257,137 @@ func (s *SignalingServer) startGeminiSession(client *PCMClient) {
 	instructions := signaling.BuildInstructions(client.IdosoID, s.db.GetConnection())
 	tools := gemini.GetDefaultTools()
 
-	client.GeminiClient.SendSetup(instructions, tools)
+	// Usar novo método StartSession do SDK
+	err = client.GeminiClient.StartSession(instructions, tools)
+	if err != nil {
+		log.Printf("❌ Erro ao iniciar sessão: %v", err)
+		s.sendJSON(client, map[string]string{"type": "error", "message": "Session error"})
+		return
+	}
+
 	go s.listenGemini(client)
+
+	client.active = true
+
+	// Responder com status ready (sessão já criada)
+	s.sendJSON(client, map[string]interface{}{
+		"type":   "registered",
+		"cpf":    idoso.CPF,
+		"status": "ready", // Indica que pode enviar áudio
+	})
+
+	log.Printf("✅ Sessão completa para: %s", client.CPF)
+}
+
+func (s *SignalingServer) startGeminiSession(client *PCMClient) {
+	log.Printf("🤖 Iniciando Gemini para %s", client.CPF)
+
+	gemClient, err := gemini.NewClient(client.ctx, s.cfg)
+	if err != nil {
+		log.Printf("❌ Gemini error: %v", err)
+		s.sendJSON(client, map[string]string{"type": "error", "message": "IA error"})
+		return
+	}
+
+	client.GeminiClient = gemClient
+
+	// Configurar callbacks ANTES de iniciar sessão
+	gemClient.SetCallbacks(
+		// Callback de áudio
+		func(audioBytes []byte) {
+			s.handleAudioFromGemini(client, audioBytes)
+		},
+		// Callback de tool calls
+		func(name string, args map[string]interface{}) map[string]interface{} {
+			return s.handleToolCall(client, name, args)
+		},
+	)
+
+	instructions := signaling.BuildInstructions(client.IdosoID, s.db.GetConnection())
+	tools := gemini.GetDefaultTools()
+
+	err = client.GeminiClient.StartSession(instructions, tools)
+	if err != nil {
+		log.Printf("❌ Erro ao iniciar sessão: %v", err)
+		s.sendJSON(client, map[string]string{"type": "error", "message": "Session error"})
+		return
+	}
+
+	// Usar HandleResponses ao invés de listenGemini
+	go func() {
+		err := client.GeminiClient.HandleResponses(client.ctx)
+		if err != nil {
+			log.Printf("⚠️ HandleResponses finalizado para %s: %v", client.CPF, err)
+		}
+		client.active = false
+	}()
 
 	client.active = true
 	s.sendJSON(client, map[string]string{"type": "session_created", "status": "ready"})
 	log.Printf("✅ Sessão criada: %s", client.CPF)
+}
+
+// handleAudioFromGemini processa áudio recebido do Gemini
+func (s *SignalingServer) handleAudioFromGemini(client *PCMClient, audioBytes []byte) {
+	// Enviar áudio para o cliente via WebSocket
+	select {
+	case client.SendCh <- audioBytes:
+		// Áudio enfileirado com sucesso
+	default:
+		log.Printf("⚠️ Canal cheio, dropando áudio para %s", client.CPF)
+	}
+}
+
+// handleToolCall executa tool calls e retorna resultado
+func (s *SignalingServer) handleToolCall(client *PCMClient, name string, args map[string]interface{}) map[string]interface{} {
+	log.Printf("🛠️ Tool call: %s para %s", name, client.CPF)
+
+	switch name {
+	case "alert_family":
+		reason, _ := args["reason"].(string)
+		severity, _ := args["severity"].(string)
+		if severity == "" {
+			severity = "alta"
+		}
+
+		err := gemini.AlertFamilyWithSeverity(s.db.GetConnection(), s.pushService, client.IdosoID, reason, severity)
+		if err != nil {
+			log.Printf("❌ Erro ao alertar família: %v", err)
+			return map[string]interface{}{
+				"success": false,
+				"error":   err.Error(),
+			}
+		}
+
+		return map[string]interface{}{
+			"success": true,
+			"message": "Família alertada com sucesso",
+		}
+
+	case "confirm_medication":
+		medicationName, _ := args["medication_name"].(string)
+
+		err := gemini.ConfirmMedication(s.db.GetConnection(), s.pushService, client.IdosoID, medicationName)
+		if err != nil {
+			log.Printf("❌ Erro ao confirmar medicamento: %v", err)
+			return map[string]interface{}{
+				"success": false,
+				"error":   err.Error(),
+			}
+		}
+
+		return map[string]interface{}{
+			"success": true,
+			"message": "Medicamento confirmado",
+		}
+
+	default:
+		log.Printf("⚠️ Tool desconhecida: %s", name)
+		return map[string]interface{}{
+			"success": false,
+			"error":   "Ferramenta desconhecida",
+		}
+	}
 }
 
 func (s *SignalingServer) listenGemini(client *PCMClient) {
@@ -275,7 +399,7 @@ func (s *SignalingServer) listenGemini(client *PCMClient) {
 			if client.active {
 				log.Printf("⚠️ Gemini read error: %v", err)
 			}
-			continue
+			return // ✅ Retorna em erro (conexão quebrada)
 		}
 		s.processGeminiResponse(client, resp)
 	}

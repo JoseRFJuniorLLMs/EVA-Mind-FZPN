@@ -589,6 +589,7 @@ registerProcessor('pcm16-processor', PCM16Processor);
                 await fetchConfig();
                 await connectWebSocket();
                 await registerClient();
+                await startCall();
                 await initializeAudio();
 
                 isActive = true;

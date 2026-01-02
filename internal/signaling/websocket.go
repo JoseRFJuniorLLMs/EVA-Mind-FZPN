@@ -218,7 +218,7 @@ func (s *SignalingServer) handleGeminiResponse(session *WebSocketSession, respon
 	// Capturar transcrição da IA (output audio)
 	if audioTrans, ok := serverContent["audioTranscription"].(map[string]interface{}); ok {
 		if aiText, ok := audioTrans["text"].(string); ok && aiText != "" {
-			log.Printf("💬 [NATIVE] EVA: %s", aiText)
+			log.Printf("💬 [TRANSCRICAO] EVA: %s", aiText)
 			go s.saveTranscription(session.IdosoID, "assistant", aiText)
 		}
 	}
@@ -257,6 +257,7 @@ func (s *SignalingServer) handleGeminiResponse(session *WebSocketSession, respon
 					continue
 				}
 
+				log.Printf("🎶 [AUDIO] Enviando %d bytes de áudio para o cliente", len(audioData))
 				session.WSConn.WriteMessage(websocket.BinaryMessage, audioData)
 			}
 		}

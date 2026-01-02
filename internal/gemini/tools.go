@@ -213,7 +213,7 @@ func ConfirmMedication(db *sql.DB, pushService *push.FirebaseService, idosoID in
 		return fmt.Errorf("failed to log medication: %w", err)
 	}
 
-	log.Printf("💊 Medication logged: %s took %s", idosoID, medicationName)
+	log.Printf("💊 Medication logged: %d took %s", idosoID, medicationName)
 
 	// 2. Atualizar status do agendamento de hoje
 	_, err = db.Exec(`
