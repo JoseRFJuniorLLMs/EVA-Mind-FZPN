@@ -196,15 +196,22 @@ func (s *SignalingServer) audioGeminiToClient(session *WebSocketSession) {
 }
 
 func (s *SignalingServer) handleGeminiResponse(session *WebSocketSession, response map[string]interface{}) {
+	// ✅ LOG: Mostrar resposta completa do Gemini
+	log.Printf("📥 [GEMINI RESPONSE] Tipo de resposta recebida")
+
 	if setupComplete, ok := response["setupComplete"].(bool); ok && setupComplete {
+		log.Printf("✅ [GEMINI] Setup completo")
 		return
 	}
 
 	// Processar serverContent
 	serverContent, ok := response["serverContent"].(map[string]interface{})
 	if !ok {
+		log.Printf("⚠️ [GEMINI] Sem serverContent na resposta")
 		return
 	}
+
+	log.Printf("📦 [GEMINI] serverContent recebido, processando...")
 
 	// ========== TRANSCRIÇÃO NATIVA (NOVO) ==========
 	// Capturar transcrição do USUÁRIO (input audio)
@@ -232,13 +239,19 @@ func (s *SignalingServer) handleGeminiResponse(session *WebSocketSession, respon
 	// Processar modelTurn (resposta da EVA)
 	modelTurn, ok := serverContent["modelTurn"].(map[string]interface{})
 	if !ok {
+		log.Printf("⚠️ [GEMINI] Sem modelTurn na resposta")
 		return
 	}
 
+	log.Printf("🤖 [GEMINI] modelTurn encontrado, processando parts...")
+
 	parts, ok := modelTurn["parts"].([]interface{})
 	if !ok {
+		log.Printf("⚠️ [GEMINI] Sem parts no modelTurn")
 		return
 	}
+
+	log.Printf("📋 [GEMINI] %d parts para processar", len(parts))
 
 	for i := range parts {
 		partMap, ok := parts[i].(map[string]interface{})
@@ -251,9 +264,12 @@ func (s *SignalingServer) handleGeminiResponse(session *WebSocketSession, respon
 			mimeType, _ := inlineData["mimeType"].(string)
 			audioB64, _ := inlineData["data"].(string)
 
+			log.Printf("🎵 [GEMINI] Part %d: mimeType=%s, hasAudio=%v", i, mimeType, audioB64 != "")
+
 			if strings.Contains(strings.ToLower(mimeType), "audio/pcm") && audioB64 != "" {
 				audioData, err := base64.StdEncoding.DecodeString(audioB64)
 				if err != nil {
+					log.Printf("❌ [GEMINI] Erro ao decodificar áudio: %v", err)
 					continue
 				}
 
@@ -264,6 +280,7 @@ func (s *SignalingServer) handleGeminiResponse(session *WebSocketSession, respon
 
 		// Processar function calls
 		if fnCall, ok := partMap["functionCall"].(map[string]interface{}); ok {
+			log.Printf("🔧 [GEMINI] Function call detectado")
 			s.executeTool(session, fnCall)
 		}
 	}
