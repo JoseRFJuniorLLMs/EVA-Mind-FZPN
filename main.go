@@ -528,9 +528,22 @@ func (s *SignalingServer) cleanupClient(client *PCMClient) {
 }
 
 func (s *SignalingServer) sendJSON(c *PCMClient, v interface{}) {
+	log.Printf("═══════════════════════════════════════════════════════")
+	log.Printf("📤 sendJSON CHAMADO")
+	log.Printf("📦 Payload: %+v", v)
+	log.Printf("═══════════════════════════════════════════════════════")
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.Conn.WriteJSON(v)
+
+	err := c.Conn.WriteJSON(v)
+	if err != nil {
+		log.Printf("❌ ERRO ao enviar JSON: %v", err)
+		log.Printf("❌ Cliente CPF: %s", c.CPF)
+		return
+	}
+
+	log.Printf("✅ JSON enviado com sucesso para %s", c.CPF)
 }
 
 func (s *SignalingServer) GetActiveClientsCount() int {

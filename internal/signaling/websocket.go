@@ -104,19 +104,39 @@ func (s *SignalingServer) handleControlMessage(conn *websocket.Conn, message []b
 
 	switch msg.Type {
 	case "register":
-		_, err := s.getIdosoByCPF(msg.CPF)
+		log.Printf("═══════════════════════════════════════════════════════")
+		log.Printf("📥 MENSAGEM DE REGISTRO RECEBIDA")
+		log.Printf("📋 CPF: %s", msg.CPF)
+		log.Printf("═══════════════════════════════════════════════════════")
+		
+		idoso, err := s.getIdosoByCPF(msg.CPF)
 		if err != nil {
+			log.Printf("❌ ERRO: CPF não encontrado no banco de dados: %s", msg.CPF)
+			log.Printf("❌ Detalhes do erro: %v", err)
 			s.sendError(conn, "CPF não encontrado")
 			return currentSession
 		}
+		
+		log.Printf("✅ CPF encontrado no banco de dados!")
+		log.Printf("👤 Idoso ID: %d, Nome: %s", idoso.ID, idoso.Nome)
 
 		s.clients.Store(msg.CPF, conn)
-		log.Printf("👤 Cliente registrado: %s", msg.CPF)
+		log.Printf("✅ Cliente armazenado no mapa de clientes")
 
-		s.sendMessage(conn, ControlMessage{
+		registeredMsg := ControlMessage{
 			Type:    "registered",
 			Success: true,
-		})
+		}
+		
+		log.Printf("═══════════════════════════════════════════════════════")
+		log.Printf("📤 ENVIANDO MENSAGEM 'registered' PARA O CLIENTE")
+		log.Printf("📦 Payload: %+v", registeredMsg)
+		log.Printf("═══════════════════════════════════════════════════════")
+		
+		s.sendMessage(conn, registeredMsg)
+		
+		log.Printf("✅ Mensagem 'registered' enviada com sucesso!")
+		log.Printf("👤 Cliente registrado: %s", msg.CPF)
 
 		return currentSession
 
