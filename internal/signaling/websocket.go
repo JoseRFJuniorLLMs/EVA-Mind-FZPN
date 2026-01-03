@@ -619,7 +619,7 @@ func BuildInstructions(idosoID int64, db *sql.DB) string {
 
 	var nome, nivelCognitivo, tomVoz, mobilidade string
 	var idade int
-	var limitacoesAuditivas, usaAparelhoAuditivo, ambienteRuidoso bool
+	var limitacoesAuditivas, usaAparelhoAuditivo, ambienteRuidoso sql.NullBool // ✅ Podem ser NULL
 
 	// Campos que podem ser NULL (usando NullString para segurança)
 	var limitacoesVisuais, preferenciaHorario, familiarPrincipal, contatoEmergencia, medicoResponsavel sql.NullString
