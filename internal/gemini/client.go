@@ -44,14 +44,15 @@ func NewClient(ctx context.Context, cfg *config.Config) (*Client, error) {
 	return &Client{conn: conn, cfg: cfg}, nil
 }
 
-// SetCallbacks configura os retornos de áudio e ferramentas (exigido pelo main.go:295)
+// SetCallbacks configura os retornos de áudio e ferramentas
 func (c *Client) SetCallbacks(onAudio AudioCallback, onToolCall ToolCallCallback) {
 	c.onAudio = onAudio
 	c.onToolCall = onToolCall
 }
 
-// SendSetup envia configuração inicial (exigido pelo signaling/websocket.go)
+// SendSetup envia configuração inicial
 func (c *Client) SendSetup(instructions string, tools []interface{}) error {
+	// ✅ FIX: Adicionar sample_rate_hertz explícito para OUTPUT
 	setupMsg := map[string]interface{}{
 		"setup": map[string]interface{}{
 			"model": fmt.Sprintf("models/%s", c.cfg.ModelID),
@@ -63,6 +64,8 @@ func (c *Client) SendSetup(instructions string, tools []interface{}) error {
 							"voice_name": "Aoede",
 						},
 					},
+					// ✅ CRÍTICO: Garantir que Gemini envie áudio em 24kHz
+					"sample_rate_hertz": 24000,
 				},
 			},
 			"system_instruction": map[string]interface{}{
@@ -73,6 +76,13 @@ func (c *Client) SendSetup(instructions string, tools []interface{}) error {
 			"tools": tools,
 		},
 	}
+
+	log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	log.Printf("🔧 CONFIGURANDO GEMINI")
+	log.Printf("🎙️ Input: 16kHz PCM16 Mono")
+	log.Printf("🔊 Output: 24kHz PCM16 Mono")
+	log.Printf("🗣️ Voz: Aoede")
+	log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -88,11 +98,12 @@ func (c *Client) StartSession(instructions string, tools []interface{}) error {
 func (c *Client) SendAudio(audioData []byte) error {
 	encoded := base64.StdEncoding.EncodeToString(audioData)
 
+	// ✅ INPUT: 16kHz (correto para captura do microfone)
 	msg := map[string]interface{}{
 		"realtime_input": map[string]interface{}{
 			"media_chunks": []map[string]string{
 				{
-					"mime_type": "audio/pcm;rate=16000",
+					"mime_type": "audio/pcm;rate=16000", // ✅ Correto para INPUT
 					"data":      encoded,
 				},
 			},
@@ -114,7 +125,7 @@ func (c *Client) ReadResponse() (map[string]interface{}, error) {
 	return response, nil
 }
 
-// HandleResponses processa o loop de mensagens (exigido pelo main.go:318)
+// HandleResponses processa o loop de mensagens
 func (c *Client) HandleResponses(ctx context.Context) error {
 	log.Printf("👂 HandleResponses: loop iniciado")
 
@@ -130,20 +141,25 @@ func (c *Client) HandleResponses(ctx context.Context) error {
 				return err
 			}
 
-			// ✅ DEBUG: Mostrar estrutura da resposta
+			// Debug da resposta (apenas em dev)
 			if respBytes, _ := json.Marshal(resp); len(respBytes) > 0 {
 				preview := string(respBytes)
 				if len(preview) > 200 {
 					preview = preview[:200] + "..."
 				}
-				log.Printf("📦 Resposta Gemini: %s", preview)
+				// Log apenas setupComplete e erros
+				if _, ok := resp["setupComplete"]; ok {
+					log.Printf("✅ Gemini Setup Complete")
+				}
+				if errMsg, ok := resp["error"]; ok {
+					log.Printf("❌ Gemini Error: %v", errMsg)
+				}
 			}
 
 			// ✅ Processar áudio
 			if serverContent, ok := resp["serverContent"].(map[string]interface{}); ok {
 				if modelTurn, ok := serverContent["modelTurn"].(map[string]interface{}); ok {
 					if parts, ok := modelTurn["parts"].([]interface{}); ok {
-						log.Printf("📋 Processando %d parts", len(parts))
 
 						for _, p := range parts {
 							part, ok := p.(map[string]interface{})
@@ -153,7 +169,6 @@ func (c *Client) HandleResponses(ctx context.Context) error {
 
 							// ✅ Procurar por inlineData (áudio)
 							if inlineData, ok := part["inlineData"].(map[string]interface{}); ok {
-								log.Printf("🎵 inlineData encontrado")
 
 								if audioB64, ok := inlineData["data"].(string); ok {
 									audioBytes, err := base64.StdEncoding.DecodeString(audioB64)
@@ -166,7 +181,6 @@ func (c *Client) HandleResponses(ctx context.Context) error {
 
 									// ✅ CHAMAR CALLBACK
 									if c.onAudio != nil {
-										log.Printf("📞 Chamando callback onAudio...")
 										c.onAudio(audioBytes)
 									} else {
 										log.Printf("⚠️ CALLBACK onAudio NÃO CONFIGURADO!")

@@ -70,7 +70,6 @@ func NewSignalingServer(cfg *config.Config, db *database.DB, pushService *push.F
 func main() {
 	startTime = time.Now()
 
-	// Inicializar logger estruturado
 	environment := os.Getenv("ENVIRONMENT")
 	if environment == "" {
 		environment = "development"
@@ -150,7 +149,7 @@ func (s *SignalingServer) HandleWebSocket(w http.ResponseWriter, r *http.Request
 	ctx, cancel := context.WithCancel(context.Background())
 	client := &PCMClient{
 		Conn:         conn,
-		SendCh:       make(chan []byte, 256), // Buffer maior
+		SendCh:       make(chan []byte, 256),
 		ctx:          ctx,
 		cancel:       cancel,
 		lastActivity: time.Now(),
@@ -186,20 +185,35 @@ func (s *SignalingServer) handleClientMessages(client *PCMClient) {
 			case "register":
 				s.registerClient(client, data)
 			case "start_call":
-				log.Printf("📞 ========================================")
+				log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 				log.Printf("📞 START_CALL RECEBIDO")
-				log.Printf("📞 CPF do cliente: %s", client.CPF)
-				log.Printf("📞 Session ID: %v", data["session_id"])
-				log.Printf("📞 ========================================")
+				log.Printf("👤 CPF: %s", client.CPF)
+				log.Printf("🆔 Session ID: %v", data["session_id"])
+				log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 				if client.CPF == "" {
 					log.Printf("❌ ERRO: Cliente não registrado!")
 					s.sendJSON(client, map[string]string{"type": "error", "message": "Register first"})
 					continue
 				}
-				s.startGeminiSession(client)
+
+				// ✅ FIX: Gemini JÁ foi criado no registerClient
+				// Agora só precisamos confirmar que está pronto
+				if client.GeminiClient == nil {
+					log.Printf("❌ ERRO: GeminiClient não existe!")
+					s.sendJSON(client, map[string]string{"type": "error", "message": "Gemini not ready"})
+					continue
+				}
+
+				log.Printf("✅ Gemini já está pronto!")
+				log.Printf("✅ Callbacks já configurados!")
+
+				// Enviar confirmação
+				s.sendJSON(client, map[string]string{"type": "session_created", "status": "ready"})
+				log.Printf("✅ session_created enviado para %s", client.CPF)
+
 			case "hangup":
-				log.Printf("📴 Hangup from %s", client.CPF)
+				log.Printf("🔴 Hangup from %s", client.CPF)
 				return
 			}
 		}
@@ -207,7 +221,6 @@ func (s *SignalingServer) handleClientMessages(client *PCMClient) {
 		if msgType == websocket.BinaryMessage && client.active {
 			client.audioCount++
 
-			// Log apenas a cada 50 chunks para reduzir verbosidade
 			if client.audioCount%50 == 0 {
 				log.Printf("🎤 [%s] Áudio chunk #%d (%d bytes)", client.CPF, client.audioCount, len(message))
 			}
@@ -221,7 +234,10 @@ func (s *SignalingServer) handleClientMessages(client *PCMClient) {
 
 func (s *SignalingServer) registerClient(client *PCMClient, data map[string]interface{}) {
 	cpf, _ := data["cpf"].(string)
-	log.Printf("🔍 Registrando CPF: %s", cpf)
+	log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	log.Printf("📝 REGISTRANDO CLIENTE")
+	log.Printf("👤 CPF: %s", cpf)
+	log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	idoso, err := s.db.GetIdosoByCPF(cpf)
 	if err != nil {
@@ -241,9 +257,12 @@ func (s *SignalingServer) registerClient(client *PCMClient, data map[string]inte
 	s.mu.Unlock()
 
 	log.Printf("✅ Cliente registrado: %s (ID: %d)", idoso.CPF, idoso.ID)
-	log.Printf("🤖 Iniciando Gemini para %s", client.CPF)
 
-	// ✅ Criar cliente Gemini
+	// ✅ FIX: CRIAR GEMINI AQUI e configurar callbacks ANTES de enviar 'registered'
+	log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	log.Printf("🤖 CRIANDO CLIENTE GEMINI")
+	log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
 	gemClient, err := gemini.NewClient(client.ctx, s.cfg)
 	if err != nil {
 		log.Printf("❌ Gemini error: %v", err)
@@ -253,18 +272,19 @@ func (s *SignalingServer) registerClient(client *PCMClient, data map[string]inte
 
 	client.GeminiClient = gemClient
 
-	// ✅ CRÍTICO: Configurar callbacks ANTES de enviar setup
+	// ✅ CRÍTICO: Configurar callbacks ANTES de StartSession
 	log.Printf("🎯 Configurando callbacks de áudio...")
 
 	gemClient.SetCallbacks(
-		// 🔊 Callback quando Gemini enviar áudio
+		// 📊 Callback quando Gemini enviar áudio
 		func(audioBytes []byte) {
-			log.Printf("🔊 [CALLBACK] Áudio do Gemini: %d bytes", len(audioBytes))
+			log.Printf("📊 [CALLBACK] Áudio do Gemini: %d bytes", len(audioBytes))
 
-			// ✅ Enviar diretamente para o cliente
 			select {
 			case client.SendCh <- audioBytes:
-				log.Printf("✅ Áudio enfileirado para %s", client.CPF)
+				if client.audioCount%50 == 0 {
+					log.Printf("✅ Áudio enfileirado para %s", client.CPF)
+				}
 			default:
 				log.Printf("⚠️ Canal cheio, dropando áudio para %s", client.CPF)
 			}
@@ -280,6 +300,7 @@ func (s *SignalingServer) registerClient(client *PCMClient, data map[string]inte
 	instructions := signaling.BuildInstructions(client.IdosoID, s.db.GetConnection())
 	tools := gemini.GetDefaultTools()
 
+	log.Printf("🚀 Iniciando sessão Gemini...")
 	err = client.GeminiClient.StartSession(instructions, tools)
 	if err != nil {
 		log.Printf("❌ Erro ao iniciar sessão: %v", err)
@@ -299,6 +320,11 @@ func (s *SignalingServer) registerClient(client *PCMClient, data map[string]inte
 
 	client.active = true
 
+	// ✅ AGORA enviar 'registered' (Mobile vai inicializar player ao receber)
+	log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	log.Printf("📤 ENVIANDO 'registered' PARA MOBILE")
+	log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
 	s.sendJSON(client, map[string]interface{}{
 		"type":   "registered",
 		"cpf":    idoso.CPF,
@@ -306,68 +332,12 @@ func (s *SignalingServer) registerClient(client *PCMClient, data map[string]inte
 	})
 
 	log.Printf("✅ Sessão completa para: %s", client.CPF)
+	log.Printf("✅ Gemini pronto e aguardando start_call...")
 }
 
-func (s *SignalingServer) startGeminiSession(client *PCMClient) {
-	log.Printf("🤖 Iniciando Gemini para %s", client.CPF)
+// ❌ DELETADO: startGeminiSession() - FUNÇÃO DUPLICADA E DESNECESSÁRIA
+// Toda a lógica foi movida para registerClient() acima
 
-	gemClient, err := gemini.NewClient(client.ctx, s.cfg)
-	if err != nil {
-		log.Printf("❌ Gemini error: %v", err)
-		s.sendJSON(client, map[string]string{"type": "error", "message": "IA error"})
-		return
-	}
-
-	client.GeminiClient = gemClient
-
-	// Configurar callbacks ANTES de iniciar sessão
-	gemClient.SetCallbacks(
-		// Callback de áudio
-		func(audioBytes []byte) {
-			s.handleAudioFromGemini(client, audioBytes)
-		},
-		// Callback de tool calls
-		func(name string, args map[string]interface{}) map[string]interface{} {
-			return s.handleToolCall(client, name, args)
-		},
-	)
-
-	instructions := signaling.BuildInstructions(client.IdosoID, s.db.GetConnection())
-	tools := gemini.GetDefaultTools()
-
-	err = client.GeminiClient.StartSession(instructions, tools)
-	if err != nil {
-		log.Printf("❌ Erro ao iniciar sessão: %v", err)
-		s.sendJSON(client, map[string]string{"type": "error", "message": "Session error"})
-		return
-	}
-
-	// Usar HandleResponses ao invés de listenGemini
-	go func() {
-		err := client.GeminiClient.HandleResponses(client.ctx)
-		if err != nil {
-			log.Printf("⚠️ HandleResponses finalizado para %s: %v", client.CPF, err)
-		}
-		client.active = false
-	}()
-
-	client.active = true
-	s.sendJSON(client, map[string]string{"type": "session_created", "status": "ready"})
-	log.Printf("✅ Sessão criada: %s", client.CPF)
-}
-
-// handleAudioFromGemini processa áudio recebido do Gemini
-func (s *SignalingServer) handleAudioFromGemini(client *PCMClient, audioBytes []byte) {
-	// Enviar áudio para o cliente via WebSocket
-	select {
-	case client.SendCh <- audioBytes:
-		// Áudio enfileirado com sucesso
-	default:
-		log.Printf("⚠️ Canal cheio, dropando áudio para %s", client.CPF)
-	}
-}
-
-// handleToolCall executa tool calls e retorna resultado
 func (s *SignalingServer) handleToolCall(client *PCMClient, name string, args map[string]interface{}) map[string]interface{} {
 	log.Printf("🛠️ Tool call: %s para %s", name, client.CPF)
 
@@ -428,7 +398,7 @@ func (s *SignalingServer) listenGemini(client *PCMClient) {
 			if client.active {
 				log.Printf("⚠️ Gemini read error: %v", err)
 			}
-			return // ✅ Retorna em erro (conexão quebrada)
+			return
 		}
 		s.processGeminiResponse(client, resp)
 	}
@@ -528,10 +498,10 @@ func (s *SignalingServer) cleanupClient(client *PCMClient) {
 }
 
 func (s *SignalingServer) sendJSON(c *PCMClient, v interface{}) {
-	log.Printf("═══════════════════════════════════════════════════════")
+	log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	log.Printf("📤 sendJSON CHAMADO")
 	log.Printf("📦 Payload: %+v", v)
-	log.Printf("═══════════════════════════════════════════════════════")
+	log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
