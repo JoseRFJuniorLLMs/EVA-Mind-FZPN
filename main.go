@@ -119,6 +119,7 @@ func main() {
 	api := router.PathPrefix("/api").Subrouter()
 	api.HandleFunc("/stats", statsHandler).Methods("GET")
 	api.HandleFunc("/health", healthCheckHandler).Methods("GET")
+	api.HandleFunc("/call-logs", callLogsHandler).Methods("POST")
 	api.HandleFunc("/config", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
@@ -449,6 +450,7 @@ func (s *SignalingServer) handleClientSend(client *PCMClient) {
 		case audio := <-client.SendCh:
 			sentCount++
 
+			// 🔙 REVERTIDO: Voltando para binário para investigação correta
 			client.mu.Lock()
 			err := client.Conn.WriteMessage(websocket.BinaryMessage, audio)
 			client.mu.Unlock()
@@ -456,6 +458,11 @@ func (s *SignalingServer) handleClientSend(client *PCMClient) {
 			if err != nil {
 				log.Printf("❌ Send error: %v", err)
 				return
+			}
+
+			// Debug DETALHADO: Loga a cada 10 pacotes
+			if sentCount%10 == 0 {
+				log.Printf("� [DEBUG-BIN] Enviado %d bytes (Chunk #%d). Status: OK", len(audio), sentCount)
 			}
 		}
 	}
@@ -571,4 +578,23 @@ func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(httpStatus)
 	json.NewEncoder(w).Encode(map[string]string{"status": status})
+}
+
+func callLogsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	var data map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+		log.Printf("❌ Erro ao decodificar call log: %v", err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	log.Printf("💾 CALL LOG RECEBIDO: %+v", data)
+
+	// TODO: Salvar no banco de dados quando a tabela estiver pronta
+	// Por enquanto, apenas logamos e retornamos sucesso para o app não dar erro.
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "saved", "message": "Log received"})
 }
