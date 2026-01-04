@@ -148,7 +148,7 @@ func (c *Client) HandleResponses(ctx context.Context) error {
 				if len(preview) > 300 {
 					preview = preview[:300] + "..."
 				}
-				log.Printf("📦 Gemini Response: %s", preview)
+				// log.Printf("📦 Gemini Response: %s", preview)
 			}
 
 			// ✅ Verificar setupComplete
@@ -184,13 +184,13 @@ func (c *Client) HandleResponses(ctx context.Context) error {
 										continue
 									}
 
-									log.Printf("✅ Áudio decodificado: %d bytes @ 24kHz", len(audioBytes))
+									// log.Printf("✅ Áudio decodificado: %d bytes @ 24kHz", len(audioBytes))
 
 									// ✅ CHAMAR CALLBACK
 									if c.onAudio != nil {
 										c.onAudio(audioBytes)
 									} else {
-										log.Printf("⚠️ CALLBACK onAudio NÃO CONFIGURADO!")
+										// log.Printf("⚠️ CALLBACK onAudio NÃO CONFIGURADO!")
 									}
 								}
 							}
