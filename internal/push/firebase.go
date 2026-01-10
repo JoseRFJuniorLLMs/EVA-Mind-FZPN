@@ -29,8 +29,10 @@ func NewFirebaseService(credentialsPath string) (*FirebaseService, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	opt := option.WithCredentialsFile(credentialsPath)
-	app, err := firebase.NewApp(ctx, nil, opt)
+	// ✅ Usar credenciais padrão do Cloud Run (Workload Identity)
+	app, err := firebase.NewApp(ctx, &firebase.Config{
+		ProjectID: "aurora-v1-483722-bd5b6",
+	})
 	if err != nil {
 		return nil, fmt.Errorf("error initializing Firebase app: %w", err)
 	}
