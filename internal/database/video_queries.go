@@ -91,5 +91,82 @@ func (db *DB) GetOperatorCandidates(sessionID string, sinceID int64) ([]Signalin
 		}
 		msgs = append(msgs, m)
 	}
+// Retorna apenas a session para o Operador pegar o Offer
+func (db *DB) GetVideoSession(sessionID string) (*VideoSession, error) {
+	query := `SELECT id, session_id, idoso_id, status, sdp_offer, sdp_answer, created_em FROM video_sessions WHERE session_id = $1`
+
+	var s VideoSession
+	err := db.conn.QueryRow(query, sessionID).Scan(
+		&s.ID, &s.SessionID, &s.IdosoID, &s.Status, &s.SdpOffer, &s.SdpAnswer, &s.CreatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
+
+// Atualiza a resposta (Answer) do operador e muda status para active
+func (db *DB) UpdateVideoSessionAnswer(sessionID string, sdpAnswer string) error {
+	query := `
+		UPDATE video_sessions 
+		SET sdp_answer = $1, status = 'active' 
+		WHERE session_id = $2
+	`
+	_, err := db.conn.Exec(query, sdpAnswer, sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to update video session answer: %w", err)
+	}
+	return nil
+}
+
+// Pegar candidatos do Mobile para o Operador
+func (db *DB) GetMobileCandidates(sessionID string, sinceID int64) ([]SignalingMessage, error) {
+	query := `
+		SELECT id, session_id, sender, type, payload 
+		FROM signaling_messages 
+		WHERE session_id = $1 AND sender = 'mobile' AND id > $2
+		ORDER BY id ASC
+	`
+
+	rows, err := db.conn.Query(query, sessionID, sinceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var msgs []SignalingMessage
+	for rows.Next() {
+		var m SignalingMessage
+		if err := rows.Scan(&m.ID, &m.SessionID, &m.Sender, &m.Type, &m.Payload); err != nil {
+			return nil, err
+		}
+		msgs = append(msgs, m)
+	}
 	return msgs, nil
+}
+
+// Retorna todas as sessões aguardando atendimento
+func (db *DB) GetPendingVideoSessions() ([]VideoSession, error) {
+	query := `
+		SELECT id, session_id, idoso_id, status, created_em 
+		FROM video_sessions 
+		WHERE status = 'waiting_operator'
+		ORDER BY created_em DESC
+	` // Sem sdp_offer pra ficar leve
+
+	rows, err := db.conn.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var sessions []VideoSession
+	for rows.Next() {
+		var s VideoSession
+		if err := rows.Scan(&s.ID, &s.SessionID, &s.IdosoID, &s.Status, &s.CreatedAt); err != nil {
+			return nil, err
+		}
+		sessions = append(sessions, s)
+	}
+	return sessions, nil
 }

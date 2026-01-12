@@ -125,6 +125,12 @@ func main() {
 	api.HandleFunc("/video/session", signalingServer.handleCreateVideoSession).Methods("POST")
 	api.HandleFunc("/video/candidate", signalingServer.handleCreateVideoCandidate).Methods("POST")
 	api.HandleFunc("/video/session/{id}/answer", signalingServer.handleGetVideoAnswer).Methods("GET")
+
+	// 🖥️ Operator Signaling Routes
+	api.HandleFunc("/video/session/{id}", signalingServer.handleGetVideoSession).Methods("GET")
+	api.HandleFunc("/video/session/{id}/answer", signalingServer.handleSaveVideoAnswer).Methods("POST")
+	api.HandleFunc("/video/session/{id}/candidates", signalingServer.handleGetMobileCandidates).Methods("GET")
+	api.HandleFunc("/video/sessions/pending", signalingServer.handleGetPendingSessions).Methods("GET")
 	api.HandleFunc("/config", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{

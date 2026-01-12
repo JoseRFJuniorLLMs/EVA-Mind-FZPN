@@ -108,3 +108,80 @@ func (s *SignalingServer) handleGetVideoAnswer(w http.ResponseWriter, r *http.Re
 		"status":     "answered",
 	})
 }
+
+// Retorna a sessão (com o Offer) para o Operador
+func (s *SignalingServer) handleGetVideoSession(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	sessionID := vars["id"]
+
+	session, err := s.db.GetVideoSession(sessionID)
+	if err != nil {
+		log.Printf("❌ Session not found: %s (%v)", sessionID, err)
+		http.Error(w, "Session not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(session)
+}
+
+// Salva o Answer do Operador (POST /video/session/{id}/answer)
+func (s *SignalingServer) handleSaveVideoAnswer(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	sessionID := vars["id"]
+
+	var req struct {
+		SdpAnswer string `json:"sdp_answer"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	log.Printf("✅ Salvando Answer para sessão %s", sessionID)
+	err := s.db.UpdateVideoSessionAnswer(sessionID, req.SdpAnswer)
+	if err != nil {
+		log.Printf("❌ Erro ao salvar Answer: %v", err)
+		http.Error(w, "Failed to update session", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+// Operador verifica candidatos vindos do Mobile
+func (s *SignalingServer) handleGetMobileCandidates(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	sessionID := vars["id"]
+
+	// Pega query param ?since=0
+	sinceID := int64(0)
+	// (Simplificado para MVP, pegando tudo > 0)
+
+	candidates, err := s.db.GetMobileCandidates(sessionID, sinceID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(candidates)
+}
+
+// Retorna lista de sessões pendentes (Poll do Dashboard)
+func (s *SignalingServer) handleGetPendingSessions(w http.ResponseWriter, r *http.Request) {
+	sessions, err := s.db.GetPendingVideoSessions()
+	if err != nil {
+		log.Printf("❌ Erro ao buscar sessões pendentes: %v", err)
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if sessions == nil {
+		json.NewEncoder(w).Encode([]interface{}{})
+	} else {
+		json.NewEncoder(w).Encode(sessions)
+	}
+}
