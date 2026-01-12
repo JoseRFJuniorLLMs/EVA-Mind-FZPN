@@ -236,8 +236,18 @@ func (c *Client) handleToolCalls(toolCall map[string]interface{}) {
 			args := fc["args"].(map[string]interface{})
 
 			if c.onToolCall != nil {
-				result := c.onToolCall(name, args)
-				c.SendToolResponse(name, result)
+				// ✅ FIX: Executar tools em goroutine separada para não travar a voz
+				go func(n string, a map[string]interface{}) {
+					defer func() {
+						if r := recover(); r != nil {
+							log.Printf("🚨 PANIC na Tool %s: %v", n, r)
+							c.SendToolResponse(n, map[string]interface{}{"error": "Internal error"})
+						}
+					}()
+
+					result := c.onToolCall(n, a)
+					c.SendToolResponse(n, result)
+				}(name, args)
 			}
 		}
 	}

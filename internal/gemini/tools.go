@@ -3,6 +3,7 @@ package gemini
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"eva-mind/internal/push"
 	"fmt"
 	"log"
@@ -440,7 +441,17 @@ func ScheduleAppointment(db *sql.DB, idosoID int64, timestampStr, tipo, descrica
 		return fmt.Errorf("formato de data inválido (%s): %w", timestampStr, err)
 	}
 
-	// 2. Inserir no banco
+	// 2. Preparar dados_tarefa como JSON
+	dadosJSON, err := json.Marshal(map[string]string{
+		"description":      descricao,
+		"original_request": timestampStr,
+	})
+	if err != nil {
+		// Fallback para JSON vazio válido se der erro no marshal
+		dadosJSON = []byte("{}")
+	}
+
+	// 3. Inserir no banco
 	query := `
 		INSERT INTO agendamentos (
 			idoso_id, 
@@ -459,7 +470,7 @@ func ScheduleAppointment(db *sql.DB, idosoID int64, timestampStr, tipo, descrica
 	`
 
 	var id int64
-	err = db.QueryRow(query, idosoID, tipo, dataHora, descricao).Scan(&id)
+	err = db.QueryRow(query, idosoID, tipo, dataHora, dadosJSON).Scan(&id)
 	if err != nil {
 		return fmt.Errorf("failed to insert appointment: %w", err)
 	}
