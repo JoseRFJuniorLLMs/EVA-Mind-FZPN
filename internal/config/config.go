@@ -73,8 +73,10 @@ func Load() (*Config, error) {
 		TwilioPhoneNumber: os.Getenv("TWILIO_PHONE_NUMBER"),
 
 		// Google/Gemini
-		GoogleAPIKey:        os.Getenv("GOOGLE_API_KEY"),
-		ModelID:             getEnvWithDefault("MODEL_ID", "gemini-2.5-flash-native-audio-preview-12-2025"),
+		GoogleAPIKey: os.Getenv("GOOGLE_API_KEY"),
+		GoogleAPIKey: os.Getenv("GOOGLE_API_KEY"),
+		// 🚨 REVERT: Voltando para 2.0-flash-exp pois o 2.5-preview NÃO suporta Tools corretamente (Erro 1008)
+		ModelID:             getEnvWithDefault("MODEL_ID", "gemini-2.0-flash-exp"),
 		GeminiAnalysisModel: getEnvWithDefault("GEMINI_ANALYSIS_MODEL", "gemini-2.5-flash"),
 		VisionModelID:       getEnvWithDefault("VISION_MODEL_ID", "gemini-2.0-flash-exp"),
 

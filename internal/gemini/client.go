@@ -65,8 +65,6 @@ func (c *Client) SendSetup(instructions string, tools []interface{}) error {
 							"voice_name": "Aoede",
 						},
 					},
-					// ❌ REMOVIDO: "sample_rate_hertz": 24000
-					// A API não suporta esse campo! Gemini usa 24kHz por padrão.
 				},
 			},
 			"system_instruction": map[string]interface{}{
