@@ -120,6 +120,11 @@ func main() {
 	api.HandleFunc("/stats", statsHandler).Methods("GET")
 	api.HandleFunc("/health", healthCheckHandler).Methods("GET")
 	api.HandleFunc("/call-logs", callLogsHandler).Methods("POST")
+
+	// 🎥 Video Signaling Routes (v15)
+	api.HandleFunc("/video/session", signalingServer.handleCreateVideoSession).Methods("POST")
+	api.HandleFunc("/video/candidate", signalingServer.handleCreateVideoCandidate).Methods("POST")
+	api.HandleFunc("/video/session/{id}/answer", signalingServer.handleGetVideoAnswer).Methods("GET")
 	api.HandleFunc("/config", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
