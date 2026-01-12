@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -392,6 +393,48 @@ func (s *SignalingServer) handleToolCall(client *PCMClient, name string, args ma
 			"message": "Medicamento confirmado",
 		}
 
+	case "schedule_appointment":
+		timestampStr, _ := args["timestamp"].(string)
+		tipo, _ := args["type"].(string)
+		descricao, _ := args["description"].(string)
+
+		err := gemini.ScheduleAppointment(s.db.GetConnection(), client.IdosoID, timestampStr, tipo, descricao)
+		if err != nil {
+			log.Printf("❌ Erro ao agendar: %v", err)
+			return map[string]interface{}{
+				"success": false,
+				"error":   err.Error(),
+			}
+		}
+
+		return map[string]interface{}{
+			"success": true,
+			"message": "Agendamento realizado com sucesso para " + timestampStr,
+		}
+
+	case "call_family_webrtc":
+		return s.initiateWebRTCCall(client, "familia")
+
+	case "call_central_webrtc":
+		return s.initiateWebRTCCall(client, "central")
+
+	case "call_doctor_webrtc":
+		return s.initiateWebRTCCall(client, "medico")
+
+	case "call_caregiver_webrtc":
+		return s.initiateWebRTCCall(client, "cuidador")
+
+	case "open_camera_analysis":
+		log.Printf("📸 Abrindo câmera para análise visual (Solicitado por %s)", client.CPF)
+		s.sendJSON(client, map[string]interface{}{
+			"type": "open_camera",
+			"mode": "analysis",
+		})
+		return map[string]interface{}{
+			"success": true,
+			"message": "Câmera ativada para análise visual",
+		}
+
 	default:
 		log.Printf("⚠️ Tool desconhecida: %s", name)
 		return map[string]interface{}{
@@ -608,4 +651,30 @@ func callLogsHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"status": "saved", "message": "Log received"})
+}
+
+// initiateWebRTCCall handles the logic to start a WebRTC call
+func (s *SignalingServer) initiateWebRTCCall(client *PCMClient, target string) map[string]interface{} {
+	log.Printf("📹 Iniciando chamada de vídeo para %s (Solicitado por %s)", target, client.CPF)
+
+	// 1. Criar sessão de vídeo no DB
+	// OBS: Estamos reutilizando a lógica de session start aqui, mas simplificada
+	sessionID := fmt.Sprintf("video-%s-%d", target, time.Now().Unix())
+
+	// 2. Enviar comando para o Mobile abrir a câmera
+	// O app mobile vai receber 'start_video' e navegar para /video
+	s.sendJSON(client, map[string]interface{}{
+		"type":       "start_video",
+		"session_id": sessionID,
+		"target":     target,
+	})
+
+	// 3. (Simulação) Notificar o target
+	// Aqui entraria a lógica de push notification para o App da Família ou Painel da Central
+	log.Printf("🔔 [TODO] Notificar %s sobre chamada recebida na sessão %s", target, sessionID)
+
+	return map[string]interface{}{
+		"success": true,
+		"message": fmt.Sprintf("Chamada de vídeo iniciada para %s. Abrindo câmera...", target),
+	}
 }

@@ -27,6 +27,7 @@ type Config struct {
 	GoogleAPIKey        string
 	ModelID             string
 	GeminiAnalysisModel string
+	VisionModelID       string
 
 	// Scheduler
 	SchedulerInterval int
@@ -75,6 +76,7 @@ func Load() (*Config, error) {
 		GoogleAPIKey:        os.Getenv("GOOGLE_API_KEY"),
 		ModelID:             getEnvWithDefault("MODEL_ID", "gemini-2.5-flash-native-audio-preview-12-2025"),
 		GeminiAnalysisModel: getEnvWithDefault("GEMINI_ANALYSIS_MODEL", "gemini-2.5-flash"),
+		VisionModelID:       getEnvWithDefault("VISION_MODEL_ID", "gemini-2.0-flash-exp"),
 
 		// Scheduler
 		SchedulerInterval: getEnvInt("SCHEDULER_INTERVAL", 1),

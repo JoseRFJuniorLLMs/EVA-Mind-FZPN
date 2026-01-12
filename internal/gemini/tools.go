@@ -48,6 +48,69 @@ func GetDefaultTools() []interface{} {
 						"required": []string{"medication_name"},
 					},
 				},
+				map[string]interface{}{
+					"name":        "schedule_appointment",
+					"description": "Agenda um compromisso, consulta, medicamento ou chamada para o idoso",
+					"parameters": map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"timestamp": map[string]interface{}{
+								"type":        "string",
+								"description": "Data e hora do agendamento no formato ISO 8601 (ex: 2024-02-25T14:30:00Z)",
+							},
+							"type": map[string]interface{}{
+								"type":        "string",
+								"description": "Tipo do agendamento",
+								"enum":        []string{"consulta", "medicamento", "ligacao", "atividade", "outro"},
+							},
+							"description": map[string]interface{}{
+								"type":        "string",
+								"description": "Descrição detalhada do compromisso ou tarefa",
+							},
+						},
+						"required": []string{"timestamp", "type", "description"},
+					},
+				},
+				map[string]interface{}{
+					"name":        "call_family_webrtc",
+					"description": "Inicia uma chamada de vídeo para a família do idoso",
+					"parameters": map[string]interface{}{
+						"type":       "object",
+						"properties": map[string]interface{}{},
+					},
+				},
+				map[string]interface{}{
+					"name":        "call_central_webrtc",
+					"description": "Inicia uma chamada de vídeo de emergência para a Central EVA-Mind",
+					"parameters": map[string]interface{}{
+						"type":       "object",
+						"properties": map[string]interface{}{},
+					},
+				},
+				map[string]interface{}{
+					"name":        "call_doctor_webrtc",
+					"description": "Inicia uma chamada de vídeo para o médico responsável",
+					"parameters": map[string]interface{}{
+						"type":       "object",
+						"properties": map[string]interface{}{},
+					},
+				},
+				map[string]interface{}{
+					"name":        "call_caregiver_webrtc",
+					"description": "Inicia uma chamada de vídeo para o cuidador",
+					"parameters": map[string]interface{}{
+						"type":       "object",
+						"properties": map[string]interface{}{},
+					},
+				},
+				map[string]interface{}{
+					"name":        "open_camera_analysis",
+					"description": "Ativa a câmera do dispositivo do idoso para analisar visualmente um objeto, remédio ou ambiente",
+					"parameters": map[string]interface{}{
+						"type":       "object",
+						"properties": map[string]interface{}{},
+					},
+				},
 			},
 		},
 	}
@@ -350,5 +413,57 @@ func CheckUnacknowledgedAlerts(db *sql.DB, pushService *push.FirebaseService) er
 		`, alertID)
 	}
 
+	return nil
+}
+
+// ScheduleAppointment insere um novo agendamento no banco de dados
+func ScheduleAppointment(db *sql.DB, idosoID int64, timestampStr, tipo, descricao string) error {
+	// 1. Parse convertendo string ISO para time.Time
+	// Suporta formatos ISO parciais ou completos
+	layouts := []string{
+		time.RFC3339,
+		"2006-01-02T15:04:05",
+		"2006-01-02 15:04:05",
+	}
+
+	var dataHora time.Time
+	var err error
+
+	for _, layout := range layouts {
+		dataHora, err = time.Parse(layout, timestampStr)
+		if err == nil {
+			break
+		}
+	}
+
+	if err != nil {
+		return fmt.Errorf("formato de data inválido (%s): %w", timestampStr, err)
+	}
+
+	// 2. Inserir no banco
+	query := `
+		INSERT INTO agendamentos (
+			idoso_id, 
+			tipo, 
+			data_hora_agendada, 
+			status, 
+			prioridade, 
+			dados_tarefa, 
+			criado_em, 
+			atualizado_em,
+			max_retries,
+			tentativas_realizadas
+		) 
+		VALUES ($1, $2, $3, 'agendado', 'media', $4, NOW(), NOW(), 3, 0)
+		RETURNING id
+	`
+
+	var id int64
+	err = db.QueryRow(query, idosoID, tipo, dataHora, descricao).Scan(&id)
+	if err != nil {
+		return fmt.Errorf("failed to insert appointment: %w", err)
+	}
+
+	log.Printf("📅 Appointment scheduled: ID %d for Idoso %d at %s", id, idosoID, dataHora)
 	return nil
 }

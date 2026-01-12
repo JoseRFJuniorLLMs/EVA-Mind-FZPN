@@ -116,6 +116,26 @@ func (c *Client) SendAudio(audioData []byte) error {
 	return c.conn.WriteJSON(msg)
 }
 
+// SendImage envia frames de imagem (JPEG) para o Gemini (Visão Computacional)
+func (c *Client) SendImage(imageData []byte) error {
+	encoded := base64.StdEncoding.EncodeToString(imageData)
+
+	msg := map[string]interface{}{
+		"realtime_input": map[string]interface{}{
+			"media_chunks": []map[string]string{
+				{
+					"mime_type": "image/jpeg",
+					"data":      encoded,
+				},
+			},
+		},
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.conn.WriteJSON(msg)
+}
+
 // ReadResponse lê a próxima resposta bruta do WebSocket
 func (c *Client) ReadResponse() (map[string]interface{}, error) {
 	var response map[string]interface{}
