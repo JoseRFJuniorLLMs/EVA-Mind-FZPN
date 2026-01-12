@@ -91,6 +91,9 @@ func (db *DB) GetOperatorCandidates(sessionID string, sinceID int64) ([]Signalin
 		}
 		msgs = append(msgs, m)
 	}
+	return msgs, nil
+}
+
 // Retorna apenas a session para o Operador pegar o Offer
 func (db *DB) GetVideoSession(sessionID string) (*VideoSession, error) {
 	query := `SELECT id, session_id, idoso_id, status, sdp_offer, sdp_answer, created_em FROM video_sessions WHERE session_id = $1`
