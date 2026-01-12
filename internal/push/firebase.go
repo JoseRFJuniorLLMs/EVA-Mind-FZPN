@@ -31,7 +31,7 @@ func NewFirebaseService(credentialsPath string) (*FirebaseService, error) {
 
 	// ✅ Usar credenciais padrão do Cloud Run (Workload Identity)
 	app, err := firebase.NewApp(ctx, &firebase.Config{
-		ProjectID: "aurora-v1-483722-bd5b6",
+		ProjectID: "eva-push-01",
 	})
 	if err != nil {
 		return nil, fmt.Errorf("error initializing Firebase app: %w", err)

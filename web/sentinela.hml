@@ -1,0 +1,315 @@
+import React, { useState } from 'react';
+import { Shield, Cpu, Zap, Lock, Activity, Mic, FileCode, Radio, Database, HardDrive, Wifi, WifiOff } from 'lucide-react';
+
+const SentinelaMode = () => {
+  const [isListening, setIsListening] = useState(true);
+  const [audioLevel, setAudioLevel] = useState(0);
+  const [detectionCount, setDetectionCount] = useState(0);
+
+  React.useEffect(() => {
+    const interval = setInterval(() => {
+      if (isListening) {
+        setAudioLevel(Math.random() * 100);
+        if (Math.random() > 0.95) {
+          setDetectionCount(prev => prev + 1);
+        }
+      }
+    }, 100);
+    return () => clearInterval(interval);
+  }, [isListening]);
+
+  return (
+    <div className="w-full min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 p-8">
+      <div className="max-w-6xl mx-auto">
+        
+        {/* Header */}
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center gap-4 bg-blue-600/20 backdrop-blur border-2 border-blue-400 rounded-2xl px-8 py-4 mb-4">
+            <Shield size={48} className="text-blue-400" />
+            <div className="text-left">
+              <h1 className="text-4xl font-bold text-white">MODO SENTINELA</h1>
+              <p className="text-blue-300 text-lg">Monitoramento Passivo Local • 100% Offline</p>
+            </div>
+          </div>
+          
+          <div className="flex justify-center gap-4 mt-4">
+            <div className="bg-green-600 text-white px-4 py-2 rounded-lg flex items-center gap-2">
+              <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+              <span className="font-semibold">ATIVO 24/7</span>
+            </div>
+            <div className="bg-slate-700 text-slate-300 px-4 py-2 rounded-lg flex items-center gap-2">
+              <WifiOff size={16} />
+              <span>Sem Internet</span>
+            </div>
+            <div className="bg-slate-700 text-slate-300 px-4 py-2 rounded-lg flex items-center gap-2">
+              <Lock size={16} />
+              <span>Privado</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Audio Pipeline Flow */}
+        <div className="bg-slate-800/50 backdrop-blur rounded-2xl p-6 border border-slate-600 mb-8">
+          <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
+            <Radio className="text-blue-400" />
+            Pipeline de Áudio
+          </h2>
+          
+          <div className="grid grid-cols-5 gap-4">
+            {/* Stage 1: Captura */}
+            <div className="bg-gradient-to-br from-blue-900/50 to-blue-800/50 border-2 border-blue-500 rounded-xl p-4">
+              <Mic className="text-blue-400 mb-2 mx-auto" size={32} />
+              <h3 className="text-white font-bold text-center mb-2">Captura</h3>
+              <div className="text-xs text-slate-300 space-y-1">
+                <p className="font-mono bg-slate-700 px-2 py-1 rounded">16 kHz</p>
+                <p className="font-mono bg-slate-700 px-2 py-1 rounded">16-bit PCM</p>
+                <p className="font-mono bg-slate-700 px-2 py-1 rounded">Mono</p>
+              </div>
+              <div className="mt-2 h-8 bg-slate-700 rounded overflow-hidden">
+                <div 
+                  className="bg-blue-500 h-full transition-all duration-100"
+                  style={{ width: `${audioLevel}%` }}
+                ></div>
+              </div>
+            </div>
+
+            {/* Arrow */}
+            <div className="flex items-center justify-center">
+              <div className="text-blue-400 text-3xl">→</div>
+            </div>
+
+            {/* Stage 2: VAD */}
+            <div className="bg-gradient-to-br from-purple-900/50 to-purple-800/50 border-2 border-purple-500 rounded-xl p-4">
+              <Activity className="text-purple-400 mb-2 mx-auto" size={32} />
+              <h3 className="text-white font-bold text-center mb-2">VAD</h3>
+              <div className="text-xs text-slate-300 space-y-1">
+                <p className="font-bold text-purple-300">Silero VAD</p>
+                <p className="bg-slate-700 px-2 py-1 rounded">v4.0</p>
+                <p className="bg-slate-700 px-2 py-1 rounded">ONNX Runtime</p>
+                <p className="bg-slate-700 px-2 py-1 rounded">30ms chunks</p>
+              </div>
+            </div>
+
+            {/* Arrow */}
+            <div className="flex items-center justify-center">
+              <div className="text-blue-400 text-3xl">→</div>
+            </div>
+
+            {/* Stage 3: Hotword */}
+            <div className="bg-gradient-to-br from-orange-900/50 to-red-900/50 border-2 border-orange-500 rounded-xl p-4">
+              <Zap className="text-orange-400 mb-2 mx-auto" size={32} />
+              <h3 className="text-white font-bold text-center mb-2">Hotword</h3>
+              <div className="text-xs text-slate-300 space-y-1">
+                <p className="font-bold text-orange-300">Porcupine</p>
+                <p className="bg-slate-700 px-2 py-1 rounded">v3.0</p>
+                <p className="bg-slate-700 px-2 py-1 rounded">Wake Word</p>
+                <p className="font-mono bg-red-900 text-red-200 px-2 py-1 rounded">"EVA SOCORRO"</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Technical Stack */}
+        <div className="grid grid-cols-2 gap-6 mb-8">
+          
+          {/* TinyML Service */}
+          <div className="bg-slate-800/50 backdrop-blur rounded-2xl p-6 border border-slate-600">
+            <div className="flex items-center gap-3 mb-4">
+              <Cpu className="text-green-400" size={32} />
+              <h2 className="text-2xl font-bold text-white">TinyML Service</h2>
+            </div>
+            
+            <div className="space-y-3">
+              <div className="bg-slate-700/50 rounded-lg p-3">
+                <p className="text-slate-400 text-sm mb-1">Framework</p>
+                <p className="text-white font-bold text-lg">ONNX Runtime Mobile</p>
+                <p className="text-slate-400 text-xs mt-1">Otimizado para ARM64</p>
+              </div>
+
+              <div className="bg-slate-700/50 rounded-lg p-3">
+                <p className="text-slate-400 text-sm mb-1">Linguagem</p>
+                <p className="text-white font-bold text-lg">Dart + FFI (C++)</p>
+                <p className="text-slate-400 text-xs mt-1">Native Performance</p>
+              </div>
+
+              <div className="bg-slate-700/50 rounded-lg p-3">
+                <p className="text-slate-400 text-sm mb-1">Modelo VAD</p>
+                <p className="text-white font-bold">Silero VAD v4.0</p>
+                <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                  <div className="bg-slate-800 px-2 py-1 rounded">
+                    <p className="text-slate-400">Tamanho</p>
+                    <p className="text-green-400 font-mono">1.8 MB</p>
+                  </div>
+                  <div className="bg-slate-800 px-2 py-1 rounded">
+                    <p className="text-slate-400">Latência</p>
+                    <p className="text-green-400 font-mono">&lt;10ms</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-slate-700/50 rounded-lg p-3">
+                <p className="text-slate-400 text-sm mb-1">Modelo Hotword</p>
+                <p className="text-white font-bold">Porcupine v3.0</p>
+                <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                  <div className="bg-slate-800 px-2 py-1 rounded">
+                    <p className="text-slate-400">Accuracy</p>
+                    <p className="text-orange-400 font-mono">97.8%</p>
+                  </div>
+                  <div className="bg-slate-800 px-2 py-1 rounded">
+                    <p className="text-slate-400">CPU</p>
+                    <p className="text-orange-400 font-mono">~1%</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Audio Specifications */}
+          <div className="bg-slate-800/50 backdrop-blur rounded-2xl p-6 border border-slate-600">
+            <div className="flex items-center gap-3 mb-4">
+              <FileCode className="text-blue-400" size={32} />
+              <h2 className="text-2xl font-bold text-white">Especificações de Áudio</h2>
+            </div>
+            
+            <div className="space-y-3">
+              <div className="bg-slate-700/50 rounded-lg p-3">
+                <p className="text-slate-400 text-sm mb-1">Sample Rate</p>
+                <p className="text-white font-bold text-2xl">16 kHz</p>
+                <p className="text-slate-400 text-xs mt-1">16,000 samples/segundo</p>
+              </div>
+
+              <div className="bg-slate-700/50 rounded-lg p-3">
+                <p className="text-slate-400 text-sm mb-1">Bit Depth</p>
+                <p className="text-white font-bold text-2xl">16-bit</p>
+                <p className="text-slate-400 text-xs mt-1">PCM Linear</p>
+              </div>
+
+              <div className="bg-slate-700/50 rounded-lg p-3">
+                <p className="text-slate-400 text-sm mb-1">Canais</p>
+                <p className="text-white font-bold text-2xl">Mono</p>
+                <p className="text-slate-400 text-xs mt-1">1 canal de áudio</p>
+              </div>
+
+              <div className="bg-slate-700/50 rounded-lg p-3">
+                <p className="text-slate-400 text-sm mb-1">Chunk Size</p>
+                <p className="text-white font-bold text-2xl">480 frames</p>
+                <p className="text-slate-400 text-xs mt-1">30ms @ 16kHz</p>
+              </div>
+
+              <div className="bg-blue-900/30 border border-blue-600 rounded-lg p-3">
+                <p className="text-blue-400 text-sm mb-1">Bitrate</p>
+                <p className="text-white font-bold text-lg">256 kbps</p>
+                <p className="text-slate-400 text-xs mt-1">Compressão adaptativa</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Flutter Integration */}
+        <div className="bg-slate-800/50 backdrop-blur rounded-2xl p-6 border border-slate-600 mb-8">
+          <div className="flex items-center gap-3 mb-4">
+            <Database className="text-cyan-400" size={32} />
+            <h2 className="text-2xl font-bold text-white">Bibliotecas Flutter</h2>
+          </div>
+          
+          <div className="grid grid-cols-3 gap-4">
+            <div className="bg-slate-700/50 rounded-lg p-4">
+              <p className="text-cyan-400 font-bold mb-2">flutter_sound</p>
+              <p className="text-slate-300 text-sm mb-3">Captura de áudio de baixo nível</p>
+              <div className="space-y-1 text-xs">
+                <p className="font-mono bg-slate-800 px-2 py-1 rounded text-green-400">v9.2.13</p>
+                <p className="text-slate-400">• Acesso ao microfone</p>
+                <p className="text-slate-400">• Buffer circular</p>
+                <p className="text-slate-400">• Controle de latência</p>
+              </div>
+            </div>
+
+            <div className="bg-slate-700/50 rounded-lg p-4">
+              <p className="text-purple-400 font-bold mb-2">onnxruntime</p>
+              <p className="text-slate-300 text-sm mb-3">Runtime para modelos ML</p>
+              <div className="space-y-1 text-xs">
+                <p className="font-mono bg-slate-800 px-2 py-1 rounded text-green-400">v1.16.0</p>
+                <p className="text-slate-400">• Inferência VAD</p>
+                <p className="text-slate-400">• GPU acelerado</p>
+                <p className="text-slate-400">• Quantização INT8</p>
+              </div>
+            </div>
+
+            <div className="bg-slate-700/50 rounded-lg p-4">
+              <p className="text-orange-400 font-bold mb-2">porcupine_flutter</p>
+              <p className="text-slate-300 text-sm mb-3">Wake word detection</p>
+              <div className="space-y-1 text-xs">
+                <p className="font-mono bg-slate-800 px-2 py-1 rounded text-green-400">v3.0.2</p>
+                <p className="text-slate-400">• Hotword custom</p>
+                <p className="text-slate-400">• Multi-idioma</p>
+                <p className="text-slate-400">• Offline total</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Performance Metrics */}
+        <div className="grid grid-cols-4 gap-4 mb-8">
+          <div className="bg-gradient-to-br from-green-900/50 to-green-800/50 border-2 border-green-500 rounded-xl p-4 text-center">
+            <HardDrive className="text-green-400 mx-auto mb-2" size={32} />
+            <p className="text-slate-300 text-sm mb-1">Consumo RAM</p>
+            <p className="text-white font-bold text-3xl">~15 MB</p>
+            <p className="text-green-400 text-xs mt-1">Memória total</p>
+          </div>
+
+          <div className="bg-gradient-to-br from-blue-900/50 to-blue-800/50 border-2 border-blue-500 rounded-xl p-4 text-center">
+            <Cpu className="text-blue-400 mx-auto mb-2" size={32} />
+            <p className="text-slate-300 text-sm mb-1">Uso de CPU</p>
+            <p className="text-white font-bold text-3xl">~2%</p>
+            <p className="text-blue-400 text-xs mt-1">Single core</p>
+          </div>
+
+          <div className="bg-gradient-to-br from-yellow-900/50 to-yellow-800/50 border-2 border-yellow-500 rounded-xl p-4 text-center">
+            <Zap className="text-yellow-400 mx-auto mb-2" size={32} />
+            <p className="text-slate-300 text-sm mb-1">Bateria/Hora</p>
+            <p className="text-white font-bold text-3xl">~1%</p>
+            <p className="text-yellow-400 text-xs mt-1">Eficiência máxima</p>
+          </div>
+
+          <div className="bg-gradient-to-br from-purple-900/50 to-purple-800/50 border-2 border-purple-500 rounded-xl p-4 text-center">
+            <Activity className="text-purple-400 mx-auto mb-2" size={32} />
+            <p className="text-slate-300 text-sm mb-1">Detecções</p>
+            <p className="text-white font-bold text-3xl">{detectionCount}</p>
+            <p className="text-purple-400 text-xs mt-1">Hoje</p>
+          </div>
+        </div>
+
+        {/* Privacy & Security */}
+        <div className="bg-gradient-to-r from-green-900/30 to-emerald-900/30 border-2 border-green-500 rounded-2xl p-6 backdrop-blur">
+          <div className="flex items-center gap-3 mb-4">
+            <Lock className="text-green-400" size={40} />
+            <div>
+              <h2 className="text-2xl font-bold text-white">Garantias de Privacidade</h2>
+              <p className="text-green-300">100% Processamento Local • Zero Cloud</p>
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-3 gap-4">
+            <div className="bg-slate-800/50 rounded-lg p-4">
+              <p className="text-green-400 font-bold mb-2">✓ Áudio Descartado</p>
+              <p className="text-slate-300 text-sm">Buffers limpos a cada 1 segundo. Nada é armazenado em disco.</p>
+            </div>
+            
+            <div className="bg-slate-800/50 rounded-lg p-4">
+              <p className="text-green-400 font-bold mb-2">✓ Offline Completo</p>
+              <p className="text-slate-300 text-sm">Nenhum dado sai do dispositivo. Sem requisições de rede.</p>
+            </div>
+            
+            <div className="bg-slate-800/50 rounded-lg p-4">
+              <p className="text-green-400 font-bold mb-2">✓ Criptografia Local</p>
+              <p className="text-slate-300 text-sm">Logs salvos com AES-256. Apenas metadados anônimos.</p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+};
+
+export default SentinelaMode;

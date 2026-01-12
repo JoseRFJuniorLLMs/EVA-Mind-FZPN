@@ -1,0 +1,262 @@
+import React, { useState } from 'react';
+import { Mic, Shield, AlertTriangle, Radio, Smartphone, Cloud, Users, Heart, Lock, Zap, Activity } from 'lucide-react';
+
+const EVAArchitecture = () => {
+const [activeMode, setActiveMode] = useState('sentinela');
+const [showTransition, setShowTransition] = useState(false);
+
+const triggerEmergency = () => {
+setShowTransition(true);
+setTimeout(() => {
+setActiveMode('intervencao');
+setShowTransition(false);
+}, 1500);
+};
+
+const resetToSentinela = () => {
+setActiveMode('sentinela');
+};
+
+return (
+<div className="w-full h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 p-8 overflow-auto">
+    <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="text-center mb-8">
+            <h1 className="text-4xl font-bold text-white mb-2">EVA - Arquitetura de Áudio</h1>
+            <p className="text-blue-300 text-lg">Sistema de Monitoramento Inteligente com Privacidade</p>
+        </div>
+
+        {/* Controls */}
+        <div className="flex justify-center gap-4 mb-8">
+            <button onClick={triggerEmergency} disabled={activeMode==='intervencao' || showTransition}
+                className="bg-red-600 hover:bg-red-700 disabled:bg-gray-600 text-white px-6 py-3 rounded-lg font-semibold flex items-center gap-2 transition-all">
+                <AlertTriangle size={20} />
+                Simular Emergência
+            </button>
+            <button onClick={resetToSentinela} disabled={activeMode==='sentinela' }
+                className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white px-6 py-3 rounded-lg font-semibold transition-all">
+                Resetar
+            </button>
+        </div>
+
+        {/* Main Architecture */}
+        <div className="grid grid-cols-1 gap-8">
+
+            {/* Usuario e Hardware */}
+            <div className="bg-slate-800/50 backdrop-blur rounded-2xl p-6 border border-slate-700">
+                <div className="flex items-center justify-center gap-8">
+                    <div className="text-center">
+                        <div
+                            className="w-20 h-20 bg-gradient-to-br from-orange-500 to-red-500 rounded-full flex items-center justify-center text-4xl mb-2 mx-auto">
+                            👴
+                        </div>
+                        <p className="text-white font-semibold">Idoso</p>
+                        <p className="text-slate-400 text-sm">Usuário do Sistema</p>
+                    </div>
+
+                    <div className={`transform transition-all duration-500 ${activeMode==='intervencao' ? 'scale-110'
+                        : '' }`}>
+                        <Mic size={48} className={`${activeMode==='intervencao' ? 'text-red-400 animate-pulse'
+                            : 'text-blue-400' }`} />
+                    </div>
+
+                    <div className="text-center">
+                        <div
+                            className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-500 rounded-full flex items-center justify-center mb-2 mx-auto">
+                            <Smartphone size={40} className="text-white" />
+                        </div>
+                        <p className="text-white font-semibold">Celular</p>
+                        <p className="text-slate-400 text-sm">Hardware</p>
+                    </div>
+                </div>
+            </div>
+
+            {/* Audio Resource Manager */}
+            <div className={`bg-gradient-to-r from-yellow-900/30 to-orange-900/30 backdrop-blur rounded-2xl p-6 border-2
+                ${showTransition ? 'border-yellow-400 animate-pulse' : 'border-yellow-600' }`}>
+                <div className="text-center mb-4">
+                    <div
+                        className="inline-flex items-center gap-3 bg-yellow-600 text-white px-6 py-3 rounded-full font-bold text-lg">
+                        <Zap size={24} />
+                        AUDIO RESOURCE MANAGER
+                    </div>
+                    <p className="text-yellow-200 mt-2">O Gerente - Controla Quem Usa o Microfone</p>
+                </div>
+
+                <div className="grid grid-cols-3 gap-4 text-center">
+                    <div className={`p-4 rounded-lg ${activeMode==='sentinela' ? 'bg-green-600' : 'bg-slate-700' }`}>
+                        <Shield size={32} className="mx-auto mb-2 text-white" />
+                        <p className="text-white font-semibold">Estado A</p>
+                        <p className="text-xs text-slate-300 mt-1">Mic → TinyML</p>
+                    </div>
+
+                    <div className={`p-4 rounded-lg ${showTransition ? 'bg-yellow-600 animate-pulse' : 'bg-slate-700'
+                        }`}>
+                        <Activity size={32} className="mx-auto mb-2 text-white" />
+                        <p className="text-white font-semibold">Transição</p>
+                        <p className="text-xs text-slate-300 mt-1">Liberando Recurso</p>
+                    </div>
+
+                    <div className={`p-4 rounded-lg ${activeMode==='intervencao' ? 'bg-red-600' : 'bg-slate-700' }`}>
+                        <Radio size={32} className="mx-auto mb-2 text-white" />
+                        <p className="text-white font-semibold">Estado B</p>
+                        <p className="text-xs text-slate-300 mt-1">Mic → WebView</p>
+                    </div>
+                </div>
+            </div>
+
+            {/* Two Modes Side by Side */}
+            <div className="grid grid-cols-2 gap-6">
+
+                {/* Modo Sentinela */}
+                <div className={`backdrop-blur rounded-2xl p-6 border-2 transition-all ${ activeMode==='sentinela'
+                    ? 'bg-blue-900/40 border-blue-400 shadow-lg shadow-blue-500/50' : 'bg-slate-800/30 border-slate-600'
+                    }`}>
+                    <div className="flex items-center gap-3 mb-4">
+                        <Shield size={32} className="text-blue-400" />
+                        <div>
+                            <h3 className="text-xl font-bold text-white">🛡️ MODO SENTINELA</h3>
+                            <p className="text-blue-300 text-sm">Local / Offline</p>
+                        </div>
+                    </div>
+
+                    <div className="space-y-4">
+                        <div className="bg-slate-700/50 p-4 rounded-lg">
+                            <div className="flex items-center gap-2 mb-2">
+                                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                                <p className="text-white font-semibold">TinyML Service</p>
+                            </div>
+                            <p className="text-slate-300 text-sm">Vosk / Porcupine</p>
+                            <p className="text-green-400 text-xs mt-1">✓ Roda 99% do tempo</p>
+                        </div>
+
+                        <div className="bg-slate-700/50 p-4 rounded-lg">
+                            <p className="text-white font-semibold mb-2">📉 VAD Local</p>
+                            <p className="text-slate-300 text-sm">Detecção de Silêncio</p>
+                            <p className="text-green-400 text-xs mt-1">✓ Baixíssima bateria</p>
+                        </div>
+
+                        <div className="bg-slate-700/50 p-4 rounded-lg">
+                            <p className="text-white font-semibold mb-2">🎯 Hotword Detector</p>
+                            <p className="text-orange-300 text-sm font-mono">"EVA SOCORRO"</p>
+                        </div>
+
+                        <div className="bg-green-900/30 border border-green-600 p-3 rounded-lg">
+                            <div className="flex items-center gap-2 mb-1">
+                                <Lock size={16} className="text-green-400" />
+                                <p className="text-green-300 font-semibold text-sm">Privacidade Total</p>
+                            </div>
+                            <p className="text-green-200 text-xs">Áudio descartado a cada segundo</p>
+                            <p className="text-green-200 text-xs">Nada sai do aparelho</p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Modo Intervenção */}
+                <div className={`backdrop-blur rounded-2xl p-6 border-2 transition-all ${ activeMode==='intervencao'
+                    ? 'bg-red-900/40 border-red-400 shadow-lg shadow-red-500/50' : 'bg-slate-800/30 border-slate-600'
+                    }`}>
+                    <div className="flex items-center gap-3 mb-4">
+                        <Radio size={32} className="text-red-400" />
+                        <div>
+                            <h3 className="text-xl font-bold text-white">💬 MODO INTERVENÇÃO</h3>
+                            <p className="text-red-300 text-sm">Nuvem / Online</p>
+                        </div>
+                    </div>
+
+                    <div className="space-y-4">
+                        <div className="bg-slate-700/50 p-4 rounded-lg">
+                            <div className="flex items-center gap-2 mb-2">
+                                <div className={`w-2 h-2 rounded-full ${activeMode==='intervencao'
+                                    ? 'bg-red-400 animate-pulse' : 'bg-slate-500' }`}></div>
+                                <p className="text-white font-semibold">EvaWebViewService</p>
+                            </div>
+                            <p className="text-slate-300 text-sm">JavaScript / WebRTC</p>
+                        </div>
+
+                        <div className="bg-slate-700/50 p-4 rounded-lg">
+                            <p className="text-white font-semibold mb-2">⚙️ AudioWorklet JS</p>
+                            <p className="text-slate-300 text-sm">Processamento Real-Time</p>
+                        </div>
+
+                        <div className="bg-slate-700/50 p-4 rounded-lg">
+                            <p className="text-white font-semibold mb-2">🔌 WebSocket</p>
+                            <p className="text-slate-300 text-sm">Conexão com LLM</p>
+                        </div>
+
+                        <div className="bg-purple-900/30 border border-purple-600 p-3 rounded-lg">
+                            <div className="flex items-center gap-2 mb-1">
+                                <Cloud size={16} className="text-purple-400" />
+                                <p className="text-purple-300 font-semibold text-sm">Processamento Cloud</p>
+                            </div>
+                            <p className="text-purple-200 text-xs">Conversação com IA</p>
+                            <p className="text-purple-200 text-xs">Resposta empática em tempo real</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Emergency Trigger Flow */}
+            {showTransition && (
+            <div className="bg-red-900/30 border-2 border-red-500 rounded-2xl p-6 animate-pulse">
+                <div className="text-center">
+                    <AlertTriangle size={48} className="mx-auto mb-3 text-red-400" />
+                    <h3 className="text-2xl font-bold text-white mb-2">🚨 EMERGÊNCIA DETECTADA</h3>
+                    <div className="space-y-2 text-left max-w-md mx-auto">
+                        <p className="text-red-200">1️⃣ POST imediato para API (ApiService.reportError)</p>
+                        <p className="text-red-200">2️⃣ TinyML liberando microfone...</p>
+                        <p className="text-red-200">3️⃣ WebView assumindo controle...</p>
+                        <p className="text-red-200">4️⃣ Estabelecendo WebSocket com LLM...</p>
+                    </div>
+                </div>
+            </div>
+            )}
+
+            {/* Benefits */}
+            <div className="grid grid-cols-2 gap-6">
+                <div
+                    className="bg-gradient-to-br from-green-900/30 to-blue-900/30 backdrop-blur rounded-2xl p-6 border border-green-600">
+                    <div className="flex items-center gap-3 mb-4">
+                        <Lock size={32} className="text-green-400" />
+                        <h3 className="text-xl font-bold text-white">Privacidade</h3>
+                    </div>
+                    <p className="text-green-200 text-lg font-semibold mb-2">"Nós NÃO gravamos o que você fala"</p>
+                    <p className="text-slate-300 text-sm">Garantido pelo Modo Sentinela Local</p>
+                    <div className="mt-4 space-y-1">
+                        <p className="text-green-300 text-sm">✓ Processamento 100% local</p>
+                        <p className="text-green-300 text-sm">✓ Zero envio de dados</p>
+                        <p className="text-green-300 text-sm">✓ Áudio descartado continuamente</p>
+                    </div>
+                </div>
+
+                <div
+                    className="bg-gradient-to-br from-red-900/30 to-orange-900/30 backdrop-blur rounded-2xl p-6 border border-red-600">
+                    <div className="flex items-center gap-3 mb-4">
+                        <Heart size={32} className="text-red-400" />
+                        <h3 className="text-xl font-bold text-white">Segurança</h3>
+                    </div>
+                    <p className="text-red-200 text-lg font-semibold mb-2">"Mas se você GRITAR, nós ouvimos"</p>
+                    <p className="text-slate-300 text-sm">Garantido pelo Trigger Local + Cloud</p>
+                    <div className="mt-4 space-y-1">
+                        <p className="text-red-300 text-sm">✓ Detecção instantânea de emergência</p>
+                        <p className="text-red-300 text-sm">✓ Notificação imediata à central</p>
+                        <p className="text-red-300 text-sm">✓ Ativação automática de ajuda</p>
+                    </div>
+                </div>
+            </div>
+
+            {/* Status Indicator */}
+            <div className="text-center">
+                <div className={`inline-flex items-center gap-3 px-6 py-3 rounded-full font-bold ${
+                    activeMode==='sentinela' ? 'bg-green-600 text-white' : 'bg-red-600 text-white animate-pulse' }`}>
+                    <div className="w-3 h-3 bg-white rounded-full animate-pulse"></div>
+                    MODO ATIVO: {activeMode === 'sentinela' ? 'SENTINELA (Monitor)' : 'INTERVENÇÃO (Chamada)'}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+);
+};
+
+export default EVAArchitecture;
