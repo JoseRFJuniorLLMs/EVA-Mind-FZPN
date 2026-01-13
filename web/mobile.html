@@ -1,0 +1,284 @@
+<svg width="1400" height="1000" xmlns="http://www.w3.org/2000/svg">
+    <!-- Styles -->
+    <defs>
+        <style>
+            .screen {
+                fill: #fce7f3;
+                stroke: #db2777;
+                stroke-width: 3;
+                rx: 10;
+                ry: 10;
+            }
+
+            .screen-title {
+                font-family: Arial, sans-serif;
+                font-weight: bold;
+                font-size: 18px;
+                fill: #db2777;
+                text-anchor: middle;
+            }
+
+            .component {
+                fill: #fff;
+                stroke: #f9a8d4;
+                stroke-width: 1.5;
+                rx: 5;
+                ry: 5;
+            }
+
+            .component-text {
+                font-family: Arial, sans-serif;
+                font-size: 13px;
+                fill: #333;
+                text-anchor: middle;
+            }
+
+            .arrow {
+                stroke: #db2777;
+                stroke-width: 3;
+                marker-end: url(#arrowhead);
+                fill: none;
+            }
+
+            .arrow-dashed {
+                stroke: #db2777;
+                stroke-width: 2;
+                stroke-dasharray: 5, 5;
+                marker-end: url(#arrowhead);
+                fill: none;
+            }
+
+            .arrow-text {
+                font-family: Arial, sans-serif;
+                font-size: 12px;
+                font-weight: bold;
+                fill: #831843;
+                text-anchor: middle;
+            }
+
+            .divider {
+                stroke: #f9a8d4;
+                stroke-width: 2;
+            }
+        </style>
+        <marker id="arrowhead" markerWidth="12" markerHeight="10" refX="11" refY="5" orient="auto">
+            <polygon points="0 0, 12 5, 0 10" fill="#db2777" />
+        </marker>
+    </defs>
+
+    <!-- Title -->
+    <text x="700" y="50" font-family="Arial, sans-serif" font-size="26" font-weight="bold" fill="#db2777"
+        text-anchor="middle">EVA Mobile - Fluxo Lógico & Componentes</text>
+    <text x="700" y="75" font-family="Arial, sans-serif" font-size="14" fill="#666" text-anchor="middle">Arquitetura de
+        Telas e Navegação do App Flutter</text>
+
+    <!-- 1. Permissions Screen -->
+    <g transform="translate(50, 120)">
+        <rect class="screen" width="240" height="280" />
+        <text x="120" y="35" class="screen-title">1. /permissions</text>
+        <line x1="15" y1="50" x2="225" y2="50" class="divider" />
+
+        <!-- Components -->
+        <g transform="translate(25, 75)">
+            <rect class="component" width="190" height="35" />
+            <text x="95" y="23" class="component-text">PermissionHandler</text>
+        </g>
+        <g transform="translate(25, 120)">
+            <rect class="component" width="190" height="35" />
+            <text x="95" y="23" class="component-text">Camera & Mic Check</text>
+        </g>
+        <g transform="translate(25, 165)">
+            <rect class="component" width="190" height="35" />
+            <text x="95" y="23" class="component-text">Loading Animation</text>
+        </g>
+        <g transform="translate(25, 210)">
+            <rect class="component" width="190" height="35" />
+            <text x="95" y="23" class="component-text">"Continuar" Button</text>
+        </g>
+    </g>
+
+    <!-- Flow: Permissions -> Setup -->
+    <path d="M 290 260 L 380 260" class="arrow" />
+    <rect x="305" y="240" width="70" height="25" fill="#fff" stroke="none" />
+    <text x="335" y="257" class="arrow-text">Granted</text>
+
+    <!-- 2. Setup Screen (Login) -->
+    <g transform="translate(380, 120)">
+        <rect class="screen" width="240" height="340" />
+        <text x="120" y="35" class="screen-title">2. /setup (Login)</text>
+        <line x1="15" y1="50" x2="225" y2="50" class="divider" />
+
+        <!-- Components -->
+        <g transform="translate(25, 75)">
+            <rect class="component" width="190" height="35" />
+            <text x="95" y="23" class="component-text">Logo EVA (PNG)</text>
+        </g>
+        <g transform="translate(25, 120)">
+            <rect class="component" width="190" height="35" />
+            <text x="95" y="23" class="component-text">CPF Input Field</text>
+        </g>
+        <g transform="translate(25, 165)">
+            <rect class="component" width="190" height="35" />
+            <text x="95" y="23" class="component-text">"ENTRAR" (Round 3D)</text>
+        </g>
+        <g transform="translate(25, 210)">
+            <rect class="component" width="190" height="35" />
+            <text x="95" y="23" class="component-text">"VÍDEO" (Round 3D)</text>
+        </g>
+        <g transform="translate(25, 255)">
+            <rect class="component" width="190" height="35" />
+            <text x="95" y="23" class="component-text">NotificationProvider</text>
+        </g>
+        <g transform="translate(25, 300)">
+            <rect class="component" width="190" height="35" />
+            <text x="95" y="23" class="component-text">Terms Text</text>
+        </g>
+    </g>
+
+    <!-- Flow: Setup -> Home -->
+    <path d="M 620 290 L 730 290" class="arrow" />
+    <rect x="635" y="270" width="95" height="25" fill="#fff" stroke="none" />
+    <text x="675" y="287" class="arrow-text">Auth Success</text>
+
+    <!-- 3. Home Screen -->
+    <g transform="translate(730, 120)">
+        <rect class="screen" width="260" height="400" />
+        <text x="130" y="35" class="screen-title">3. /home</text>
+        <line x1="15" y1="50" x2="245" y2="50" class="divider" />
+
+        <!-- Components -->
+        <g transform="translate(30, 75)">
+            <rect class="component" width="200" height="35" />
+            <text x="100" y="23" class="component-text">HealthService (Background)</text>
+        </g>
+        <g transform="translate(30, 120)">
+            <rect class="component" width="200" height="35" />
+            <text x="100" y="23" class="component-text">EvaAvatar3D (Idle)</text>
+        </g>
+        <g transform="translate(30, 165)">
+            <rect class="component" width="200" height="35" />
+            <text x="100" y="23" class="component-text">"LIGAR" (Big Purple 3D)</text>
+        </g>
+        <g transform="translate(30, 210)">
+            <rect class="component" width="200" height="35" />
+            <text x="100" y="23" class="component-text">"AGENDAR" (Pink 3D)</text>
+        </g>
+        <g transform="translate(30, 255)">
+            <rect class="component" width="200" height="35" />
+            <text x="100" y="23" class="component-text">Greeting Text</text>
+        </g>
+        <g transform="translate(30, 300)">
+            <rect class="component" width="200" height="35" />
+            <text x="100" y="23" class="component-text">Battery Indicator</text>
+        </g>
+        <g transform="translate(30, 345)">
+            <rect class="component" width="200" height="35" />
+            <text x="100" y="23" class="component-text">Firebase Listener</text>
+        </g>
+    </g>
+
+    <!-- Flow: Home -> Call -->
+    <path d="M 860 520 L 860 600" class="arrow" />
+    <rect x="810" y="545" width="100" height="40" fill="#fff" stroke="none" />
+    <text x="860" y="562" class="arrow-text">Start/Receive</text>
+    <text x="860" y="578" class="arrow-text">Call</text>
+
+    <!-- 4. Call Screen -->
+    <g transform="translate(730, 600)">
+        <rect class="screen" width="260" height="380" />
+        <text x="130" y="35" class="screen-title">4. /call</text>
+        <line x1="15" y1="50" x2="245" y2="50" class="divider" />
+
+        <!-- Components -->
+        <g transform="translate(30, 75)">
+            <rect class="component" width="200" height="35" />
+            <text x="100" y="23" class="component-text">WebView (Hidden Engine)</text>
+        </g>
+        <g transform="translate(30, 120)">
+            <rect class="component" width="200" height="35" />
+            <text x="100" y="23" class="component-text">Connecting State</text>
+        </g>
+        <g transform="translate(30, 165)">
+            <rect class="component" width="200" height="35" />
+            <text x="100" y="23" class="component-text">"ATENDER" (Pulsing)</text>
+        </g>
+        <g transform="translate(30, 210)">
+            <rect class="component" width="200" height="35" />
+            <text x="100" y="23" class="component-text">"MUTE" (Purple 3D)</text>
+        </g>
+        <g transform="translate(30, 255)">
+            <rect class="component" width="200" height="35" />
+            <text x="100" y="23" class="component-text">"SPEAKER" (Pink 3D)</text>
+        </g>
+        <g transform="translate(30, 300)">
+            <rect class="component" width="200" height="35" />
+            <text x="100" y="23" class="component-text">"DESLIGAR" (Red 3D)</text>
+        </g>
+        <g transform="translate(30, 345)">
+            <rect class="component" width="200" height="35" />
+            <text x="100" y="23" class="component-text">Auto-Redirect Logic</text>
+        </g>
+    </g>
+
+    <!-- Flow: Call -> Home (Loop) -->
+    <path d="M 990 790 C 1080 790, 1080 320, 990 320" class="arrow-dashed" />
+    <rect x="1070" y="540" width="80" height="40" fill="#fff" stroke="none" />
+    <text x="1110" y="557" class="arrow-text">End/Error</text>
+    <text x="1110" y="573" class="arrow-text">(Auto)</text>
+
+    <!-- 5. Diagnostic Screen -->
+    <g transform="translate(1070, 120)">
+        <rect class="screen" width="260" height="240" />
+        <text x="130" y="35" class="screen-title">5. /diagnostic</text>
+        <line x1="15" y1="50" x2="245" y2="50" class="divider" />
+
+        <g transform="translate(30, 75)">
+            <rect class="component" width="200" height="35" />
+            <text x="100" y="23" class="component-text">System Info</text>
+        </g>
+        <g transform="translate(30, 120)">
+            <rect class="component" width="200" height="35" />
+            <text x="100" y="23" class="component-text">Sensor Checks</text>
+        </g>
+        <g transform="translate(30, 165)">
+            <rect class="component" width="200" height="35" />
+            <text x="100" y="23" class="component-text">Log Export</text>
+        </g>
+        <g transform="translate(30, 210)">
+            <rect class="component" width="200" height="35" />
+            <text x="100" y="23" class="component-text">Dev Tools</text>
+        </g>
+    </g>
+
+    <!-- Flow: Setup -> Diagnostic (Hidden) -->
+    <path d="M 500 460 L 500 540 L 1200 540 L 1200 360" class="arrow-dashed" />
+    <rect x="800" y="520" width="110" height="25" fill="#fff" stroke="none" />
+    <text x="850" y="537" class="arrow-text" font-style="italic">Hidden Access</text>
+
+    <!-- Legend -->
+    <g transform="translate(50, 880)">
+        <text x="0" y="0" font-family="Arial, sans-serif" font-size="16" font-weight="bold"
+            fill="#db2777">Legenda:</text>
+
+        <line x1="0" y1="20" x2="50" y2="20" class="arrow" />
+        <text x="60" y="25" font-family="Arial, sans-serif" font-size="12" fill="#333">Navegação Principal</text>
+
+        <line x1="0" y1="45" x2="50" y2="45" class="arrow-dashed" />
+        <text x="60" y="50" font-family="Arial, sans-serif" font-size="12" fill="#333">Navegação Especial/Oculta</text>
+
+        <rect x="200" y="10" width="30" height="30" class="screen" />
+        <text x="240" y="30" font-family="Arial, sans-serif" font-size="12" fill="#333">Tela Principal</text>
+
+        <rect x="200" y="50" width="30" height="20" class="component" />
+        <text x="240" y="65" font-family="Arial, sans-serif" font-size="12" fill="#333">Componente</text>
+    </g>
+
+
+
+    <!-- Footer -->
+    <text x="700" y="995" font-family="Arial, sans-serif" font-size="11" fill="#999" text-anchor="middle"
+        font-style="italic">
+        Total: 5 telas principais | Framework: Flutter | Navegação: GetX Router
+    </text>
+
+</svg>

@@ -1,0 +1,334 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1750">
+    <defs>
+        <style>
+            .table-box {
+                fill: #fff;
+                stroke: #1976d2;
+                stroke-width: 2;
+            }
+
+            .table-header {
+                fill: #1976d2;
+            }
+
+            .vital-signs {
+                fill: #ffebee;
+                stroke: #c62828;
+                stroke-width: 2;
+            }
+
+            .activity {
+                fill: #e8f5e9;
+                stroke: #2e7d32;
+                stroke-width: 2;
+            }
+
+            .sleep {
+                fill: #e3f2fd;
+                stroke: #1565c0;
+                stroke-width: 2;
+            }
+
+            .body {
+                fill: #fff3e0;
+                stroke: #e65100;
+                stroke-width: 2;
+            }
+
+            .service-box {
+                fill: #f3e5f5;
+                stroke: #6a1b9a;
+                stroke-width: 2;
+            }
+
+            .db-box {
+                fill: #eceff1;
+                stroke: #455a64;
+                stroke-width: 3;
+            }
+
+            .arrow {
+                fill: none;
+                stroke: #333;
+                stroke-width: 3;
+                marker-end: url(#arrowhead);
+            }
+
+            .arrow-flow {
+                fill: none;
+                stroke: #1976d2;
+                stroke-width: 3;
+                marker-end: url(#arrowhead-blue);
+            }
+
+            text {
+                font-family: 'Segoe UI', Arial, sans-serif;
+                font-size: 14px;
+            }
+
+            .title {
+                font-size: 22px;
+                font-weight: bold;
+            }
+
+            .subtitle {
+                font-size: 16px;
+                font-weight: bold;
+            }
+
+            .table-name {
+                font-size: 18px;
+                font-weight: bold;
+                fill: #fff;
+            }
+
+            .field-name {
+                font-family: 'Courier New', monospace;
+                font-size: 13px;
+                fill: #d32f2f;
+                font-weight: bold;
+            }
+
+            .field-desc {
+                font-size: 12px;
+                fill: #555;
+            }
+
+            .label {
+                font-size: 13px;
+                fill: #333;
+            }
+
+            .icon {
+                font-size: 32px;
+            }
+        </style>
+        <marker id="arrowhead" markerWidth="12" markerHeight="12" refX="11" refY="3" orient="auto">
+            <polygon points="0 0, 12 3, 0 6" fill="#333" />
+        </marker>
+        <marker id="arrowhead-blue" markerWidth="12" markerHeight="12" refX="11" refY="3" orient="auto">
+            <polygon points="0 0, 12 3, 0 6" fill="#1976d2" />
+        </marker>
+    </defs>
+
+    <!-- TITLE -->
+    <text x="800" y="50" text-anchor="middle" class="title">Organização de Dados de Saúde - EVA-DB (PostgreSQL)</text>
+    <text x="800" y="80" text-anchor="middle" class="subtitle">4 Tabelas Principais de Dados de Saúde</text>
+
+    <!-- DATABASE BOX -->
+    <rect x="50" y="370" width="1500" height="1050" rx="10" class="db-box" />
+    <text x="800" y="420" text-anchor="middle" class="title">🗄️ EVA-DB (PostgreSQL)</text>
+    <text x="800" y="450" text-anchor="middle" class="subtitle">4 Tabelas Especializadas para Dados de Saúde</text>
+
+    <!-- TABLE 1: SINAIS VITAIS -->
+    <rect x="100" y="490" width="680" height="380" rx="8" class="vital-signs" />
+    <rect x="100" y="490" width="680" height="60" rx="8" class="table-header" />
+    <text x="440" y="530" text-anchor="middle" class="table-name">1. SinaisVitaisHealth</text>
+
+    <text x="130" y="585" class="label" font-weight="bold" font-size="15">❤️ Para Batimentos e Pressão</text>
+    <text x="130" y="615" class="label">O que guarda: Frequência Cardíaca (BPM), Pressão Arterial,</text>
+    <text x="130" y="635" class="label">Nível de Oxigênio (SpO2), Temperatura e Glicose</text>
+
+    <text x="130" y="675" class="label" font-weight="bold">Informações Chave:</text>
+
+    <text x="150" y="705" class="field-name">valor</text>
+    <text x="230" y="705" class="field-desc">O número (Ex: 80, 120/80)</text>
+
+    <text x="150" y="735" class="field-name">tipo</text>
+    <text x="230" y="735" class="field-desc">"bpm", "pressao", "spo2", "temperatura", "glicose"</text>
+
+    <text x="150" y="765" class="field-name">data_hora</text>
+    <text x="230" y="765" class="field-desc">Momento exato da coleta (Timestamp)</text>
+
+    <text x="150" y="795" class="field-name">confianca</text>
+    <text x="230" y="795" class="field-desc">Precisão da leitura (alta/média/baixa)</text>
+
+    <text x="150" y="825" class="field-name">idoso_id</text>
+    <text x="230" y="825" class="field-desc">Referência ao usuário</text>
+
+    <!-- Exemplos -->
+    <rect x="120" y="845" width="630" height="15" fill="#fff" opacity="0.3" />
+    <text x="440" y="857" text-anchor="middle" class="field-desc" font-style="italic">Ex: 75 BPM, 120/80 mmHg, 98% SpO2,
+        36.5°C, 95 mg/dL</text>
+
+    <!-- TABLE 2: ATIVIDADE -->
+    <rect x="820" y="490" width="680" height="380" rx="8" class="activity" />
+    <rect x="820" y="490" width="680" height="60" rx="8" class="table-header" />
+    <text x="1160" y="530" text-anchor="middle" class="table-name">2. Atividade</text>
+
+    <text x="850" y="585" class="label" font-weight="bold" font-size="15">🚶 Para Movimento e Exercício</text>
+    <text x="850" y="615" class="label">O que guarda: Passos, Calorias Queimadas,</text>
+    <text x="850" y="635" class="label">Distância Percorrida, Tempo de Atividade</text>
+
+    <text x="850" y="675" class="label" font-weight="bold">Informações Chave:</text>
+
+    <text x="870" y="705" class="field-name">passos</text>
+    <text x="950" y="705" class="field-desc">Quantidade de passos (Ex: 3500)</text>
+
+    <text x="870" y="735" class="field-name">calorias</text>
+    <text x="950" y="735" class="field-desc">Calorias gastas (Ex: 150 kcal)</text>
+
+    <text x="870" y="765" class="field-name">distancia_metros</text>
+    <text x="950" y="765" class="field-desc">Distância percorrida (Ex: 2500m)</text>
+
+    <text x="870" y="795" class="field-name">duracao_minutos</text>
+    <text x="950" y="795" class="field-desc">Tempo de exercício (Ex: 45 min)</text>
+
+    <text x="870" y="825" class="field-name">data_inicio</text>
+    <text x="950" y="825" class="field-desc">Quando começou a atividade</text>
+
+    <!-- Exemplos -->
+    <rect x="840" y="845" width="630" height="15" fill="#fff" opacity="0.3" />
+    <text x="1160" y="857" text-anchor="middle" class="field-desc" font-style="italic">Ex: 5.500 passos, 220 kcal, 4.2
+        km, 60 minutos</text>
+
+    <!-- TABLE 3: SONO -->
+    <rect x="100" y="910" width="680" height="380" rx="8" class="sleep" />
+    <rect x="100" y="910" width="680" height="60" rx="8" class="table-header" />
+    <text x="440" y="950" text-anchor="middle" class="table-name">3. Sono</text>
+
+    <text x="130" y="1005" class="label" font-weight="bold" font-size="15">😴 Para Descanso e Qualidade do Sono</text>
+    <text x="130" y="1035" class="label">O que guarda: Qualidade e Duração do sono,</text>
+    <text x="130" y="1055" class="label">Fases do sono (Profundo, Leve, REM, Acordado)</text>
+
+    <text x="130" y="1095" class="label" font-weight="bold">Informações Chave:</text>
+
+    <text x="150" y="1125" class="field-name">tempo_total</text>
+    <text x="230" y="1125" class="field-desc">Horas dormidas (Ex: 7.5h)</text>
+
+    <text x="150" y="1155" class="field-name">profundo</text>
+    <text x="230" y="1155" class="field-desc">Tempo de sono profundo (Ex: 2h)</text>
+
+    <text x="150" y="1185" class="field-name">leve</text>
+    <text x="230" y="1185" class="field-desc">Tempo de sono leve (Ex: 4.5h)</text>
+
+    <text x="150" y="1215" class="field-name">rem</text>
+    <text x="230" y="1215" class="field-desc">Tempo de sono REM (Ex: 1.5h)</text>
+
+    <text x="150" y="1245" class="field-name">acordado</text>
+    <text x="230" y="1245" class="field-desc">Tempo acordado durante a noite (Ex: 30min)</text>
+
+    <!-- Exemplos -->
+    <rect x="120" y="1265" width="630" height="15" fill="#fff" opacity="0.3" />
+    <text x="440" y="1277" text-anchor="middle" class="field-desc" font-style="italic">Ex: 7h30 total (2h profundo, 4h
+        leve, 1h REM, 30min acordado)</text>
+
+    <!-- TABLE 4: MEDIÇÃO CORPORAL -->
+    <rect x="820" y="910" width="680" height="380" rx="8" class="body" />
+    <rect x="820" y="910" width="680" height="60" rx="8" class="table-header" />
+    <text x="1160" y="950" text-anchor="middle" class="table-name">4. MedicaoCorporal</text>
+
+    <text x="850" y="1005" class="label" font-weight="bold" font-size="15">⚖️ Para Peso e Medidas do Corpo</text>
+    <text x="850" y="1035" class="label">O que guarda: Peso, Altura, IMC,</text>
+    <text x="850" y="1055" class="label">Composição Corporal (% Gordura, Músculo)</text>
+
+    <text x="850" y="1095" class="label" font-weight="bold">Informações Chave:</text>
+
+    <text x="870" y="1125" class="field-name">peso_kg</text>
+    <text x="950" y="1125" class="field-desc">Peso em quilogramas (Ex: 70.5 kg)</text>
+
+    <text x="870" y="1155" class="field-name">altura_cm</text>
+    <text x="950" y="1155" class="field-desc">Altura em centímetros (Ex: 175 cm)</text>
+
+    <text x="870" y="1185" class="field-name">imc</text>
+    <text x="950" y="1185" class="field-desc">Índice de Massa Corporal calculado (Ex: 23.0)</text>
+
+    <text x="870" y="1215" class="field-name">gordura_percentual</text>
+    <text x="950" y="1215" class="field-desc">Percentual de gordura (Ex: 22%)</text>
+
+    <text x="870" y="1245" class="field-name">data_medicao</text>
+    <text x="950" y="1245" class="field-desc">Data da medição</text>
+
+    <!-- Exemplos -->
+    <rect x="840" y="1265" width="630" height="15" fill="#fff" opacity="0.3" />
+    <text x="1160" y="1277" text-anchor="middle" class="field-desc" font-style="italic">Ex: 72 kg, 170 cm, IMC 24.9, 20%
+        gordura, 38% músculo</text>
+
+    <!-- FLOW DIAGRAM AT TOP -->
+    <text x="800" y="150" text-anchor="middle" class="subtitle">📊 Fluxo de Dados de Saúde</text>
+
+    <!-- Smartwatch -->
+    <rect x="100" y="190" width="200" height="100" rx="8" class="service-box" />
+    <text x="200" y="225" text-anchor="middle" class="icon">⌚</text>
+    <text x="200" y="255" text-anchor="middle" font-weight="bold">Smartwatch</text>
+    <text x="200" y="275" text-anchor="middle" class="label">(Apple/Samsung)</text>
+
+    <!-- HealthService -->
+    <rect x="370" y="190" width="200" height="100" rx="8" class="service-box" />
+    <text x="470" y="225" text-anchor="middle" class="icon">📱</text>
+    <text x="470" y="255" text-anchor="middle" font-weight="bold">HealthService</text>
+    <text x="470" y="275" text-anchor="middle" class="label">(Mobile - Flutter)</text>
+
+    <!-- ApiService -->
+    <rect x="640" y="190" width="200" height="100" rx="8" class="service-box" />
+    <text x="740" y="225" text-anchor="middle" class="icon">📦</text>
+    <text x="740" y="255" text-anchor="middle" font-weight="bold">ApiService</text>
+    <text x="740" y="275" text-anchor="middle" class="label">(Empacotamento)</text>
+
+    <!-- Backend Python -->
+    <rect x="910" y="190" width="200" height="100" rx="8" class="service-box" />
+    <text x="1010" y="225" text-anchor="middle" class="icon">🐍</text>
+    <text x="1010" y="255" text-anchor="middle" font-weight="bold">Backend Python</text>
+    <text x="1010" y="275" text-anchor="middle" class="label">(FastAPI)</text>
+
+    <!-- Repository -->
+    <rect x="1180" y="190" width="200" height="100" rx="8" class="service-box" />
+    <text x="1280" y="225" text-anchor="middle" class="icon">🗂️</text>
+    <text x="1280" y="255" text-anchor="middle" font-weight="bold">Repository</text>
+    <text x="1280" y="275" text-anchor="middle" class="label">(Persistência)</text>
+
+    <!-- Flow Arrows -->
+    <path d="M 300 240 L 370 240" class="arrow-flow" />
+    <text x="335" y="230" text-anchor="middle" class="label" fill="#1976d2">Dados</text>
+    <text x="335" y="265" text-anchor="middle" class="label" fill="#1976d2">Brutos</text>
+
+    <path d="M 570 240 L 640 240" class="arrow-flow" />
+    <text x="605" y="230" text-anchor="middle" class="label" fill="#1976d2">Coleta</text>
+
+    <path d="M 840 240 L 910 240" class="arrow-flow" />
+    <text x="875" y="230" text-anchor="middle" class="label" fill="#1976d2">HTTP</text>
+    <text x="875" y="265" text-anchor="middle" class="label" fill="#1976d2">POST</text>
+
+    <path d="M 1110 240 L 1180 240" class="arrow-flow" />
+    <text x="1145" y="230" text-anchor="middle" class="label" fill="#1976d2">Processa</text>
+
+    <!-- Arrow to DB -->
+    <path d="M 1280 290 L 1280 330 L 800 330 L 800 370" class="arrow-flow" />
+    <text x="1040" y="320" text-anchor="middle" class="label" fill="#1976d2" font-weight="bold">Direciona para tabela
+        correta</text>
+
+    <!-- Distribution arrows from Repository to tables -->
+    <path d="M 800 370 L 300 490" class="arrow-flow" stroke-dasharray="5,5" />
+    <path d="M 800 370 L 1020 490" class="arrow-flow" stroke-dasharray="5,5" />
+    <path d="M 800 370 L 300 910" class="arrow-flow" stroke-dasharray="5,5" />
+    <path d="M 800 370 L 1020 910" class="arrow-flow" stroke-dasharray="5,5" />
+
+    <!-- SUMMARY BOX -->
+    <rect x="100" y="1330" width="1400" height="100" rx="8" fill="#fff9c4" stroke="#f57c00" stroke-width="2" />
+    <text x="800" y="1365" text-anchor="middle" class="subtitle">🔄 Resumo do Fluxo Completo</text>
+    <text x="800" y="1395" text-anchor="middle" class="label">
+        Smartwatch coleta → HealthService (Mobile) pega dados brutos → ApiService empacota →
+    </text>
+    <text x="800" y="1415" text-anchor="middle" class="label">
+        Backend Python recebe (HTTP POST) → Repository direciona para a tabela correta (1, 2, 3 ou 4)
+    </text>
+
+    <!-- BENEFITS BOX -->
+    <rect x="100" y="1460" width="1400" height="180" rx="8" fill="#e8f5e9" stroke="#2e7d32" stroke-width="2" />
+    <text x="800" y="1500" text-anchor="middle" class="subtitle">✅ Benefícios da Separação em 4 Tabelas</text>
+
+    <text x="150" y="1540" class="label">• <tspan font-weight="bold">Organização Clara:</tspan> Cada tipo de dado tem
+        seu lugar específico</text>
+    <text x="150" y="1565" class="label">• <tspan font-weight="bold">Queries Eficientes:</tspan> Buscar apenas dados de
+        sono, ou apenas sinais vitais fica mais rápido</text>
+    <text x="150" y="1590" class="label">• <tspan font-weight="bold">Escalabilidade:</tspan> Fácil adicionar novos
+        campos sem afetar outras tabelas</text>
+    <text x="150" y="1615" class="label">• <tspan font-weight="bold">Análise Focada:</tspan> O Modelo Y pode analisar
+        cada categoria de forma independente</text>
+
+    <!-- FOOTER NOTE -->
+    <text x="800" y="1680" text-anchor="middle" class="label" font-style="italic">
+        Todas as tabelas possuem campos comuns: id (PK), idoso_id (FK), created_at, updated_at
+    </text>
+
+</svg>
