@@ -1,0 +1,253 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1600">
+    <defs>
+        <style>
+            .step-box {
+                fill: #e3f2fd;
+                stroke: #1976d2;
+                stroke-width: 2;
+            }
+
+            .process-box {
+                fill: #fff3e0;
+                stroke: #e65100;
+                stroke-width: 2;
+            }
+
+            .analysis-box {
+                fill: #f3e5f5;
+                stroke: #6a1b9a;
+                stroke-width: 2;
+            }
+
+            .execution-box {
+                fill: #e8f5e9;
+                stroke: #2e7d32;
+                stroke-width: 2;
+            }
+
+            .db-box {
+                fill: #eceff1;
+                stroke: #455a64;
+                stroke-width: 2;
+            }
+
+            .user-box {
+                fill: #fce4ec;
+                stroke: #c2185b;
+                stroke-width: 2;
+            }
+
+            .arrow {
+                fill: none;
+                stroke: #333;
+                stroke-width: 3;
+                marker-end: url(#arrowhead);
+            }
+
+            .arrow-async {
+                fill: none;
+                stroke: #9c27b0;
+                stroke-width: 2.5;
+                stroke-dasharray: 5, 5;
+                marker-end: url(#arrowhead-purple);
+            }
+
+            text {
+                font-family: 'Segoe UI', Arial, sans-serif;
+                font-size: 14px;
+            }
+
+            .title {
+                font-size: 24px;
+                font-weight: bold;
+            }
+
+            .subtitle {
+                font-size: 18px;
+                font-weight: bold;
+            }
+
+            .step-num {
+                font-size: 28px;
+                font-weight: bold;
+                fill: #1976d2;
+            }
+
+            .label {
+                font-size: 13px;
+                fill: #333;
+            }
+
+            .code {
+                font-family: 'Courier New', monospace;
+                font-size: 12px;
+                fill: #d32f2f;
+            }
+
+            .highlight {
+                font-weight: bold;
+                fill: #e65100;
+            }
+        </style>
+        <marker id="arrowhead" markerWidth="12" markerHeight="12" refX="11" refY="3" orient="auto">
+            <polygon points="0 0, 12 3, 0 6" fill="#333" />
+        </marker>
+        <marker id="arrowhead-purple" markerWidth="12" markerHeight="12" refX="11" refY="3" orient="auto">
+            <polygon points="0 0, 12 3, 0 6" fill="#9c27b0" />
+        </marker>
+    </defs>
+
+    <!-- TITLE -->
+    <text x="600" y="50" text-anchor="middle" class="title">Fluxo REAL TIME - Análise de Ferramentas</text>
+    <text x="600" y="80" text-anchor="middle" class="subtitle">Como o EVA detecta e executa ações automaticamente</text>
+
+    <!-- STEP 1: User speaks -->
+    <g transform="translate(100, 130)">
+        <text x="0" y="0" class="step-num">1</text>
+        <rect x="50" y="-35" width="900" height="80" rx="8" class="user-box" />
+        <text x="500" y="0" text-anchor="middle" class="subtitle">Idoso fala:</text>
+        <text x="500" y="30" text-anchor="middle" class="label" font-size="16">"Me lembre de tomar remédio às
+            14h"</text>
+    </g>
+
+    <!-- Arrow down -->
+    <path d="M 600 175 L 600 240" class="arrow" />
+
+    <!-- STEP 2: Gemini Audio processes -->
+    <g transform="translate(100, 240)">
+        <text x="0" y="30" class="step-num">2</text>
+        <rect x="50" y="0" width="900" height="70" rx="8" class="process-box" />
+        <text x="500" y="30" text-anchor="middle" class="subtitle" fill="#e65100">Gemini Audio processa e gera
+            transcrição</text>
+        <text x="500" y="55" text-anchor="middle" class="label">Speech-to-Text em tempo real</text>
+    </g>
+
+    <!-- Arrow down -->
+    <path d="M 600 310 L 600 380" class="arrow" />
+
+    <!-- STEP 3: Log -->
+    <g transform="translate(100, 380)">
+        <text x="0" y="30" class="step-num">3</text>
+        <rect x="50" y="0" width="900" height="70" rx="8" class="step-box" />
+        <text x="500" y="30" text-anchor="middle" class="code">Linha 249: log.Printf("🗣️ IDOSO: %s", userText)</text>
+        <text x="500" y="55" text-anchor="middle" class="label">Registra no log do servidor</text>
+    </g>
+
+    <!-- Arrow down -->
+    <path d="M 600 450 L 600 520" class="arrow" />
+
+    <!-- STEP 4: Save transcription (async) -->
+    <g transform="translate(100, 520)">
+        <text x="0" y="30" class="step-num">4</text>
+        <rect x="50" y="0" width="900" height="90" rx="8" class="db-box" />
+        <text x="500" y="30" text-anchor="middle" class="code">Linha 250: go s.saveTranscription(...)</text>
+        <text x="500" y="55" text-anchor="middle" class="highlight">← Salva no banco (GOROUTINE)</text>
+        <text x="500" y="75" text-anchor="middle" class="label">Execução paralela, não bloqueia o fluxo</text>
+    </g>
+
+    <!-- Async arrow to DB -->
+    <path d="M 950 565 L 1050 565" class="arrow-async" />
+    <rect x="1070" y="535" width="80" height="60" rx="5" fill="#eceff1" stroke="#455a64" stroke-width="2" />
+    <text x="1110" y="565" text-anchor="middle" class="label" font-size="12">PostgreSQL</text>
+    <text x="1110" y="582" text-anchor="middle" class="label" font-size="11">Tabela:</text>
+    <text x="1110" y="595" text-anchor="middle" class="code" font-size="10">transcricoes</text>
+
+    <!-- Arrow down -->
+    <path d="M 600 610 L 600 680" class="arrow" />
+
+    <!-- STEP 5: Analyze for tools (THE KEY MOMENT) -->
+    <g transform="translate(100, 680)">
+        <text x="0" y="40" class="step-num">5</text>
+        <rect x="50" y="0" width="900" height="110" rx="8" class="analysis-box" />
+        <rect x="60" y="10" width="880" height="90" rx="5" fill="#fff" opacity="0.3" />
+        <text x="500" y="35" text-anchor="middle" class="code" font-size="15">Linha 252: go
+            s.analyzeForTools(...)</text>
+        <text x="500" y="60" text-anchor="middle" class="highlight" font-size="18">← ANALISA EM REAL TIME!</text>
+        <text x="500" y="85" text-anchor="middle" class="label">Envia transcrição para análise de intenção
+            (paralelo)</text>
+    </g>
+
+    <!-- Arrow down -->
+    <path d="M 600 790 L 600 860" class="arrow" />
+
+    <!-- STEP 6: ToolsClient sends to Gemini -->
+    <g transform="translate(100, 860)">
+        <text x="0" y="40" class="step-num">6</text>
+        <rect x="50" y="0" width="900" height="100" rx="8" class="analysis-box" />
+        <text x="500" y="35" text-anchor="middle" class="subtitle" fill="#6a1b9a">ToolsClient envia para Gemini 2.5
+            Flash</text>
+        <text x="500" y="60" text-anchor="middle" class="label">POST /generateContent com prompt de análise</text>
+        <text x="500" y="80" text-anchor="middle" class="label" font-style="italic">Payload: "Analise se há necessidade
+            de ferramenta: [transcrição]"</text>
+    </g>
+
+    <!-- Arrow down -->
+    <path d="M 600 960 L 600 1030" class="arrow" />
+
+    <!-- STEP 7: Tool detected -->
+    <g transform="translate(100, 1030)">
+        <text x="0" y="40" class="step-num">7</text>
+        <rect x="50" y="0" width="900" height="100" rx="8" class="analysis-box" />
+        <text x="500" y="35" text-anchor="middle" class="subtitle" fill="#6a1b9a">Detecta: schedule_appointment</text>
+        <text x="500" y="60" text-anchor="middle" class="code">{"tool": "schedule_appointment", "params": {</text>
+        <text x="500" y="80" text-anchor="middle" class="code"> "tipo": "medicamento", "hora": "14:00"}}</text>
+    </g>
+
+    <!-- Arrow down -->
+    <path d="M 600 1130 L 600 1200" class="arrow" />
+
+    <!-- STEP 8: Execute tool -->
+    <g transform="translate(100, 1200)">
+        <text x="0" y="40" class="step-num">8</text>
+        <rect x="50" y="0" width="900" height="100" rx="8" class="execution-box" />
+        <text x="500" y="35" text-anchor="middle" class="subtitle" fill="#2e7d32">executeTool() executa
+            imediatamente</text>
+        <text x="500" y="60" text-anchor="middle" class="label">Backend chama a função correspondente</text>
+        <text x="500" y="80" text-anchor="middle" class="code">scheduleAppointment(idoso_id, tipo, data, hora)</text>
+    </g>
+
+    <!-- Arrow down -->
+    <path d="M 600 1300 L 600 1370" class="arrow" />
+
+    <!-- STEP 9: Save and notify -->
+    <g transform="translate(100, 1370)">
+        <text x="0" y="50" class="step-num">9</text>
+        <rect x="50" y="0" width="900" height="130" rx="8" class="execution-box" />
+        <text x="500" y="35" text-anchor="middle" class="subtitle" fill="#2e7d32">Salva no banco + Notifica
+            cuidadores</text>
+
+        <!-- Two columns -->
+        <rect x="80" y="50" width="390" height="60" rx="5" fill="#fff" stroke="#2e7d32" stroke-width="1" />
+        <text x="275" y="75" text-anchor="middle" class="code" font-size="11">INSERT INTO agendamentos</text>
+        <text x="275" y="92" text-anchor="middle" class="label" font-size="11">(idoso_id, tipo, data_hora,
+            status)</text>
+
+        <rect x="500" y="50" width="420" height="60" rx="5" fill="#fff" stroke="#f57c00" stroke-width="1" />
+        <text x="710" y="75" text-anchor="middle" class="code" font-size="11">Firebase Cloud Messaging</text>
+        <text x="710" y="92" text-anchor="middle" class="label" font-size="11">Push notification aos cuidadores</text>
+    </g>
+
+    <!-- Timeline indicator on the left -->
+    <line x1="80" y1="130" x2="80" y2="1500" stroke="#1976d2" stroke-width="3" stroke-dasharray="10,10" />
+    <text x="35" y="800" text-anchor="middle" class="label" fill="#1976d2" transform="rotate(-90 35 800)" font-size="16"
+        font-weight="bold">
+        TEMPO REAL (&lt; 2 segundos)
+    </text>
+
+    <!-- Key insight box -->
+    <rect x="100" y="1530" width="1000" height="120" rx="8" fill="#fff9c4" stroke="#f57c00" stroke-width="3" />
+    <text x="600" y="1565" text-anchor="middle" class="subtitle" fill="#e65100">🔑 Insight Chave: Processamento
+        Paralelo</text>
+    <text x="600" y="1595" text-anchor="middle" class="label">
+        • <tspan font-weight="bold">saveTranscription()</tspan> e <tspan font-weight="bold">analyzeForTools()</tspan>
+        rodam em <tspan font-weight="bold">goroutines</tspan> (paralelo)
+    </text>
+    <text x="600" y="1620" text-anchor="middle" class="label">
+        • O idoso continua conversando enquanto o sistema salva dados e analisa intenções
+    </text>
+    <text x="600" y="1645" text-anchor="middle" class="label">
+        • <tspan font-weight="bold">Latência ultra-baixa:</tspan> O agendamento é criado antes mesmo da resposta de voz
+        terminar
+    </text>
+
+</svg>

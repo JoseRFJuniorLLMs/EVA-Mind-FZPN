@@ -353,12 +353,11 @@ func (s *SignalingServer) registerClient(client *PCMClient, data map[string]inte
 		},
 	)
 
-	// ✅ Enviar instruções e tools
+	// ✅ FIX: Modo de voz NÃO usa tools (conflito com AUDIO modality)
 	instructions := signaling.BuildInstructions(client.IdosoID, s.db.GetConnection())
-	tools := gemini.GetDefaultTools()
 
 	log.Printf("🚀 Iniciando sessão Gemini...")
-	err = client.GeminiClient.StartSession(instructions, tools)
+	err = client.GeminiClient.StartSession(instructions, nil)
 	if err != nil {
 		log.Printf("❌ Erro ao iniciar sessão: %v", err)
 		s.sendJSON(client, map[string]string{"type": "error", "message": "Session error"})

@@ -36,6 +36,7 @@ type WebSocketSession struct {
 	IdosoID      int64
 	WSConn       *websocket.Conn
 	GeminiClient *gemini.Client
+	ToolsClient  *gemini.ToolsClient // ✅ DUAL-MODEL: Cliente para análise de tools
 	ctx          context.Context
 	cancel       context.CancelFunc
 	lastActivity time.Time
@@ -248,6 +249,8 @@ func (s *SignalingServer) handleGeminiResponse(session *WebSocketSession, respon
 		if userText, ok := inputTrans["text"].(string); ok && userText != "" {
 			log.Printf("🗣️ [NATIVE] IDOSO: %s", userText)
 			go s.saveTranscription(session.IdosoID, "user", userText)
+			// ✅ DUAL-MODEL: Analisar transcrição para detectar tools
+			go s.analyzeForTools(session, userText, "user")
 		}
 	}
 
@@ -408,13 +411,21 @@ func (s *SignalingServer) executeTool(session *WebSocketSession, fnCall map[stri
 	name, _ := fnCall["name"].(string)
 	args, _ := fnCall["args"].(map[string]interface{})
 
+	log.Printf("🛠️ [TOOL] Executando: %s", name)
+
 	switch name {
 	case "alert_family":
 		reason, _ := args["reason"].(string)
-		log.Printf("🚨 Alerta enviado: %s", reason)
+		severity, _ := args["severity"].(string)
+		if severity == "" {
+			severity = "alta"
+		}
+		log.Printf("🚨 Alerta enviado: %s (severidade: %s)", reason, severity)
 
-		if err := gemini.AlertFamily(s.db, s.pushService, session.IdosoID, reason); err != nil {
-			log.Printf("❌ Erro ao enviar alerta")
+		if err := gemini.AlertFamilyWithSeverity(s.db, s.pushService, session.IdosoID, reason, severity); err != nil {
+			log.Printf("❌ Erro ao enviar alerta: %v", err)
+		} else {
+			log.Printf("✅ Família alertada com sucesso")
 		}
 
 	case "confirm_medication":
@@ -422,8 +433,80 @@ func (s *SignalingServer) executeTool(session *WebSocketSession, fnCall map[stri
 		log.Printf("💊 Medicamento confirmado: %s", medication)
 
 		if err := gemini.ConfirmMedication(s.db, s.pushService, session.IdosoID, medication); err != nil {
-			log.Printf("❌ Erro ao confirmar medicamento")
+			log.Printf("❌ Erro ao confirmar medicamento: %v", err)
+		} else {
+			log.Printf("✅ Medicamento confirmado no sistema")
 		}
+
+	case "schedule_appointment":
+		timestamp, _ := args["timestamp"].(string)
+		tipo, _ := args["type"].(string)
+		descricao, _ := args["description"].(string)
+		log.Printf("📅 Agendamento: %s - %s às %s", tipo, descricao, timestamp)
+
+		if err := gemini.ScheduleAppointment(s.db, session.IdosoID, timestamp, tipo, descricao); err != nil {
+			log.Printf("❌ Erro ao agendar: %v", err)
+		} else {
+			log.Printf("✅ Agendamento criado com sucesso")
+		}
+
+	case "call_family_webrtc":
+		log.Printf("📹 Iniciando chamada de vídeo para família")
+		// TODO: Implementar lógica de chamada WebRTC
+
+	case "call_central_webrtc":
+		log.Printf("📹 Iniciando chamada de vídeo para central")
+		// TODO: Implementar lógica de chamada WebRTC
+
+	case "call_doctor_webrtc":
+		log.Printf("📹 Iniciando chamada de vídeo para médico")
+		// TODO: Implementar lógica de chamada WebRTC
+
+	case "call_caregiver_webrtc":
+		log.Printf("📹 Iniciando chamada de vídeo para cuidador")
+		// TODO: Implementar lógica de chamada WebRTC
+
+	case "open_camera_analysis":
+		log.Printf("📸 Solicitando abertura de câmera para análise")
+		// TODO: Enviar comando para mobile abrir câmera
+
+	default:
+		log.Printf("⚠️ Tool desconhecida: %s", name)
+	}
+}
+
+// ✅ DUAL-MODEL: Analisa transcrição e executa tools se necessário
+func (s *SignalingServer) analyzeForTools(session *WebSocketSession, text string, role string) {
+	if session.ToolsClient == nil {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	log.Printf("🔍 [TOOLS] Analisando transcrição: \"%s\"", text)
+
+	toolCalls, err := session.ToolsClient.AnalyzeTranscription(ctx, text, role)
+	if err != nil {
+		log.Printf("⚠️ [TOOLS] Erro ao analisar: %v", err)
+		return
+	}
+
+	if len(toolCalls) == 0 {
+		log.Printf("✅ [TOOLS] Nenhuma tool detectada")
+		return
+	}
+
+	for _, tc := range toolCalls {
+		log.Printf("🛠️ [TOOLS] Executando: %s com args: %+v", tc.Name, tc.Args)
+
+		// Converter para formato esperado por executeTool
+		fnCall := map[string]interface{}{
+			"name": tc.Name,
+			"args": tc.Args,
+		}
+
+		s.executeTool(session, fnCall)
 	}
 }
 
@@ -496,7 +579,8 @@ func (s *SignalingServer) createSession(sessionID, cpf string, idosoID int64, co
 	}
 
 	instructions := BuildInstructions(idosoID, s.db)
-	if err := geminiClient.SendSetup(instructions, gemini.GetDefaultTools()); err != nil {
+	// ✅ FIX: Modo de voz NÃO usa tools (conflito com AUDIO modality)
+	if err := geminiClient.SendSetup(instructions, nil); err != nil {
 		cancel()
 		geminiClient.Close()
 		return nil, err
@@ -508,6 +592,7 @@ func (s *SignalingServer) createSession(sessionID, cpf string, idosoID int64, co
 		IdosoID:      idosoID,
 		WSConn:       conn,
 		GeminiClient: geminiClient,
+		ToolsClient:  gemini.NewToolsClient(s.cfg), // ✅ DUAL-MODEL: Cliente para tools
 		ctx:          ctx,
 		cancel:       cancel,
 		lastActivity: time.Now(),
