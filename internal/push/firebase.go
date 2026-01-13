@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"strings"
 	"time"
 
 	firebase "firebase.google.com/go/v4"
@@ -293,14 +292,6 @@ func IsInvalidTokenError(err error) bool {
 	if messaging.IsRegistrationTokenNotRegistered(err) || messaging.IsSenderIDMismatch(err) {
 		return true
 	}
-
-	// ✅ Adicionado: Verificação manual de string para erro 404 do Firebase
-	errStr := err.Error()
-	if strings.Contains(errStr, "Requested entity was not found") ||
-		strings.Contains(errStr, "registration-token-not-registered") {
-		return true
-	}
-
 	return false
 }
 
