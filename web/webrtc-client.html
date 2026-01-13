@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EVA Mobile WebRTC Client</title>
+    <style>
+        body {
+            margin: 0;
+            background: #000;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            color: white;
+            font-family: sans-serif;
+        }
+
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        #status {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 12px;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="status">Iniciando...</div>
+    <video id="localVideo" autoplay playsinline muted></video>
+    <!-- Remote video is audio-only in this scenario usually, but we keep structure -->
+    <video id="remoteVideo" autoplay playsinline style="display:none;"></video>
+
+    <script>
+        const API_BASE_URL = window.location.origin + "/api"; // Auto-detect backend URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const SESSION_ID = urlParams.get('session_id');
+        const ROLE = urlParams.get('role') || 'mobile';
+
+        const localVideo = document.getElementById('localVideo');
+        const statusDiv = document.getElementById('status');
+
+        let localStream;
+        let peerConnection;
+        const config = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' }
+            ]
+        };
+
+        function log(msg) {
+            console.log(`[WebRTC] ${msg}`);
+            statusDiv.innerText = msg;
+            // Send log to Flutter if available
+            if (window.flutter_inappwebview) {
+                window.flutter_inappwebview.callHandler('consoleLog', { message: msg });
+            }
+        }
+
+        async function start() {
+            if (!SESSION_ID) {
+                log("Erro: session_id ausente na URL");
+                return;
+            }
+
+            try {
+                // 1. Get User Media
+                localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                localVideo.srcObject = localStream;
+                log("Câmera iniciada");
+
+                // 2. Create Peer Connection
+                peerConnection = new RTCPeerConnection(config);
+
+                // Add tracks
+                localStream.getTracks().forEach(track => {
+                    peerConnection.addTrack(track, localStream);
+                });
+
+                // Handle ICE Candidates
+                peerConnection.onicecandidate = async (event) => {
+                    if (event.candidate) {
+                        await fetch(`${API_BASE_URL}/video/candidate`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                session_id: SESSION_ID,
+                                sender: 'mobile',
+                                type: 'candidate',
+                                payload: event.candidate.toJSON()
+                            })
+                        });
+                    }
+                };
+
+                // 3. Create Offer
+                const offer = await peerConnection.createOffer();
+                await peerConnection.setLocalDescription(offer);
+                log("Oferta SDP criada");
+
+                // 4. Send Create Session Request
+                const res = await fetch(`${API_BASE_URL}/video/session`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: SESSION_ID,
+                        sdp_offer: offer.sdp
+                    })
+                });
+
+                if (res.ok) {
+                    log("Sessão criada no servidor. Aguardando operador...");
+                    pollAnswer();
+                } else {
+                    log("Erro ao criar sessão no servidor");
+                }
+
+            } catch (e) {
+                log("Erro Fatal: " + e.message);
+                console.error(e);
+            }
+        }
+
+        async function pollAnswer() {
+            let answered = false;
+            const interval = setInterval(async () => {
+                if (answered) {
+                    clearInterval(interval);
+                    return;
+                }
+
+                try {
+                    const res = await fetch(`${API_BASE_URL}/video/session/${SESSION_ID}/answer`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data.status === 'answered' && data.sdp_answer) {
+                            answered = true;
+                            log("Operador atendeu! Conectando...");
+
+                            await peerConnection.setRemoteDescription(new RTCSessionDescription({
+                                type: 'answer',
+                                sdp: data.sdp_answer
+                            }));
+
+                            // Start polling for operator candidates if needed, 
+                            // but usually Offer/Answer is enough for simple STUN.
+                            // For complex networks, we would implement robust TURN/Trickle ICE here.
+                        }
+                    }
+                } catch (e) {
+                    console.error("Polling error", e);
+                }
+            }, 2000);
+        }
+
+        // Start immediately
+        start();
+    </script>
+</body>
+
+</html>
