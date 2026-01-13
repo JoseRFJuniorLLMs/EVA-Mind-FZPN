@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"sync"
 	"time"
 
@@ -471,10 +472,65 @@ func (s *SignalingServer) processGeminiResponse(client *PCMClient, resp map[stri
 	parts, _ := modelTurn["parts"].([]interface{})
 
 	audioCount := 0
+
 	for _, part := range parts {
 		p, ok := part.(map[string]interface{})
 		if !ok {
 			continue
+		}
+
+		// 1. Processar Texto (Delegation Protocol)
+		if text, hasText := p["text"].(string); hasText {
+			// Regex para capturar [[TOOL:nome:{arg}]]
+			// Ex: [[TOOL:google_search_retrieval:{"query": "clima sp"}]]
+			re := regexp.MustCompile(`\[\[TOOL:(\w+):({.*?})\]\]`)
+			matches := re.FindStringSubmatch(text)
+
+			if len(matches) == 3 {
+				toolName := matches[1]
+				argsJSON := matches[2]
+
+				log.Printf("🤖 [AGENT] Comando detectado: %s", toolName)
+
+				var args map[string]interface{}
+				if err := json.Unmarshal([]byte(argsJSON), &args); err == nil {
+					// Executar ferramenta
+					result := s.handleToolCall(client, toolName, args)
+
+					// TODO: Enviar resultado de volta para o modelo 2.5?
+					// Por enquanto, apenas executamos (alertas, agendamentos funcionam one-way)
+					// Para busca, precisaríamos injetar contexto.
+					log.Printf("🤖 [AGENT] Resultado da execução: %+v", result)
+
+					// Se for busca, tentar enviar de volta como User Message oculta?
+					// s.SendSystemMessage(client, fmt.Sprintf("System: Resultado da ferramenta %s: %v", toolName, result))
+				} else {
+					log.Printf("❌ [AGENT] Erro ao parsear args: %v", err)
+				}
+			}
+		}
+
+		// 2. Processar Áudio
+		// 1. Processar Texto (Delegation Protocol)
+		if text, hasText := p["text"].(string); hasText {
+			re := regexp.MustCompile(`\[\[TOOL:(\w+):({.*?})\]\]`)
+			matches := re.FindStringSubmatch(text)
+
+			if len(matches) == 3 {
+				toolName := matches[1]
+				argsJSON := matches[2]
+
+				log.Printf("🤖 [AGENT] Comando detectado: %s", toolName)
+
+				var args map[string]interface{}
+				if err := json.Unmarshal([]byte(argsJSON), &args); err == nil {
+					// Executar ferramenta (Delegation Pattern)
+					result := s.handleToolCall(client, toolName, args)
+					log.Printf("🤖 [AGENT] Resultado: %+v", result)
+				} else {
+					log.Printf("❌ [AGENT] Erro JSON: %v", err)
+				}
+			}
 		}
 
 		if data, hasData := p["inlineData"]; hasData {

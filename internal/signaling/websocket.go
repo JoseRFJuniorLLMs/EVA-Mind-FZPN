@@ -856,8 +856,24 @@ func BuildInstructions(idosoID int64, db *sql.DB) string {
 		instructions = strings.ReplaceAll(instructions, tag, "")
 	}
 
-	// 5. ANEXAR DOSSIÊ AO FINAL
-	finalInstructions := instructions + dossier
+	// 5. AGENT DELEGATION PROTOCOL (Para Gemini 2.5)
+	agentProtocol := `
+	
+	IMPORTANTE - PROTOCOLO DE FERRAMENTAS:
+	Você está rodando em um modelo focado em Áudio e NÃO pode executar ferramentas nativamente.
+	Se você precisar realizar uma ação (Pesquisar, Agendar, Ligar) ou buscar informações externas:
+	1. Avise o usuário que vai verificar: "Só um momento, vou verificar isso..." ou "Vou agendar para você, um instante...".
+	2. Em seguida, GERE IMEDIATAMENTE um comando de texto oculto no formato JSON-in-TEXT:
+	   [[TOOL:google_search_retrieval:{"query": "..."}]]
+	   [[TOOL:schedule_appointment:{"type": "...", "description": "...", "timestamp": "..."}]]
+	   [[TOOL:alert_family:{"reason": "...", "severity": "..."}]]
+
+	NÃO invente dados. Se não souber, use o comando de busca [[TOOL:google_search_retrieval:{"query": "..."}]].
+	O sistema irá processar esse comando e te devolver a resposta.
+	`
+
+	// 6. ANEXAR DOSSIÊ AO FINAL
+	finalInstructions := instructions + agentProtocol + dossier
 
 	log.Printf("✅ [BuildInstructions] Instruções finais geradas (%d chars)", len(finalInstructions))
 	return finalInstructions

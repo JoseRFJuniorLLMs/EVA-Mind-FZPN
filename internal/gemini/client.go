@@ -7,6 +7,7 @@ import (
 	"eva-mind/internal/config"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -54,6 +55,17 @@ func (c *Client) SetCallbacks(onAudio AudioCallback, onToolCall ToolCallCallback
 func (c *Client) SendSetup(instructions string, tools []interface{}) error {
 	// ✅ CORRETO: Gemini SEMPRE retorna 24kHz quando usa response_modalities: ["AUDIO"]
 	// NÃO existe campo sample_rate_hertz na API!
+	// 🚨 PROTECTION: Gemini 2.5 Preview NÃO suporta Tools nativas + Áudio.
+	// Se estivermos usando o 2.5, ignoramos as tools na configuração para evitar Crash (Erro 1008)
+	// A delegação será feita via Texto/Prompt.
+	var finalTools []interface{}
+	if strings.Contains(c.cfg.ModelID, "gemini-2.5") {
+		log.Printf("🛡️ DETECTADO GEMINI 2.5: Desabilitando tools nativas para evitar conflito de modalidade.")
+		finalTools = nil
+	} else {
+		finalTools = tools
+	}
+
 	setupMsg := map[string]interface{}{
 		"setup": map[string]interface{}{
 			"model": fmt.Sprintf("models/%s", c.cfg.ModelID),
@@ -72,7 +84,7 @@ func (c *Client) SendSetup(instructions string, tools []interface{}) error {
 					{"text": instructions},
 				},
 			},
-			"tools": tools,
+			"tools": finalTools,
 		},
 	}
 
