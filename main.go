@@ -226,6 +226,49 @@ func (s *SignalingServer) handleClientMessages(client *PCMClient) {
 				s.sendJSON(client, map[string]string{"type": "session_created", "status": "ready"})
 				log.Printf("✅ session_created enviado para %s", client.CPF)
 
+			case "start_video_cascade":
+				log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+				log.Printf("🎥 START_VIDEO_CASCADE RECEBIDO")
+				log.Printf("👤 CPF: %s", client.CPF)
+				log.Printf("🆔 Session ID: %v", data["session_id"])
+				log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+				if client.CPF == "" {
+					log.Printf("❌ ERRO: Cliente não registrado!")
+					s.sendJSON(client, map[string]string{"type": "error", "message": "Register first"})
+					continue
+				}
+
+				// Extrair dados
+				sessionID, _ := data["session_id"].(string)
+				sdpOffer, _ := data["sdp_offer"].(string)
+
+				if sessionID == "" || sdpOffer == "" {
+					log.Printf("❌ ERRO: Dados incompletos (session_id ou sdp_offer)")
+					s.sendJSON(client, map[string]string{"type": "error", "message": "Missing session_id or sdp_offer"})
+					continue
+				}
+
+				// Salvar sessão no banco
+				err := s.db.CreateVideoSession(sessionID, client.IdosoID, sdpOffer)
+				if err != nil {
+					log.Printf("❌ Erro ao criar sessão de vídeo: %v", err)
+					s.sendJSON(client, map[string]string{"type": "error", "message": "Failed to create session"})
+					continue
+				}
+
+				log.Printf("✅ Sessão de vídeo criada: %s", sessionID)
+
+				// Iniciar cascata de notificações em goroutine
+				go s.handleVideoCascade(client.IdosoID, sessionID)
+
+				// Confirmar recebimento ao mobile
+				s.sendJSON(client, map[string]string{
+					"type":       "video_cascade_started",
+					"session_id": sessionID,
+					"status":     "calling_family",
+				})
+
 			case "hangup":
 				log.Printf("🔴 Hangup from %s", client.CPF)
 				return
