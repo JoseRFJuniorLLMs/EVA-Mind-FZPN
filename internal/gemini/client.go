@@ -19,13 +19,17 @@ type AudioCallback func(audioBytes []byte)
 // ToolCallCallback é chamado quando uma ferramenta precisa ser executada
 type ToolCallCallback func(name string, args map[string]interface{}) map[string]interface{}
 
+// TranscriptCallback é chamado quando há transcrição de áudio (Input ou Output)
+type TranscriptCallback func(role, text string)
+
 // Client gerencia a conexão WebSocket com Gemini Live API
 type Client struct {
-	conn       *websocket.Conn
-	mu         sync.Mutex
-	cfg        *config.Config
-	onAudio    AudioCallback
-	onToolCall ToolCallCallback
+	conn         *websocket.Conn
+	mu           sync.Mutex
+	cfg          *config.Config
+	onAudio      AudioCallback
+	onToolCall   ToolCallCallback
+	onTranscript TranscriptCallback
 }
 
 // NewClient cria um novo cliente Gemini usando WebSocket direto
@@ -44,10 +48,11 @@ func NewClient(ctx context.Context, cfg *config.Config) (*Client, error) {
 	return &Client{conn: conn, cfg: cfg}, nil
 }
 
-// SetCallbacks configura os retornos de áudio e ferramentas
-func (c *Client) SetCallbacks(onAudio AudioCallback, onToolCall ToolCallCallback) {
+// SetCallbacks configura os retornos de áudio, ferramentas e transcrição
+func (c *Client) SetCallbacks(onAudio AudioCallback, onToolCall ToolCallCallback, onTranscript TranscriptCallback) {
 	c.onAudio = onAudio
 	c.onToolCall = onToolCall
+	c.onTranscript = onTranscript
 }
 
 // SendSetup envia configuração inicial
@@ -187,11 +192,31 @@ func (c *Client) HandleResponses(ctx context.Context) error {
 				continue
 			}
 
-			// ✅ Processar áudio
+			// ✅ Processar áudio e transcrição
 			if serverContent, ok := resp["serverContent"].(map[string]interface{}); ok {
+
+				// ▶️ 1. Capturar Transcrição do Usuário (Input)
+				if inputTrans, ok := serverContent["inputAudioTranscription"].(map[string]interface{}); ok {
+					if userText, ok := inputTrans["text"].(string); ok && userText != "" {
+						// log.Printf("🗣️ [CLIENT] IDOSO: %s", userText)
+						if c.onTranscript != nil {
+							c.onTranscript("user", userText)
+						}
+					}
+				}
+
+				// ▶️ 2. Capturar Transcrição da IA (Output)
+				if audioTrans, ok := serverContent["audioTranscription"].(map[string]interface{}); ok {
+					if aiText, ok := audioTrans["text"].(string); ok && aiText != "" {
+						// log.Printf("💬 [CLIENT] EVA: %s", aiText)
+						if c.onTranscript != nil {
+							c.onTranscript("assistant", aiText)
+						}
+					}
+				}
+
 				if modelTurn, ok := serverContent["modelTurn"].(map[string]interface{}); ok {
 					if parts, ok := modelTurn["parts"].([]interface{}); ok {
-
 						for _, p := range parts {
 							part, ok := p.(map[string]interface{})
 							if !ok {
@@ -200,21 +225,15 @@ func (c *Client) HandleResponses(ctx context.Context) error {
 
 							// ✅ Procurar por inlineData (áudio)
 							if inlineData, ok := part["inlineData"].(map[string]interface{}); ok {
-
 								if audioB64, ok := inlineData["data"].(string); ok {
 									audioBytes, err := base64.StdEncoding.DecodeString(audioB64)
 									if err != nil {
 										log.Printf("❌ Erro ao decodificar base64: %v", err)
 										continue
 									}
-
-									// log.Printf("✅ Áudio decodificado: %d bytes @ 24kHz", len(audioBytes))
-
 									// ✅ CHAMAR CALLBACK
 									if c.onAudio != nil {
 										c.onAudio(audioBytes)
-									} else {
-										// log.Printf("⚠️ CALLBACK onAudio NÃO CONFIGURADO!")
 									}
 								}
 							}

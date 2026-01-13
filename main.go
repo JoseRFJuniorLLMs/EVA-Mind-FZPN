@@ -39,6 +39,7 @@ type PCMClient struct {
 	CPF          string
 	IdosoID      int64
 	GeminiClient *gemini.Client
+	ToolsClient  *gemini.ToolsClient // ✅ DUAL-MODEL
 	SendCh       chan []byte
 	mu           sync.Mutex
 	active       bool
@@ -329,14 +330,15 @@ func (s *SignalingServer) registerClient(client *PCMClient, data map[string]inte
 
 	client.GeminiClient = gemClient
 
+	// ✅ DUAL-MODEL: Inicializar cliente de tools
+	client.ToolsClient = gemini.NewToolsClient(s.cfg)
+
 	// ✅ CRÍTICO: Configurar callbacks ANTES de StartSession
-	log.Printf("🎯 Configurando callbacks de áudio...")
+	log.Printf("🎯 Configurando callbacks de áudio e transcrição...")
 
 	gemClient.SetCallbacks(
-		// 📊 Callback quando Gemini enviar áudio
+		// 📊 1. Callback de Áudio
 		func(audioBytes []byte) {
-			// log.Printf("📊 [CALLBACK] Áudio do Gemini: %d bytes", len(audioBytes))
-
 			select {
 			case client.SendCh <- audioBytes:
 				if client.audioCount%50 == 0 {
@@ -346,10 +348,17 @@ func (s *SignalingServer) registerClient(client *PCMClient, data map[string]inte
 				log.Printf("⚠️ Canal cheio, dropando áudio para %s", client.CPF)
 			}
 		},
-		// 🛠️ Callback de tool calls
+		// 🛠️ 2. Callback de Tool Call (Nativa)
 		func(name string, args map[string]interface{}) map[string]interface{} {
-			log.Printf("🔧 Tool call: %s", name)
+			log.Printf("🔧 Tool call nativa: %s", name)
 			return s.handleToolCall(client, name, args)
+		},
+		// 📝 3. Callback de Transcrição (Dual-Model)
+		func(role, text string) {
+			if role == "user" {
+				// log.Printf("🗣️ IDOSO: %s", text)
+				go s.analyzeForTools(client, text)
+			}
 		},
 	)
 
@@ -774,5 +783,50 @@ func (s *SignalingServer) initiateWebRTCCall(client *PCMClient, target string) m
 	return map[string]interface{}{
 		"success": true,
 		"message": fmt.Sprintf("Chamada de vídeo iniciada para %s. Abrindo câmera...", target),
+	}
+}
+
+// ✅ DUAL-MODEL: Analisa transcrição e executa tools se necessário
+func (s *SignalingServer) analyzeForTools(client *PCMClient, text string) {
+	if client.ToolsClient == nil {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	log.Printf("🔍 [TOOLS] Analisando transcrição: \"%s\"", text)
+
+	toolCalls, err := client.ToolsClient.AnalyzeTranscription(ctx, text, "user")
+	if err != nil {
+		log.Printf("⚠️ [TOOLS] Erro ao analisar: %v", err)
+		return
+	}
+
+	if len(toolCalls) == 0 {
+		return
+	}
+
+	for _, tc := range toolCalls {
+		log.Printf("🛠️ [TOOLS] Executando: %s com args: %+v", tc.Name, tc.Args)
+		// Executar tool
+		s.handleToolCall(client, tc.Name, tc.Args)
+	}
+}
+
+// ✅ Limpar cliente desconectado
+func (s *SignalingServer) cleanupClient(client *PCMClient) {
+	client.cancel()
+	client.active = false
+
+	s.mu.Lock()
+	if _, exists := s.clients[client.CPF]; exists {
+		delete(s.clients, client.CPF)
+		log.Printf("🗑️ Cliente removido: %s", client.CPF)
+	}
+	s.mu.Unlock()
+
+	if client.GeminiClient != nil {
+		client.GeminiClient.Close()
 	}
 }
