@@ -813,20 +813,3 @@ func (s *SignalingServer) analyzeForTools(client *PCMClient, text string) {
 		s.handleToolCall(client, tc.Name, tc.Args)
 	}
 }
-
-// ✅ Limpar cliente desconectado
-func (s *SignalingServer) cleanupClient(client *PCMClient) {
-	client.cancel()
-	client.active = false
-
-	s.mu.Lock()
-	if _, exists := s.clients[client.CPF]; exists {
-		delete(s.clients, client.CPF)
-		log.Printf("🗑️ Cliente removido: %s", client.CPF)
-	}
-	s.mu.Unlock()
-
-	if client.GeminiClient != nil {
-		client.GeminiClient.Close()
-	}
-}
