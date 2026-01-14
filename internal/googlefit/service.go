@@ -81,9 +81,7 @@ func (s *Service) GetStepsToday(accessToken string) (int64, error) {
 	var totalSteps int64
 	for _, point := range dataset.Point {
 		for _, value := range point.Value {
-			if value.IntVal != nil {
-				totalSteps += *value.IntVal
-			}
+			totalSteps += value.IntVal
 		}
 	}
 
@@ -118,8 +116,8 @@ func (s *Service) GetHeartRate(accessToken string) (float64, error) {
 
 	// Get most recent value
 	lastPoint := dataset.Point[len(dataset.Point)-1]
-	if len(lastPoint.Value) > 0 && lastPoint.Value[0].FpVal != nil {
-		return *lastPoint.Value[0].FpVal, nil
+	if len(lastPoint.Value) > 0 {
+		return lastPoint.Value[0].FpVal, nil
 	}
 
 	return 0, fmt.Errorf("no heart rate value found")
@@ -150,9 +148,7 @@ func (s *Service) GetCaloriesToday(accessToken string) (int64, error) {
 	var totalCalories float64
 	for _, point := range dataset.Point {
 		for _, value := range point.Value {
-			if value.FpVal != nil {
-				totalCalories += *value.FpVal
-			}
+			totalCalories += value.FpVal
 		}
 	}
 
@@ -184,9 +180,7 @@ func (s *Service) GetDistanceToday(accessToken string) (float64, error) {
 	var totalDistance float64
 	for _, point := range dataset.Point {
 		for _, value := range point.Value {
-			if value.FpVal != nil {
-				totalDistance += *value.FpVal
-			}
+			totalDistance += value.FpVal
 		}
 	}
 
@@ -222,8 +216,8 @@ func (s *Service) GetWeight(accessToken string) (float64, error) {
 
 	// Get most recent value
 	lastPoint := dataset.Point[len(dataset.Point)-1]
-	if len(lastPoint.Value) > 0 && lastPoint.Value[0].FpVal != nil {
-		return *lastPoint.Value[0].FpVal, nil
+	if len(lastPoint.Value) > 0 {
+		return lastPoint.Value[0].FpVal, nil
 	}
 
 	return 0, fmt.Errorf("no weight value found")
