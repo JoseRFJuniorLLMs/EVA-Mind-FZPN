@@ -872,10 +872,37 @@ func BuildInstructions(idosoID int64, db *sql.DB) string {
 		return "Você é a EVA, assistente de saúde virtual. Fale em português de forma clara."
 	}
 
+	// ✅ NOVO: Buscar medicamentos da tabela RELACIONAL 'medicamentos'
+	// Isso sobrescreve/complementa os campos de texto do cadastro do idoso
+	medsQuery := `
+		SELECT nome, dosagem, horarios, observacoes 
+		FROM medicamentos 
+		WHERE idoso_id = $1 AND ativo = true
+	`
+	rows, errMeds := db.Query(medsQuery, idosoID)
+	var medsList []string
+	if errMeds == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var mNome, mDosagem, mHorarios, mObs string
+			if err := rows.Scan(&mNome, &mDosagem, &mHorarios, &mObs); err == nil {
+				medInfo := fmt.Sprintf("- %s (%s)", mNome, mDosagem)
+				if mHorarios != "" {
+					medInfo += fmt.Sprintf(" às %s", mHorarios)
+				}
+				if mObs != "" {
+					medInfo += fmt.Sprintf(". Obs: %s", mObs)
+				}
+				medsList = append(medsList, medInfo)
+			}
+		}
+	} else {
+		log.Printf("⚠️ Erro ao buscar tabela medicamentos: %v", errMeds)
+	}
+
 	// 📝 DEBUG EXAUSTIVO DOS DADOS RECUPERADOS
 	log.Printf("📋 [DADOS PACIENTE] Nome: %s, Idade: %d", nome, idade)
-	log.Printf("   💊 Meds Atuais: %s", getString(medicamentosAtuais, "Nenhum"))
-	log.Printf("   💊 Meds Regulares: %s", getString(medicamentosRegulares, "Nenhum"))
+	log.Printf("   💊 Meds Relacionais: %d encontrados", len(medsList))
 	log.Printf("   🥼 Condições: %s", getString(condicoesMedicas, "Nenhuma"))
 
 	// 2. Buscar Template Base
@@ -899,20 +926,33 @@ func BuildInstructions(idosoID int64, db *sql.DB) string {
 	dossier += fmt.Sprintf("Limitações Visuais: %s\n", getString(limitacoesVisuais, "Nenhuma"))
 	dossier += fmt.Sprintf("Condições Médicas: %s\n", getString(condicoesMedicas, "Nenhuma registrada"))
 
-	dossier += "\n💊 --- MEDICAMENTOS (IMPORTANTE) ---\n"
-	medsA := getString(medicamentosAtuais, "")
-	medsR := getString(medicamentosRegulares, "")
-	if medsA == "" && medsR == "" {
-		dossier += "Nenhum medicamento registrado no sistema.\n"
+	dossier += "\n💊 --- MEDICAMENTOS (FONTE OFICIAL) ---\n"
+	if len(medsList) > 0 {
+		dossier += "O paciente possui os seguintes medicamentos prescritos e ativos no sistema:\n"
+		for _, m := range medsList {
+			dossier += m + "\n"
+		}
+		// Fallback visual para os campos legados, caso existam e não estejam na lista (opcional, mas bom para debug)
+		oldMeds := getString(medicamentosAtuais, "")
+		if oldMeds != "" {
+			dossier += fmt.Sprintf("\n(Nota de cadastro antigo: %s)\n", oldMeds)
+		}
 	} else {
-		if medsA != "" {
-			dossier += fmt.Sprintf("Atuais: %s\n", medsA)
+		// Fallback para campos de texto antigos se a tabela relacional estiver vazia
+		medsA := getString(medicamentosAtuais, "")
+		medsR := getString(medicamentosRegulares, "")
+		if medsA == "" && medsR == "" {
+			dossier += "Nenhum medicamento registrado no sistema.\n"
+		} else {
+			if medsA != "" {
+				dossier += fmt.Sprintf("Atuais (Legado): %s\n", medsA)
+			}
+			if medsR != "" {
+				dossier += fmt.Sprintf("Regulares (Legado): %s\n", medsR)
+			}
 		}
-		if medsR != "" {
-			dossier += fmt.Sprintf("Regulares: %s\n", medsR)
-		}
-		dossier += "INSTRUÇÃO: Se o paciente perguntar o que deve tomar, consulte esta lista.\n"
 	}
+	dossier += "INSTRUÇÃO: Se o paciente perguntar o que deve tomar, consulte EXCLUSIVAMENTE esta lista acima.\n"
 
 	dossier += "\n📞 --- REDE DE APOIO ---\n"
 	dossier += fmt.Sprintf("Familiar: %s\n", getString(familiarPrincipal, "Não informado"))
@@ -932,7 +972,13 @@ func BuildInstructions(idosoID int64, db *sql.DB) string {
 	instructions = strings.ReplaceAll(instructions, "{{idade}}", fmt.Sprintf("%d", idade))
 	instructions = strings.ReplaceAll(instructions, "{{nivel_cognitivo}}", nivelCognitivo)
 	instructions = strings.ReplaceAll(instructions, "{{tom_voz}}", tomVoz)
-	instructions = strings.ReplaceAll(instructions, "{{medicamentos}}", medsA+" "+medsR)
+	
+	// Injeta a lista formatada ou o legado
+	medsString := strings.Join(medsList, ", ")
+	if medsString == "" {
+		medsString = getString(medicamentosAtuais, "Nenhum")
+	}
+	instructions = strings.ReplaceAll(instructions, "{{medicamentos}}", medsString)
 	instructions = strings.ReplaceAll(instructions, "{{condicoes_medicas}}", getString(condicoesMedicas, ""))
 
 	// Limpar tags condicionais não usadas
@@ -962,6 +1008,7 @@ func BuildInstructions(idosoID int64, db *sql.DB) string {
 
 	log.Printf("✅ [BuildInstructions] Instruções finais geradas (%d chars)", len(finalInstructions))
 	return finalInstructions
+}
 }
 
 // Helper seguro para NullString

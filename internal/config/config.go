@@ -51,6 +51,12 @@ type Config struct {
 	SMTPPassword  string
 	SMTPFromName  string
 	SMTPFromEmail string
+
+	// Auth
+	JWTSecret string
+
+	// Google Services
+	GoogleMapsAPIKey string
 }
 
 func Load() (*Config, error) {
@@ -103,6 +109,9 @@ func Load() (*Config, error) {
 		SMTPPassword:  os.Getenv("SMTP_PASSWORD"),
 		SMTPFromName:  getEnvWithDefault("SMTP_FROM_NAME", "EVA - Assistente Virtual"),
 		SMTPFromEmail: getEnvWithDefault("SMTP_FROM_EMAIL", "web2ajax@gmail.com"),
+
+		// Auth
+		JWTSecret: getEnvWithDefault("JWT_SECRET", "super-secret-default-key-change-me"),
 	}, nil
 }
 

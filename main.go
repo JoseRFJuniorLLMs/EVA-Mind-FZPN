@@ -12,10 +12,13 @@ import (
 	"sync"
 	"time"
 
+	"eva-mind/internal/auth"
+	"eva-mind/internal/calendar"
 	"eva-mind/internal/config"
 	"eva-mind/internal/database"
 	"eva-mind/internal/gemini"
 	"eva-mind/internal/logger"
+	"eva-mind/internal/oauth"
 	"eva-mind/internal/push"
 	"eva-mind/internal/scheduler"
 	"eva-mind/internal/signaling"
@@ -32,6 +35,7 @@ type SignalingServer struct {
 	cfg         *config.Config
 	pushService *push.FirebaseService
 	db          *database.DB
+	calendar    *calendar.Service
 }
 
 type PCMClient struct {
@@ -54,9 +58,15 @@ var (
 	pushService     *push.FirebaseService
 	signalingServer *SignalingServer
 	startTime       time.Time
+
+	// 🔐 Developer whitelist for Google features (v17)
+	// Add your CPF here to enable Google Calendar/Gmail/Drive features
+	googleFeaturesWhitelist = map[string]bool{
+		"64525430249": true, // Developer CPF
+	}
 )
 
-func NewSignalingServer(cfg *config.Config, db *database.DB, pushService *push.FirebaseService) *SignalingServer {
+func NewSignalingServer(cfg *config.Config, db *database.DB, pushService *push.FirebaseService, cal *calendar.Service) *SignalingServer {
 	return &SignalingServer{
 		upgrader: websocket.Upgrader{
 			CheckOrigin:     func(r *http.Request) bool { return true },
@@ -67,6 +77,7 @@ func NewSignalingServer(cfg *config.Config, db *database.DB, pushService *push.F
 		cfg:         cfg,
 		pushService: pushService,
 		db:          db,
+		calendar:    cal,
 	}
 }
 
@@ -105,7 +116,11 @@ func main() {
 		log.Printf("✅ Firebase initialized")
 	}
 
-	signalingServer = NewSignalingServer(cfg, db, pushService)
+	// 📅 Calendar Service (v17 - OAuth per-user)
+	calService := calendar.NewService(context.Background())
+	log.Printf("✅ Calendar service initialized (OAuth mode)")
+
+	signalingServer = NewSignalingServer(cfg, db, pushService, calService)
 
 	sch, err := scheduler.NewScheduler(cfg, db.GetConnection())
 	if err != nil {
@@ -123,6 +138,27 @@ func main() {
 	api.HandleFunc("/stats", statsHandler).Methods("GET")
 	api.HandleFunc("/health", healthCheckHandler).Methods("GET")
 	api.HandleFunc("/call-logs", callLogsHandler).Methods("POST")
+
+	// 🔐 Auth Routes (v16)
+	authHandler := auth.NewHandler(db, cfg)
+	api.HandleFunc("/auth/register", authHandler.Register).Methods("POST")
+	api.HandleFunc("/auth/login", authHandler.Login).Methods("POST")
+
+	// 🛡️ Protected Routes
+	protected := api.PathPrefix("/").Subrouter()
+	protected.Use(auth.AuthMiddleware(cfg.JWTSecret))
+	protected.HandleFunc("/auth/me", authHandler.Me).Methods("GET")
+
+	// 🔐 OAuth Routes (v17)
+	oauthService := oauth.NewService(
+		os.Getenv("GOOGLE_CLIENT_ID"),
+		os.Getenv("GOOGLE_CLIENT_SECRET"),
+		os.Getenv("GOOGLE_REDIRECT_URL"),
+	)
+	oauthHandler := oauth.NewHandler(oauthService, db)
+	api.HandleFunc("/oauth/google/authorize", oauthHandler.HandleAuthorize).Methods("GET")
+	api.HandleFunc("/oauth/google/callback", oauthHandler.HandleCallback).Methods("GET")
+	api.HandleFunc("/oauth/google/token", oauthHandler.HandleTokenExchange).Methods("POST")
 
 	// 🎥 Video Signaling Routes (v15)
 	api.HandleFunc("/video/session", signalingServer.handleCreateVideoSession).Methods("POST")
@@ -486,6 +522,268 @@ func (s *SignalingServer) handleToolCall(client *PCMClient, name string, args ma
 			"success": true,
 			"message": "Câmera ativada para análise visual",
 		}
+
+	case "manage_calendar_event":
+		// 🔐 Check if user is in developer whitelist
+		if !googleFeaturesWhitelist[client.CPF] {
+			return map[string]interface{}{
+				"success": false,
+				"error":   "Google Calendar features are currently in beta and not available for your account.",
+			}
+		}
+
+		if s.calendar == nil {
+			return map[string]interface{}{"success": false, "error": "Calendar service not configured"}
+		}
+
+		// Get user's OAuth tokens from database
+		refreshToken, accessToken, expiry, err := s.db.GetGoogleTokens(client.IdosoID)
+		if err != nil || refreshToken == "" {
+			return map[string]interface{}{
+				"success": false,
+				"error":   "Google account not linked. Please connect your Google account first.",
+			}
+		}
+
+		// Refresh token if expired
+		if time.Now().After(expiry) {
+			log.Printf("🔄 Refreshing expired token for idoso %d", client.IdosoID)
+			// TODO: Implement token refresh using oauth service
+			// For now, return error asking user to re-authenticate
+			return map[string]interface{}{
+				"success": false,
+				"error":   "Google token expired. Please reconnect your Google account.",
+			}
+		}
+
+		action, _ := args["action"].(string)
+
+		if action == "create" {
+			summary, _ := args["summary"].(string)
+			desc, _ := args["description"].(string)
+			start, _ := args["start_time"].(string)
+			end, _ := args["end_time"].(string)
+
+			link, err := s.calendar.CreateEventForUser(accessToken, summary, desc, start, end)
+			if err != nil {
+				return map[string]interface{}{"success": false, "error": err.Error()}
+			}
+
+	case "send_email":
+		if !googleFeaturesWhitelist[client.CPF] {
+			return map[string]interface{}{"success": false, "error": "Gmail features not available"}
+		}
+		
+		_, accessToken, expiry, err := s.db.GetGoogleTokens(client.IdosoID)
+		if err != nil || time.Now().After(expiry) {
+			return map[string]interface{}{"success": false, "error": "Google account not linked or expired"}
+		}
+		
+		to, _ := args["to"].(string)
+		subject, _ := args["subject"].(string)
+		body, _ := args["body"].(string)
+		
+		gmailSvc := gmail.NewService(context.Background())
+		err = gmailSvc.SendEmail(accessToken, to, subject, body)
+		if err != nil {
+			return map[string]interface{}{"success": false, "error": err.Error()}
+		}
+		return map[string]interface{}{"success": true, "message": "Email enviado com sucesso"}
+
+	case "save_to_drive":
+		if !googleFeaturesWhitelist[client.CPF] {
+			return map[string]interface{}{"success": false, "error": "Drive features not available"}
+		}
+		
+		_, accessToken, expiry, err := s.db.GetGoogleTokens(client.IdosoID)
+		if err != nil || time.Now().After(expiry) {
+			return map[string]interface{}{"success": false, "error": "Google account not linked or expired"}
+		}
+		
+		filename, _ := args["filename"].(string)
+		content, _ := args["content"].(string)
+		folder, _ := args["folder"].(string)
+		
+		driveSvc := drive.NewService(context.Background())
+		fileID, err := driveSvc.SaveFile(accessToken, filename, content, folder)
+		if err != nil {
+			return map[string]interface{}{"success": false, "error": err.Error()}
+		}
+		return map[string]interface{}{"success": true, "message": "Arquivo salvo", "file_id": fileID}
+
+	case "manage_health_sheet":
+		if !googleFeaturesWhitelist[client.CPF] {
+			return map[string]interface{}{"success": false, "error": "Sheets features not available"}
+		}
+		
+		_, accessToken, expiry, err := s.db.GetGoogleTokens(client.IdosoID)
+		if err != nil || time.Now().After(expiry) {
+			return map[string]interface{}{"success": false, "error": "Google account not linked or expired"}
+		}
+		
+		action, _ := args["action"].(string)
+		sheetsSvc := sheets.NewService(context.Background())
+		
+		if action == "create" {
+			title, _ := args["title"].(string)
+			url, err := sheetsSvc.CreateHealthSheet(accessToken, title)
+			if err != nil {
+				return map[string]interface{}{"success": false, "error": err.Error()}
+			}
+			return map[string]interface{}{"success": true, "message": "Planilha criada", "url": url}
+		}
+		
+		// TODO: Implement append action
+		return map[string]interface{}{"success": false, "error": "Action not implemented"}
+
+	case "create_health_doc":
+		if !googleFeaturesWhitelist[client.CPF] {
+			return map[string]interface{}{"success": false, "error": "Docs features not available"}
+		}
+		
+		_, accessToken, expiry, err := s.db.GetGoogleTokens(client.IdosoID)
+		if err != nil || time.Now().After(expiry) {
+			return map[string]interface{}{"success": false, "error": "Google account not linked or expired"}
+		}
+		
+		title, _ := args["title"].(string)
+		content, _ := args["content"].(string)
+		
+		docsSvc := docs.NewService(context.Background())
+		url, err := docsSvc.CreateDocument(accessToken, title, content)
+		if err != nil {
+			return map[string]interface{}{"success": false, "error": err.Error()}
+		}
+		return map[string]interface{}{"success": true, "message": "Documento criado", "url": url}
+
+	case "find_nearby_places":
+		if !googleFeaturesWhitelist[client.CPF] {
+			return map[string]interface{}{"success": false, "error": "Maps features not available"}
+		}
+		
+		placeType, _ := args["place_type"].(string)
+		location, _ := args["location"].(string)
+		radius := 5000
+		if r, ok := args["radius"].(float64); ok {
+			radius = int(r)
+		}
+		
+		mapsSvc := maps.NewService(context.Background(), s.cfg.GoogleMapsAPIKey)
+		places, err := mapsSvc.FindNearbyPlaces(placeType, location, radius)
+		if err != nil {
+			return map[string]interface{}{"success": false, "error": err.Error()}
+		}
+		return map[string]interface{}{"success": true, "places": places}
+
+	case "search_videos":
+		if !googleFeaturesWhitelist[client.CPF] {
+			return map[string]interface{}{"success": false, "error": "YouTube features not available"}
+		}
+		
+		_, accessToken, expiry, err := s.db.GetGoogleTokens(client.IdosoID)
+		if err != nil || time.Now().After(expiry) {
+			return map[string]interface{}{"success": false, "error": "Google account not linked or expired"}
+		}
+		
+		query, _ := args["query"].(string)
+		maxResults := int64(5)
+		if mr, ok := args["max_results"].(float64); ok {
+			maxResults = int64(mr)
+		}
+		
+		youtubeSvc := youtube.NewService(context.Background())
+		videos, err := youtubeSvc.SearchVideos(accessToken, query, maxResults)
+		if err != nil {
+			return map[string]interface{}{"success": false, "error": err.Error()}
+		}
+		return map[string]interface{}{"success": true, "videos": videos}
+
+	case "play_music":
+		if !googleFeaturesWhitelist[client.CPF] {
+			return map[string]interface{}{"success": false, "error": "Spotify features not available"}
+		}
+		
+		// TODO: Implement Spotify OAuth separately
+		return map[string]interface{}{"success": false, "error": "Spotify integration pending OAuth setup"}
+
+	case "request_ride":
+		if !googleFeaturesWhitelist[client.CPF] {
+			return map[string]interface{}{"success": false, "error": "Uber features not available"}
+		}
+		
+		// TODO: Implement Uber OAuth separately
+		return map[string]interface{}{"success": false, "error": "Uber integration pending OAuth setup"}
+
+	case "get_health_data":
+		if !googleFeaturesWhitelist[client.CPF] {
+			return map[string]interface{}{"success": false, "error": "Google Fit features not available"}
+		}
+		
+		_, accessToken, expiry, err := s.db.GetGoogleTokens(client.IdosoID)
+		if err != nil || time.Now().After(expiry) {
+			return map[string]interface{}{"success": false, "error": "Google account not linked or expired"}
+		}
+		
+		fitSvc := googlefit.NewService(context.Background())
+		
+		// Get all health data
+		healthData, err := fitSvc.GetAllHealthData(accessToken)
+		if err != nil {
+			return map[string]interface{}{"success": false, "error": err.Error()}
+		}
+		
+		// Save to database automatically
+		if healthData.Steps > 0 {
+			s.db.SaveVitalSign(client.IdosoID, "passos", fmt.Sprintf("%d", healthData.Steps), "steps", "google_fit", "")
+		}
+		if healthData.HeartRate > 0 {
+			s.db.SaveVitalSign(client.IdosoID, "frequencia_cardiaca", fmt.Sprintf("%.0f", healthData.HeartRate), "bpm", "google_fit", "")
+		}
+		if healthData.Calories > 0 {
+			s.db.SaveVitalSign(client.IdosoID, "calorias", fmt.Sprintf("%d", healthData.Calories), "kcal", "google_fit", "")
+		}
+		if healthData.Distance > 0 {
+			s.db.SaveVitalSign(client.IdosoID, "distancia", fmt.Sprintf("%.2f", healthData.Distance), "km", "google_fit", "")
+		}
+		if healthData.Weight > 0 {
+			s.db.SaveVitalSign(client.IdosoID, "peso", fmt.Sprintf("%.1f", healthData.Weight), "kg", "google_fit", "")
+		}
+		
+		return map[string]interface{}{
+			"success": true,
+			"data": map[string]interface{}{
+				"steps":      healthData.Steps,
+				"heart_rate": healthData.HeartRate,
+				"calories":   healthData.Calories,
+				"distance":   healthData.Distance,
+				"weight":     healthData.Weight,
+			},
+			"message": "Dados de saúde coletados e salvos com sucesso",
+		}
+
+	case "send_whatsapp":
+		if !googleFeaturesWhitelist[client.CPF] {
+			return map[string]interface{}{"success": false, "error": "WhatsApp features not available"}
+		}
+		
+		// TODO: Implement WhatsApp Business API
+		return map[string]interface{}{"success": false, "error": "WhatsApp integration pending configuration"}
+
+			var simpleEvents []map[string]string
+			for _, e := range events {
+				date := e.Start.DateTime
+				if date == "" {
+					date = e.Start.Date // All-day events
+				}
+				simpleEvents = append(simpleEvents, map[string]string{
+					"summary": e.Summary,
+					"start":   date,
+				})
+			}
+			return map[string]interface{}{"success": true, "events": simpleEvents}
+		}
+
+		return map[string]interface{}{"success": false, "error": "Invalid action"}
 
 	default:
 		log.Printf("⚠️ Tool desconhecida: %s", name)

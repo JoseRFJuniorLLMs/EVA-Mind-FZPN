@@ -148,14 +148,37 @@ func (db *DB) GetMobileCandidates(sessionID string, sinceID int64) ([]SignalingM
 	return msgs, nil
 }
 
-// Retorna todas as sessões aguardando atendimento
-func (db *DB) GetPendingVideoSessions() ([]VideoSession, error) {
+type VideoSessionDetail struct {
+	ID        string    `json:"id"`
+	SessionID string    `json:"session_id"`
+	IdosoID   int64     `json:"idoso_id"`
+	Status    string    `json:"status"`
+	CreatedAt time.Time `json:"created_at"`
+	// Enriched fields from Idoso
+	Nome           string         `json:"nome"`
+	Idade          int            `json:"idade"` // Calculado ou aproximado (ano)
+	Telefone       string         `json:"telefone"`
+	NivelCognitivo string         `json:"nivel_cognitivo"`
+	FotoUrl        string         `json:"foto_url"`   // Placeholder ou real if added later
+	Limitacoes     sql.NullString `json:"limitacoes"` // Concat de audição etc
+}
+
+// Retorna todas as sessões aguardando atendimento COM DADOS DO IDOSO
+func (db *DB) GetPendingVideoSessions() ([]VideoSessionDetail, error) {
+	// JOIN com idosos para pegar detalhes
 	query := `
-		SELECT id, session_id, idoso_id, status, created_em 
-		FROM video_sessions 
-		WHERE status = 'waiting_operator'
-		ORDER BY created_em DESC
-	` // Sem sdp_offer pra ficar leve
+		SELECT 
+			vs.id, vs.session_id, vs.idoso_id, vs.status, vs.created_em,
+			i.nome, i.data_nascimento, i.telefone, i.nivel_cognitivo,
+			CASE 
+				WHEN i.limitacoes_auditivas = true THEN 'Deficiência Auditiva'
+				ELSE ''
+			END as limitacoes
+		FROM video_sessions vs
+		JOIN idosos i ON vs.idoso_id = i.id
+		WHERE vs.status = 'waiting_operator'
+		ORDER BY vs.created_em DESC
+	`
 
 	rows, err := db.conn.Query(query)
 	if err != nil {
@@ -163,12 +186,23 @@ func (db *DB) GetPendingVideoSessions() ([]VideoSession, error) {
 	}
 	defer rows.Close()
 
-	var sessions []VideoSession
+	var sessions []VideoSessionDetail
 	for rows.Next() {
-		var s VideoSession
-		if err := rows.Scan(&s.ID, &s.SessionID, &s.IdosoID, &s.Status, &s.CreatedAt); err != nil {
+		var s VideoSessionDetail
+		var dataNasc time.Time
+		var limitacoes sql.NullString
+
+		if err := rows.Scan(
+			&s.ID, &s.SessionID, &s.IdosoID, &s.Status, &s.CreatedAt,
+			&s.Nome, &dataNasc, &s.Telefone, &s.NivelCognitivo, &limitacoes,
+		); err != nil {
 			return nil, err
 		}
+
+		// Calcular idade simples
+		s.Idade = time.Now().Year() - dataNasc.Year()
+		s.Limitacoes = limitacoes
+
 		sessions = append(sessions, s)
 	}
 	return sessions, nil
