@@ -769,21 +769,6 @@ func (s *SignalingServer) handleToolCall(client *PCMClient, name string, args ma
 		// TODO: Implement WhatsApp Business API
 		return map[string]interface{}{"success": false, "error": "WhatsApp integration pending configuration"}
 
-			var simpleEvents []map[string]string
-			for _, e := range events {
-				date := e.Start.DateTime
-				if date == "" {
-					date = e.Start.Date // All-day events
-				}
-				simpleEvents = append(simpleEvents, map[string]string{
-					"summary": e.Summary,
-					"start":   date,
-				})
-			}
-			return map[string]interface{}{"success": true, "events": simpleEvents}
-		}
-
-		return map[string]interface{}{"success": false, "error": "Invalid action"}
 
 	default:
 		log.Printf("⚠️ Tool desconhecida: %s", name)
