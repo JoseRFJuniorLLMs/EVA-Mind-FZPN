@@ -1009,7 +1009,7 @@ func BuildInstructions(idosoID int64, db *sql.DB) string {
 	log.Printf("✅ [BuildInstructions] Instruções finais geradas (%d chars)", len(finalInstructions))
 	return finalInstructions
 }
-}
+
 
 // Helper seguro para NullString
 func getString(ns sql.NullString, def string) string {
