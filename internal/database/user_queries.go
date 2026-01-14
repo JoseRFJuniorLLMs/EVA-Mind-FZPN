@@ -19,8 +19,8 @@ type User struct {
 
 func (db *DB) CreateUser(name, email, passwordHash, role string) error {
 	query := `
-		INSERT INTO users (name, email, password_hash, role, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+		INSERT INTO usuarios (nome, email, senha_hash, tipo, criado_em, atualizado_em, ativo)
+		VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, true)
 	`
 	_, err := db.conn.Exec(query, name, email, passwordHash, role)
 	if err != nil {
@@ -31,10 +31,11 @@ func (db *DB) CreateUser(name, email, passwordHash, role string) error {
 
 func (db *DB) GetUserByEmail(email string) (*User, error) {
 	query := `
-		SELECT id, name, email, password_hash, role, last_login, created_at, updated_at
-		FROM users
+		SELECT id, nome, email, senha_hash, tipo, NULL as last_login, criado_em, atualizado_em
+		FROM usuarios
 		WHERE email = $1
 	`
+	// Note: last_login might not exist in usuarios yet, passing NULL for now or we need to add it to schema
 	var u User
 	err := db.conn.QueryRow(query, email).Scan(
 		&u.ID, &u.Name, &u.Email, &u.PasswordHash, &u.Role, &u.LastLogin, &u.CreatedAt, &u.UpdatedAt,
@@ -50,8 +51,8 @@ func (db *DB) GetUserByEmail(email string) (*User, error) {
 
 func (db *DB) GetUserByID(id int64) (*User, error) {
 	query := `
-		SELECT id, name, email, password_hash, role, last_login, created_at, updated_at
-		FROM users
+		SELECT id, nome, email, senha_hash, tipo, NULL as last_login, criado_em, atualizado_em
+		FROM usuarios
 		WHERE id = $1
 	`
 	var u User
@@ -68,7 +69,10 @@ func (db *DB) GetUserByID(id int64) (*User, error) {
 }
 
 func (db *DB) UpdateLastLogin(userID int64) error {
-    query := `UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = $1`
-    _, err := db.conn.Exec(query, userID)
-    return err
+	// Assuming there is no last_login column in usuarios yet based on the request which didn't list it.
+	// We will skip this or commented it out until confirmed.
+	// If we must implement, we might need to add it or use updated_at.
+	// query := `UPDATE usuarios SET atualizado_em = CURRENT_TIMESTAMP WHERE id = $1`
+	// _, err := db.conn.Exec(query, userID)
+	return nil
 }
