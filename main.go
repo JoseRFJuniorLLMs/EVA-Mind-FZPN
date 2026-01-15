@@ -906,21 +906,6 @@ func (s *SignalingServer) handleToolCall(client *PCMClient, name string, args ma
 
 		return map[string]interface{}{"success": true, "data": result}
 
-	case "change_voice":
-		voiceName, ok := args["voice_name"].(string)
-		if !ok || voiceName == "" {
-			// Se não especificar voz, buscar aleatória
-			var randomVoice string
-			err := s.db.GetConnection().QueryRow(`SELECT get_random_voice()`).Scan(&randomVoice)
-			if err == nil {
-				voiceName = randomVoice
-			} else {
-				voiceName = "Kore" // Fallback
-			}
-		}
-
-		return s.changeVoice(client, voiceName)
-
 	case "list_voices":
 		return s.getAvailableVoices()
 
