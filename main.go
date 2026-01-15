@@ -167,16 +167,16 @@ func main() {
 	api.HandleFunc("/oauth/google/callback", oauthHandler.HandleCallback).Methods("GET")
 	api.HandleFunc("/oauth/google/token", oauthHandler.HandleTokenExchange).Methods("POST")
 
-	// 🎥 Video Signaling Routes (v15)
-	api.HandleFunc("/video/session", signalingServer.handleCreateVideoSession).Methods("POST")
-	api.HandleFunc("/video/candidate", signalingServer.handleCreateVideoCandidate).Methods("POST")
-	api.HandleFunc("/video/session/{id}/answer", signalingServer.handleGetVideoAnswer).Methods("GET")
+	// 🎥 Video Signaling Routes (v15) - DEPRECATED (Moved to WebSocket)
+	// api.HandleFunc("/video/session", signalingServer.handleCreateVideoSession).Methods("POST")
+	// api.HandleFunc("/video/candidate", signalingServer.handleCreateVideoCandidate).Methods("POST")
+	// api.HandleFunc("/video/session/{id}/answer", signalingServer.handleGetVideoAnswer).Methods("GET")
 
-	// 🖥️ Operator Signaling Routes
-	api.HandleFunc("/video/session/{id}", signalingServer.handleGetVideoSession).Methods("GET")
-	api.HandleFunc("/video/session/{id}/answer", signalingServer.handleSaveVideoAnswer).Methods("POST")
-	api.HandleFunc("/video/session/{id}/candidates", signalingServer.handleGetMobileCandidates).Methods("GET")
-	api.HandleFunc("/video/sessions/pending", signalingServer.handleGetPendingSessions).Methods("GET")
+	// 🖥️ Operator Signaling Routes - DEPRECATED (Moved to WebSocket)
+	// api.HandleFunc("/video/session/{id}", signalingServer.handleGetVideoSession).Methods("GET")
+	// api.HandleFunc("/video/session/{id}/answer", signalingServer.handleSaveVideoAnswer).Methods("POST")
+	// api.HandleFunc("/video/session/{id}/candidates", signalingServer.handleGetMobileCandidates).Methods("GET")
+	// api.HandleFunc("/video/sessions/pending", signalingServer.handleGetPendingSessions).Methods("GET")
 	api.HandleFunc("/config", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
@@ -779,6 +779,59 @@ func (s *SignalingServer) handleToolCall(client *PCMClient, name string, args ma
 
 		// TODO: Implement WhatsApp Business API
 		return map[string]interface{}{"success": false, "error": "WhatsApp integration pending configuration"}
+
+	case "run_sql_select":
+		query, _ := args["query"].(string)
+
+		// 🛡️ Segurança básica
+		if query == "" {
+			return map[string]interface{}{"success": false, "error": "Empty query"}
+		}
+
+		// ⚠️ Apenas SELECT
+		// (Idealmente parsear a query, mas string check simples serve para MVP)
+		// Nota: Em produção, usar um usuário DB com permissões Read-Only
+		if len(query) < 6 || query[:6] != "SELECT" && query[:6] != "select" {
+			return map[string]interface{}{"success": false, "error": "Only SELECT queries allowed"}
+		}
+
+		log.Printf("🔍 Executando SQL: %s", query)
+
+		rows, err := s.db.GetConnection().Query(query)
+		if err != nil {
+			return map[string]interface{}{"success": false, "error": err.Error()}
+		}
+		defer rows.Close()
+
+		cols, _ := rows.Columns()
+		var result []map[string]interface{}
+
+		for rows.Next() {
+			columns := make([]interface{}, len(cols))
+			columnPointers := make([]interface{}, len(cols))
+			for i := range columns {
+				columnPointers[i] = &columns[i]
+			}
+
+			if err := rows.Scan(columnPointers...); err != nil {
+				return map[string]interface{}{"success": false, "error": err.Error()}
+			}
+
+			m := make(map[string]interface{})
+			for i, colName := range cols {
+				val := columnPointers[i].(*interface{})
+
+				// Handle bytes (DB text can come as bytes)
+				if b, ok := (*val).([]byte); ok {
+					m[colName] = string(b)
+				} else {
+					m[colName] = *val
+				}
+			}
+			result = append(result, m)
+		}
+
+		return map[string]interface{}{"success": true, "data": result}
 
 	default:
 		log.Printf("⚠️ Tool desconhecida: %s", name)

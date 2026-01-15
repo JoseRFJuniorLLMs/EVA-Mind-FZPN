@@ -351,11 +351,29 @@ func GetDefaultTools() []interface{} {
 			},
 		},
 		// ✅ Google Search Tool (Integrada ao modelo)
-		map[string]interface{}{
 			"google_search_retrieval": map[string]interface{}{
 				"dynamic_retrieval_config": map[string]interface{}{
 					"mode":              "MODE_DYNAMIC",
 					"dynamic_threshold": 0.5, // Ajuste para equilibrar pesquisa e resposta direta
+				},
+			},
+		},
+		// ✅ SQL Select Tool (Database Access)
+		map[string]interface{}{
+			"function_declarations": []interface{}{
+				map[string]interface{}{
+					"name":        "run_sql_select",
+					"description": "Executa uma consulta SQL SELECT (apenas leitura) no banco de dados para responder perguntas sobre o sistema. Use valid PostgreSQL syntax.",
+					"parameters": map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"query": map[string]interface{}{
+								"type":        "string",
+								"description": "A consulta SQL SELECT a ser executada. Ex: 'SELECT count(*) FROM idosos'",
+							},
+						},
+						"required": []string{"query"},
+					},
 				},
 			},
 		},

@@ -189,6 +189,36 @@ func (s *SignalingServer) handleControlMessage(conn *websocket.Conn, message []b
 		s.sendMessage(conn, ControlMessage{Type: "pong"})
 		return currentSession
 
+	case "webrtc_signal":
+		if msg.TargetCPF == "" {
+			return currentSession
+		}
+
+		targetConn, ok := s.clients.Load(msg.TargetCPF)
+		if !ok {
+			log.Printf("⚠️ [SIGNAL] Target CPF not found: %s", msg.TargetCPF)
+			return currentSession
+		}
+
+		// Repassar mensagem exatamente como recebida (Relay)
+		// Mas podemos injetar o SenderCPF para quem recebe saber quem mandou
+		// Se msg.CPF não estiver preenchido, tentar pegar da sessão atual se existir
+		senderCPF := msg.CPF
+		if senderCPF == "" && currentSession != nil {
+			senderCPF = currentSession.CPF
+		}
+
+		relayMsg := ControlMessage{
+			Type:      "webrtc_signal",
+			CPF:       senderCPF, // Sender
+			TargetCPF: msg.TargetCPF,
+			Payload:   msg.Payload,
+		}
+
+		s.sendMessage(targetConn.(*websocket.Conn), relayMsg)
+		// log.Printf("📡 [SIGNAL] Relay de %s -> %s", senderCPF, msg.TargetCPF)
+		return currentSession
+
 	default:
 		return currentSession
 	}
@@ -972,7 +1002,7 @@ func BuildInstructions(idosoID int64, db *sql.DB) string {
 	instructions = strings.ReplaceAll(instructions, "{{idade}}", fmt.Sprintf("%d", idade))
 	instructions = strings.ReplaceAll(instructions, "{{nivel_cognitivo}}", nivelCognitivo)
 	instructions = strings.ReplaceAll(instructions, "{{tom_voz}}", tomVoz)
-	
+
 	// Injeta a lista formatada ou o legado
 	medsString := strings.Join(medsList, ", ")
 	if medsString == "" {
@@ -1010,7 +1040,6 @@ func BuildInstructions(idosoID int64, db *sql.DB) string {
 	return finalInstructions
 }
 
-
 // Helper seguro para NullString
 func getString(ns sql.NullString, def string) string {
 	if ns.Valid {
@@ -1024,11 +1053,13 @@ func generateSessionID() string {
 }
 
 type ControlMessage struct {
-	Type      string `json:"type"`
-	CPF       string `json:"cpf,omitempty"`
-	SessionID string `json:"session_id,omitempty"`
-	Success   bool   `json:"success,omitempty"`
-	Error     string `json:"error,omitempty"`
+	Type      string      `json:"type"`
+	CPF       string      `json:"cpf,omitempty"`
+	SessionID string      `json:"session_id,omitempty"`
+	Success   bool        `json:"success,omitempty"`
+	Error     string      `json:"error,omitempty"`
+	TargetCPF string      `json:"target_cpf,omitempty"`
+	Payload   interface{} `json:"payload,omitempty"`
 }
 
 type Idoso struct {
