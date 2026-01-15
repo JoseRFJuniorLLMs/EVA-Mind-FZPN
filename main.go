@@ -23,7 +23,9 @@ import (
 	"eva-mind/internal/googlefit"
 	"eva-mind/internal/logger"
 	"eva-mind/internal/maps"
+	"eva-mind/internal/memory"
 	"eva-mind/internal/oauth"
+	"eva-mind/internal/personality"
 	"eva-mind/internal/push"
 	"eva-mind/internal/scheduler"
 	"eva-mind/internal/sheets"
@@ -36,13 +38,18 @@ import (
 )
 
 type SignalingServer struct {
-	upgrader    websocket.Upgrader
-	clients     map[string]*PCMClient
-	mu          sync.RWMutex
-	cfg         *config.Config
-	pushService *push.FirebaseService
-	db          *database.DB
-	calendar    *calendar.Service
+	upgrader           websocket.Upgrader
+	clients            map[string]*PCMClient
+	mu                 sync.RWMutex
+	cfg                *config.Config
+	pushService        *push.FirebaseService
+	db                 *database.DB
+	calendar           *calendar.Service
+	embeddingService   *memory.EmbeddingService
+	memoryStore        *memory.MemoryStore
+	retrievalService   *memory.RetrievalService
+	metadataAnalyzer   *memory.MetadataAnalyzer
+	personalityService *personality.PersonalityService
 }
 
 type PCMClient struct {
@@ -74,17 +81,34 @@ var (
 )
 
 func NewSignalingServer(cfg *config.Config, db *database.DB, pushService *push.FirebaseService, cal *calendar.Service) *SignalingServer {
+	// Inicializar serviços de memória
+	embeddingService := memory.NewEmbeddingService(cfg.GoogleAPIKey)
+	memoryStore := memory.NewMemoryStore(db.GetConnection())
+	retrievalService := memory.NewRetrievalService(db.GetConnection(), embeddingService)
+	metadataAnalyzer := memory.NewMetadataAnalyzer(cfg.GoogleAPIKey)
+
+	// Inicializar serviço de personalidade
+	personalityService := personality.NewPersonalityService(db.GetConnection())
+
+	log.Printf("✅ Serviços de Memória Episódica inicializados")
+	log.Printf("✅ Serviço de Personalidade Afetiva inicializado")
+
 	return &SignalingServer{
 		upgrader: websocket.Upgrader{
 			CheckOrigin:     func(r *http.Request) bool { return true },
 			ReadBufferSize:  8192,
 			WriteBufferSize: 8192,
 		},
-		clients:     make(map[string]*PCMClient),
-		cfg:         cfg,
-		pushService: pushService,
-		db:          db,
-		calendar:    cal,
+		clients:            make(map[string]*PCMClient),
+		cfg:                cfg,
+		pushService:        pushService,
+		db:                 db,
+		calendar:           cal,
+		embeddingService:   embeddingService,
+		memoryStore:        memoryStore,
+		retrievalService:   retrievalService,
+		metadataAnalyzer:   metadataAnalyzer,
+		personalityService: personalityService,
 	}
 }
 
@@ -396,20 +420,50 @@ func (s *SignalingServer) registerClient(client *PCMClient, data map[string]inte
 			log.Printf("🔧 Tool call nativa: %s", name)
 			return s.handleToolCall(client, name, args)
 		},
-		// 📝 3. Callback de Transcrição (Dual-Model)
+		// 📝 3. Callback de Transcrição (Dual-Model + AUTO-SAVE)
 		func(role, text string) {
+			// Análise de ferramentas (existente)
 			if role == "user" {
 				// log.Printf("🗣️ IDOSO: %s", text)
 				go s.analyzeForTools(client, text)
 			}
+
+			// 🧠 NOVO: Auto-salvar como memória episódica
+			go s.saveAsMemory(client.IdosoID, role, text)
 		},
 	)
+
+	// 🧠 NOVO: Buscar memórias episódicas relevantes
+	log.Printf("🔍 Buscando memórias relevantes...")
+	memories, err := s.retrievalService.Retrieve(
+		client.ctx,
+		client.IdosoID,
+		"últimas conversas importantes",
+		5, // Top-5 memórias
+	)
+
+	var memoryTexts []string
+	if err != nil {
+		log.Printf("⚠️ Erro ao buscar memórias: %v (continuando sem memórias)", err)
+	} else if len(memories) > 0 {
+		log.Printf("✅ %d memórias encontradas", len(memories))
+		for _, mem := range memories {
+			// Formatar memória para contexto
+			memText := fmt.Sprintf("[%s] %s: %s (similaridade: %.2f)",
+				mem.Memory.Timestamp.Format("02/01"),
+				mem.Memory.Speaker,
+				mem.Memory.Content,
+				mem.Similarity,
+			)
+			memoryTexts = append(memoryTexts, memText)
+		}
+	}
 
 	// ✅ FIX: Modo de voz NÃO usa tools (conflito com AUDIO modality)
 	instructions := signaling.BuildInstructions(client.IdosoID, s.db.GetConnection())
 
 	log.Printf("🚀 Iniciando sessão Gemini...")
-	err = client.GeminiClient.StartSession(instructions, nil)
+	err = client.GeminiClient.StartSession(instructions, nil, memoryTexts)
 	if err != nil {
 		log.Printf("❌ Erro ao iniciar sessão: %v", err)
 		s.sendJSON(client, map[string]string{"type": "error", "message": "Session error"})

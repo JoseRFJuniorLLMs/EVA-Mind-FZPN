@@ -55,8 +55,20 @@ func (c *Client) SetCallbacks(onAudio AudioCallback, onToolCall ToolCallCallback
 	c.onTranscript = onTranscript
 }
 
-// SendSetup envia configuração inicial
-func (c *Client) SendSetup(instructions string, tools []interface{}) error {
+// SendSetup envia configuração inicial com memórias episódicas
+func (c *Client) SendSetup(instructions string, tools []interface{}, memories []string) error {
+	// Enriquecer instruções com memórias relevantes
+	enrichedInstructions := instructions
+
+	if len(memories) > 0 {
+		enrichedInstructions += "\n\n=== MEMÓRIAS RELEVANTES DO PACIENTE ===\n"
+		for i, mem := range memories {
+			enrichedInstructions += fmt.Sprintf("%d. %s\n", i+1, mem)
+		}
+		enrichedInstructions += "=== FIM DAS MEMÓRIAS ===\n\n"
+		enrichedInstructions += "IMPORTANTE: Use essas memórias para contextualizar suas respostas e demonstrar que você se lembra do paciente.\n"
+	}
+
 	// ✅ CORRETO: Gemini SEMPRE retorna 24kHz quando usa response_modalities: ["AUDIO"]
 	// NÃO existe campo sample_rate_hertz na API!
 	// 🚨 PROTECTION: Gemini 2.5 Preview NÃO suporta Tools nativas + Áudio.
@@ -80,7 +92,7 @@ func (c *Client) SendSetup(instructions string, tools []interface{}) error {
 			},
 			"system_instruction": map[string]interface{}{
 				"parts": []map[string]string{
-					{"text": instructions},
+					{"text": enrichedInstructions},
 				},
 			},
 			"tools": finalTools,
@@ -92,6 +104,9 @@ func (c *Client) SendSetup(instructions string, tools []interface{}) error {
 	log.Printf("🎙️ Input: 16kHz PCM16 Mono")
 	log.Printf("🔊 Output: 24kHz PCM16 Mono (padrão Gemini)")
 	log.Printf("🗣️ Voz: Aoede")
+	if len(memories) > 0 {
+		log.Printf("🧠 Memórias carregadas: %d", len(memories))
+	}
 	log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	c.mu.Lock()
@@ -100,8 +115,8 @@ func (c *Client) SendSetup(instructions string, tools []interface{}) error {
 }
 
 // StartSession é um alias para SendSetup
-func (c *Client) StartSession(instructions string, tools []interface{}) error {
-	return c.SendSetup(instructions, tools)
+func (c *Client) StartSession(instructions string, tools []interface{}, memories []string) error {
+	return c.SendSetup(instructions, tools, memories)
 }
 
 // SendAudio envia dados de áudio PCM para o Gemini

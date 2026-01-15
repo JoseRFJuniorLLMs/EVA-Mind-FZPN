@@ -1017,6 +1017,12 @@ func BuildInstructions(idosoID int64, db *sql.DB) string {
 		instructions = strings.ReplaceAll(instructions, tag, "")
 	}
 
+	// 4.5. 🧠 CONTEXTO DE RELACIONAMENTO/PERSONALIDADE (NOVO)
+	personalityContext := getPersonalityContext(idosoID, db)
+	if personalityContext != "" {
+		instructions += "\n\n" + personalityContext
+	}
+
 	// 5. AGENT DELEGATION PROTOCOL (Para Gemini 2.5)
 	agentProtocol := `
 	
