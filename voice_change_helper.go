@@ -129,6 +129,7 @@ func detectVoiceChangeCommand(text string) (bool, string) {
 		"voz diferente",
 	}
 
+	for _, pattern := range patterns {
 		if strings.Contains(textLower, pattern) {
 			// Detectar voz específica mencionada
 			voiceNames := []string{
