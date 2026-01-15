@@ -2,7 +2,6 @@ package memory
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"strings"
 )
@@ -26,40 +25,8 @@ type Metadata struct {
 
 // Analyze extrai emoção, importância e tópicos de um texto
 func (m *MetadataAnalyzer) Analyze(ctx context.Context, text string) (*Metadata, error) {
-	// Prompt otimizado para extração de metadados
-	prompt := fmt.Sprintf(`Analise o seguinte texto de uma conversa com um idoso e retorne APENAS um JSON válido com:
-- emotion: uma palavra (feliz, triste, neutro, ansioso, confuso, irritado)
-- importance: número entre 0.0 e 1.0 (0.0=trivial, 0.5=normal, 1.0=crítico)
-- topics: array de até 3 tópicos principais (ex: ["saúde", "família", "medicamento"])
-
-Texto: "%s"
-
-Responda SOMENTE com o JSON, sem explicações:`, text)
-
-	// Chamar Gemini (usando endpoint generateContent)
-	// TODO: Implementar chamada HTTP para Gemini API quando necessário
-	// url := fmt.Sprintf(
-	// 	"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=%s",
-	// 	m.geminiAPIKey,
-	// )
-
-	// reqBody := map[string]interface{}{
-	// 	"contents": []map[string]interface{}{
-	// 		{
-	// 			"parts": []map[string]string{
-	// 				{"text": prompt},
-	// 			},
-	// 		},
-	// 	},
-	// 	"generationConfig": map[string]interface{}{
-	// 		"temperature": 0.1,
-	// 	},
-	// }
-
-	// Fazer request HTTP (usar mesmo padrão de embeddings.go)
-	// ... (implementação similar ao EmbeddingService)
-
-	// Por enquanto, fallback para heurísticas simples
+	// TODO: Implementar análise via Gemini API quando necessário
+	// Por enquanto, usar apenas análise heurística
 	return m.analyzeHeuristic(text), nil
 }
 

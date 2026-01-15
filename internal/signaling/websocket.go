@@ -610,7 +610,7 @@ func (s *SignalingServer) createSession(sessionID, cpf string, idosoID int64, co
 
 	instructions := BuildInstructions(idosoID, s.db)
 	// ✅ FIX: Modo de voz NÃO usa tools (conflito com AUDIO modality)
-	if err := geminiClient.SendSetup(instructions, nil); err != nil {
+	if err := geminiClient.SendSetup(instructions, nil, nil); err != nil {
 		cancel()
 		geminiClient.Close()
 		return nil, err
