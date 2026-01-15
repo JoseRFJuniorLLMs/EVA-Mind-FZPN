@@ -383,104 +383,20 @@ func (s *SignalingServer) registerClient(client *PCMClient, data map[string]inte
 
 	log.Printf("✅ Cliente registrado: %s (ID: %d)", idoso.CPF, idoso.ID)
 
-	// ✅ FIX: CRIAR GEMINI AQUI e configurar callbacks ANTES de enviar 'registered'
+	// ✅ FIX: CRIAR GEMINI AQUI usando helper
 	log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	log.Printf("🤖 CRIANDO CLIENTE GEMINI")
+	log.Printf("🤖 CRIANDO CLIENTE GEMINI (Initial)")
 	log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	gemClient, err := gemini.NewClient(client.ctx, s.cfg)
-	if err != nil {
-		log.Printf("❌ Gemini error: %v", err)
+	// ✅ DUAL-MODEL: Inicializar cliente de tools (mantido separado pois é REST, não WebSocket)
+	client.ToolsClient = gemini.NewToolsClient(s.cfg)
+
+	// Usar helper para configurar sessão (Voz padrão: Aoede)
+	if err := s.setupGeminiSession(client, "Aoede"); err != nil {
+		log.Printf("❌ Erro ao configurar sessão Gemini: %v", err)
 		s.sendJSON(client, map[string]string{"type": "error", "message": "IA error"})
 		return
 	}
-
-	client.GeminiClient = gemClient
-
-	// ✅ DUAL-MODEL: Inicializar cliente de tools
-	client.ToolsClient = gemini.NewToolsClient(s.cfg)
-
-	// ✅ CRÍTICO: Configurar callbacks ANTES de StartSession
-	log.Printf("🎯 Configurando callbacks de áudio e transcrição...")
-
-	gemClient.SetCallbacks(
-		// 📊 1. Callback de Áudio
-		func(audioBytes []byte) {
-			select {
-			case client.SendCh <- audioBytes:
-				if client.audioCount%50 == 0 {
-					// log.Printf("✅ Áudio enfileirado para %s", client.CPF)
-				}
-			default:
-				log.Printf("⚠️ Canal cheio, dropando áudio para %s", client.CPF)
-			}
-		},
-		// 🛠️ 2. Callback de Tool Call (Nativa)
-		func(name string, args map[string]interface{}) map[string]interface{} {
-			log.Printf("🔧 Tool call nativa: %s", name)
-			return s.handleToolCall(client, name, args)
-		},
-		// 📝 3. Callback de Transcrição (Dual-Model + AUTO-SAVE)
-		func(role, text string) {
-			// Análise de ferramentas (existente)
-			if role == "user" {
-				// log.Printf("🗣️ IDOSO: %s", text)
-				go s.analyzeForTools(client, text)
-			}
-
-			// 🧠 NOVO: Auto-salvar como memória episódica
-			go s.saveAsMemory(client.IdosoID, role, text)
-		},
-	)
-
-	// 🧠 NOVO: Buscar memórias episódicas relevantes
-	log.Printf("🔍 Buscando memórias relevantes...")
-	memories, err := s.retrievalService.Retrieve(
-		client.ctx,
-		client.IdosoID,
-		"últimas conversas importantes",
-		5, // Top-5 memórias
-	)
-
-	var memoryTexts []string
-	if err != nil {
-		log.Printf("⚠️ Erro ao buscar memórias: %v (continuando sem memórias)", err)
-	} else if len(memories) > 0 {
-		log.Printf("✅ %d memórias encontradas", len(memories))
-		for _, mem := range memories {
-			// Formatar memória para contexto
-			memText := fmt.Sprintf("[%s] %s: %s (similaridade: %.2f)",
-				mem.Memory.Timestamp.Format("02/01"),
-				mem.Memory.Speaker,
-				mem.Memory.Content,
-				mem.Similarity,
-			)
-			memoryTexts = append(memoryTexts, memText)
-		}
-	}
-
-	// ✅ FIX: Modo de voz NÃO usa tools (conflito com AUDIO modality)
-	instructions := signaling.BuildInstructions(client.IdosoID, s.db.GetConnection())
-
-	log.Printf("🚀 Iniciando sessão Gemini...")
-	err = client.GeminiClient.StartSession(instructions, nil, memoryTexts)
-	if err != nil {
-		log.Printf("❌ Erro ao iniciar sessão: %v", err)
-		s.sendJSON(client, map[string]string{"type": "error", "message": "Session error"})
-		return
-	}
-
-	// ✅ Iniciar loop de leitura de respostas
-	go func() {
-		log.Printf("👂 HandleResponses iniciado para %s", client.CPF)
-		err := client.GeminiClient.HandleResponses(client.ctx)
-		if err != nil {
-			log.Printf("⚠️ HandleResponses finalizado para %s: %v", client.CPF, err)
-		}
-		client.active = false
-	}()
-
-	client.active = true
 
 	// ✅ AGORA enviar 'registered' (Mobile vai inicializar player ao receber)
 	log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -497,13 +413,116 @@ func (s *SignalingServer) registerClient(client *PCMClient, data map[string]inte
 	log.Printf("✅ Gemini pronto e aguardando start_call...")
 }
 
-// ❌ DELETADO: startGeminiSession() - FUNÇÃO DUPLICADA E DESNECESSÁRIA
-// Toda a lógica foi movida para registerClient() acima
+func (s *SignalingServer) setupGeminiSession(client *PCMClient, voiceName string) error {
+	log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	log.Printf("🤖 CONFIGURANDO SESSÃO GEMINI (Voz: %s)", voiceName)
+	log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	// Fechar cliente anterior se existir para liberar recursos
+	if client.GeminiClient != nil {
+		client.GeminiClient.Close()
+	}
+
+	gemClient, err := gemini.NewClient(client.ctx, s.cfg)
+	if err != nil {
+		log.Printf("❌ Gemini error: %v", err)
+		return err
+	}
+
+	client.GeminiClient = gemClient
+
+	// ✅ CRÍTICO: Configurar callbacks
+	log.Printf("🎯 Configurando callbacks de áudio e transcrição...")
+
+	gemClient.SetCallbacks(
+		// 📊 1. Callback de Áudio
+		func(audioBytes []byte) {
+			select {
+			case client.SendCh <- audioBytes:
+				// OK
+			default:
+				log.Printf("⚠️ Canal cheio, dropando áudio para %s", client.CPF)
+			}
+		},
+		// 🛠️ 2. Callback de Tool Call (Nativa)
+		func(name string, args map[string]interface{}) map[string]interface{} {
+			log.Printf("🔧 Tool call nativa: %s", name)
+			return s.handleToolCall(client, name, args)
+		},
+		// 📝 3. Callback de Transcrição (Dual-Model + AUTO-SAVE)
+		func(role, text string) {
+			if role == "user" {
+				go s.analyzeForTools(client, text)
+			}
+			go s.saveAsMemory(client.IdosoID, role, text)
+		},
+	)
+
+	// 🧠 Buscar memórias episódicas relevantes
+	memories, err := s.retrievalService.Retrieve(
+		client.ctx,
+		client.IdosoID,
+		"últimas conversas importantes",
+		5,
+	)
+
+	var memoryTexts []string
+	if len(memories) > 0 {
+		for _, mem := range memories {
+			memText := fmt.Sprintf("[%s] %s: %s (similaridade: %.2f)",
+				mem.Memory.Timestamp.Format("02/01"),
+				mem.Memory.Speaker,
+				mem.Memory.Content,
+				mem.Similarity,
+			)
+			memoryTexts = append(memoryTexts, memText)
+		}
+	}
+
+	instructions := signaling.BuildInstructions(client.IdosoID, s.db.GetConnection())
+
+	log.Printf("🚀 Iniciando sessão Gemini...")
+	err = client.GeminiClient.StartSession(instructions, nil, memoryTexts, voiceName)
+	if err != nil {
+		return err
+	}
+
+	// ✅ Iniciar loop de leitura
+	go func() {
+		log.Printf("👂 HandleResponses iniciado para %s", client.CPF)
+		err := client.GeminiClient.HandleResponses(client.ctx)
+		if err != nil {
+			log.Printf("⚠️ HandleResponses finalizado: %v", err)
+		}
+		// Não setamos active=false aqui pois pode ser um restart
+	}()
+
+	client.active = true
+	return nil
+}
 
 func (s *SignalingServer) handleToolCall(client *PCMClient, name string, args map[string]interface{}) map[string]interface{} {
 	log.Printf("🛠️ Tool call: %s para %s", name, client.CPF)
 
 	switch name {
+	case "change_voice":
+		voiceName, _ := args["voice_name"].(string)
+		log.Printf("🎤 Solicitada troca de voz para: %s", voiceName)
+
+		// Reconfigurar sessão com nova voz
+		err := s.setupGeminiSession(client, voiceName)
+		if err != nil {
+			return map[string]interface{}{
+				"success": false,
+				"error":   err.Error(),
+			}
+		}
+
+		return map[string]interface{}{
+			"success": true,
+			"message": fmt.Sprintf("Voz alterada para %s", voiceName),
+		}
+
 	case "alert_family":
 		reason, _ := args["reason"].(string)
 		severity, _ := args["severity"].(string)

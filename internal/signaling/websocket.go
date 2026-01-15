@@ -930,6 +930,40 @@ func BuildInstructions(idosoID int64, db *sql.DB) string {
 		log.Printf("⚠️ Erro ao buscar tabela medicamentos: %v", errMeds)
 	}
 
+	// ✅ NOVO (AGENDA DO DIA): Buscar agendamentos futuros (próximas 24h)
+	agendaQuery := `
+		SELECT tipo, data_hora_agendada, dados_tarefa
+		FROM agendamentos
+		WHERE idoso_id = $1 
+		  AND status = 'agendado'
+		  AND data_hora_agendada BETWEEN NOW() AND NOW() + INTERVAL '24 hours'
+		ORDER BY data_hora_agendada ASC
+	`
+	rowsAgenda, errAgenda := db.Query(agendaQuery, idosoID)
+	var agendaList []string
+	if errAgenda == nil {
+		defer rowsAgenda.Close()
+		for rowsAgenda.Next() {
+			var aTipo string
+			var aData time.Time
+			var aDadosJSON sql.NullString
+
+			if err := rowsAgenda.Scan(&aTipo, &aData, &aDadosJSON); err == nil {
+				// Formatar hora: "14:30"
+				hora := aData.Format("15:04")
+				item := fmt.Sprintf("- Às %s: %s", hora, strings.Title(aTipo))
+
+				// Se tiver detalhes extras no JSON
+				if aDadosJSON.Valid && aDadosJSON.String != "{}" {
+					item += fmt.Sprintf(" (%s)", aDadosJSON.String)
+				}
+				agendaList = append(agendaList, item)
+			}
+		}
+	} else {
+		log.Printf("⚠️ Erro ao buscar agenda: %v", errAgenda)
+	}
+
 	// 📝 DEBUG EXAUSTIVO DOS DADOS RECUPERADOS
 	log.Printf("📋 [DADOS PACIENTE] Nome: %s, Idade: %d", nome, idade)
 	log.Printf("   💊 Meds Relacionais: %d encontrados", len(medsList))
@@ -983,6 +1017,17 @@ func BuildInstructions(idosoID int64, db *sql.DB) string {
 		}
 	}
 	dossier += "INSTRUÇÃO: Se o paciente perguntar o que deve tomar, consulte EXCLUSIVAMENTE esta lista acima.\n"
+
+	dossier += "\n📅 --- AGENDA DO DIA (PRÓXIMAS 24H) ---\n"
+	if len(agendaList) > 0 {
+		dossier += "O paciente tem os seguintes compromissos agendados para hoje/amanhã:\n"
+		for _, a := range agendaList {
+			dossier += a + "\n"
+		}
+		dossier += "DICA: Se for um compromisso médico, pergunte se ele já sabe como vai (transporte).\n"
+	} else {
+		dossier += "Nenhum compromisso agendado para as próximas 24 horas.\n"
+	}
 
 	dossier += "\n📞 --- REDE DE APOIO ---\n"
 	dossier += fmt.Sprintf("Familiar: %s\n", getString(familiarPrincipal, "Não informado"))

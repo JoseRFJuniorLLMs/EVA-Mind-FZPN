@@ -376,6 +376,22 @@ func GetDefaultTools() []interface{} {
 						"required": []string{"query"},
 					},
 				},
+				// ✅ Change Voice Tool (Runtime)
+				map[string]interface{}{
+					"name":        "change_voice",
+					"description": "Altera a voz da assistente (EVA) em tempo real. Vozes disponiveis: Puck, Charon, Kore, Fenrir, Aoede",
+					"parameters": map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"voice_name": map[string]interface{}{
+								"type":        "string",
+								"description": "Nome da voz desejada (Puck, Charon, Kore, Fenrir, Aoede)",
+								"enum":        []string{"Puck", "Charon", "Kore", "Fenrir", "Aoede"},
+							},
+						},
+						"required": []string{"voice_name"},
+					},
+				},
 			},
 		},
 	}

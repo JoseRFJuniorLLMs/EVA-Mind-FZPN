@@ -56,7 +56,7 @@ func (c *Client) SetCallbacks(onAudio AudioCallback, onToolCall ToolCallCallback
 }
 
 // SendSetup envia configuração inicial com memórias episódicas
-func (c *Client) SendSetup(instructions string, tools []interface{}, memories []string) error {
+func (c *Client) SendSetup(instructions string, tools []interface{}, memories []string, voiceName string) error {
 	// Enriquecer instruções com memórias relevantes
 	enrichedInstructions := instructions
 
@@ -77,6 +77,11 @@ func (c *Client) SendSetup(instructions string, tools []interface{}, memories []
 	// 🔓 UNLOCK: Permitindo tools nativas no Gemini 2.5
 	finalTools := tools
 
+	// Default voice fallback
+	if voiceName == "" {
+		voiceName = "Aoede"
+	}
+
 	setupMsg := map[string]interface{}{
 		"setup": map[string]interface{}{
 			"model": fmt.Sprintf("models/%s", c.cfg.ModelID),
@@ -85,7 +90,7 @@ func (c *Client) SendSetup(instructions string, tools []interface{}, memories []
 				"speech_config": map[string]interface{}{
 					"voice_config": map[string]interface{}{
 						"prebuilt_voice_config": map[string]string{
-							"voice_name": "Aoede",
+							"voice_name": voiceName,
 						},
 					},
 				},
@@ -103,7 +108,7 @@ func (c *Client) SendSetup(instructions string, tools []interface{}, memories []
 	log.Printf("🔧 CONFIGURANDO GEMINI")
 	log.Printf("🎙️ Input: 16kHz PCM16 Mono")
 	log.Printf("🔊 Output: 24kHz PCM16 Mono (padrão Gemini)")
-	log.Printf("🗣️ Voz: Aoede")
+	log.Printf("🗣️ Voz: %s", voiceName)
 	if len(memories) > 0 {
 		log.Printf("🧠 Memórias carregadas: %d", len(memories))
 	}
@@ -115,8 +120,8 @@ func (c *Client) SendSetup(instructions string, tools []interface{}, memories []
 }
 
 // StartSession é um alias para SendSetup
-func (c *Client) StartSession(instructions string, tools []interface{}, memories []string) error {
-	return c.SendSetup(instructions, tools, memories)
+func (c *Client) StartSession(instructions string, tools []interface{}, memories []string, voiceName string) error {
+	return c.SendSetup(instructions, tools, memories, voiceName)
 }
 
 // SendAudio envia dados de áudio PCM para o Gemini
