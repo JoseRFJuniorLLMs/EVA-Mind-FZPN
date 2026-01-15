@@ -1,3 +1,12 @@
+package main
+
+import (
+	"context"
+	"eva-mind/internal/memory"
+	"log"
+	"time"
+)
+
 // saveAsMemory salva uma transcrição como memória episódica (async)
 func (s *SignalingServer) saveAsMemory(idosoID int64, role, text string) {
 	// Ignorar textos muito curtos
@@ -19,7 +28,7 @@ func (s *SignalingServer) saveAsMemory(idosoID int64, role, text string) {
 	metadata := s.metadataAnalyzer.analyzeHeuristic(text)
 
 	// 3. Salvar no banco
-	memory := &memory.Memory{
+	mem := &memory.Memory{
 		IdosoID:    idosoID,
 		Speaker:    role,
 		Content:    text,
@@ -29,7 +38,7 @@ func (s *SignalingServer) saveAsMemory(idosoID int64, role, text string) {
 		Topics:     metadata.Topics,
 	}
 
-	err = s.memoryStore.Store(ctx, memory)
+	err = s.memoryStore.Store(ctx, mem)
 	if err != nil {
 		log.Printf("❌ [MEMORY] Erro ao salvar: %v", err)
 		return
