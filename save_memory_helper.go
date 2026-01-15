@@ -25,7 +25,16 @@ func (s *SignalingServer) saveAsMemory(idosoID int64, role, text string) {
 	}
 
 	// 2. Analisar metadados (emoção, importância, tópicos)
-	metadata := s.metadataAnalyzer.analyzeHeuristic(text)
+	metadata, err := s.metadataAnalyzer.Analyze(ctx, text)
+	if err != nil {
+		log.Printf("⚠️ [MEMORY] Erro na análise (usando padrão): %v", err)
+		// Fallback manual se necessário, mas Analyze já deve tratar isso
+		metadata = &memory.Metadata{
+			Emotion:    "neutro",
+			Importance: 0.5,
+			Topics:     []string{"geral"},
+		}
+	}
 
 	// 3. Salvar no banco
 	mem := &memory.Memory{
