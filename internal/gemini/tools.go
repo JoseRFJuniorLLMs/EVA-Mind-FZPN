@@ -351,6 +351,7 @@ func GetDefaultTools() []interface{} {
 			},
 		},
 		// ✅ Google Search Tool (Integrada ao modelo)
+		map[string]interface{}{
 			"google_search_retrieval": map[string]interface{}{
 				"dynamic_retrieval_config": map[string]interface{}{
 					"mode":              "MODE_DYNAMIC",

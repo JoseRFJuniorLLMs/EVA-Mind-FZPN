@@ -37,23 +37,24 @@ Texto: "%s"
 Responda SOMENTE com o JSON, sem explicações:`, text)
 
 	// Chamar Gemini (usando endpoint generateContent)
-	url := fmt.Sprintf(
-		"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=%s",
-		m.geminiAPIKey,
-	)
+	// TODO: Implementar chamada HTTP para Gemini API quando necessário
+	// url := fmt.Sprintf(
+	// 	"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=%s",
+	// 	m.geminiAPIKey,
+	// )
 
-	reqBody := map[string]interface{}{
-		"contents": []map[string]interface{}{
-			{
-				"parts": []map[string]string{
-					{"text": prompt},
-				},
-			},
-		},
-		"generationConfig": map[string]interface{}{
-			"temperature": 0.1, // Baixa temperatura para respostas consistentes
-		},
-	}
+	// reqBody := map[string]interface{}{
+	// 	"contents": []map[string]interface{}{
+	// 		{
+	// 			"parts": []map[string]string{
+	// 				{"text": prompt},
+	// 			},
+	// 		},
+	// 	},
+	// 	"generationConfig": map[string]interface{}{
+	// 		"temperature": 0.1,
+	// 	},
+	// }
 
 	// Fazer request HTTP (usar mesmo padrão de embeddings.go)
 	// ... (implementação similar ao EmbeddingService)
