@@ -10,6 +10,8 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/joho/godotenv v1.5.1
 	github.com/lib/pq v1.10.9
+	github.com/neo4j/neo4j-go-driver/v5 v5.28.4
+	github.com/redis/go-redis/v9 v9.17.2
 	github.com/rs/zerolog v1.34.0
 	golang.org/x/crypto v0.46.0
 	golang.org/x/oauth2 v0.34.0
@@ -35,6 +37,7 @@ require (
 	github.com/MicahParks/keyfunc v1.9.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cncf/xds/go v0.0.0-20251022180443-0feb69152e9f // indirect
+	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/envoyproxy/go-control-plane/envoy v1.35.0 // indirect
 	github.com/envoyproxy/protoc-gen-validate v1.2.1 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
