@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,6 +23,9 @@ import (
 	"eva-mind/internal/gemini"
 	"eva-mind/internal/gmail"
 	"eva-mind/internal/googlefit"
+	"eva-mind/internal/infrastructure/cache"
+	"eva-mind/internal/infrastructure/graph"
+	"eva-mind/internal/lacan"
 	"eva-mind/internal/logger"
 	"eva-mind/internal/maps"
 	"eva-mind/internal/memory"
@@ -30,6 +35,7 @@ import (
 	"eva-mind/internal/scheduler"
 	"eva-mind/internal/sheets"
 	"eva-mind/internal/signaling"
+	"eva-mind/internal/transnar"
 	"eva-mind/internal/youtube"
 
 	"github.com/gorilla/mux"
@@ -50,6 +56,14 @@ type SignalingServer struct {
 	retrievalService   *memory.RetrievalService
 	metadataAnalyzer   *memory.MetadataAnalyzer
 	personalityService *personality.PersonalityService
+
+	// FZPN Components
+	neo4jClient       *graph.Neo4jClient
+	graphStore        *memory.GraphStore
+	fdpnEngine        *memory.FDPNEngine // Updated from PrimingEngine
+	signifierService  *lacan.SignifierService
+	transnarEngine    *transnar.Engine // NEW: TransNAR
+	personalityRouter *personality.PersonalityRouter
 }
 
 type PCMClient struct {
@@ -65,6 +79,7 @@ type PCMClient struct {
 	cancel       context.CancelFunc
 	lastActivity time.Time
 	audioCount   int64
+	LatentDesire *transnar.DesireInference // NEW: TransNAR desire context
 }
 
 var (
@@ -80,7 +95,7 @@ var (
 	}
 )
 
-func NewSignalingServer(cfg *config.Config, db *database.DB, pushService *push.FirebaseService, cal *calendar.Service) *SignalingServer {
+func NewSignalingServer(cfg *config.Config, db *database.DB, neo4jClient *graph.Neo4jClient, pushService *push.FirebaseService, cal *calendar.Service) *SignalingServer {
 	// Inicializar serviços de memória
 	embeddingService := memory.NewEmbeddingService(cfg.GoogleAPIKey)
 	memoryStore := memory.NewMemoryStore(db.GetConnection())
@@ -89,9 +104,28 @@ func NewSignalingServer(cfg *config.Config, db *database.DB, pushService *push.F
 
 	// Inicializar serviço de personalidade
 	personalityService := personality.NewPersonalityService(db.GetConnection())
+	personalityRouter := personality.NewPersonalityRouter()
+
+	// FZPN Components
+	graphStore := memory.NewGraphStore(neo4jClient, cfg)
+
+	// Redis & FDPN
+	redisClient, err := cache.NewRedisClient(cfg)
+	if err != nil {
+		log.Printf("⚠️ Redis error: %v. FDPN will run in degraded mode (no L2 cache).", err)
+	}
+	// Initialize FDPN Engine (Fractal Dynamic Priming Network)
+	fdpnEngine := memory.NewFDPNEngine(neo4jClient, redisClient)
+
+	signifierService := lacan.NewSignifierService(neo4jClient)
+
+	// Initialize TransNAR Engine (Transference Narrative Reasoning)
+	transnarEngine := transnar.NewEngine(signifierService, personalityRouter, fdpnEngine)
+	log.Println("✅ TransNAR Engine initialized")
 
 	log.Printf("✅ Serviços de Memória Episódica inicializados")
 	log.Printf("✅ Serviço de Personalidade Afetiva inicializado")
+	log.Printf("✅ FZPN Engine (Phase 2) initialized")
 
 	return &SignalingServer{
 		upgrader: websocket.Upgrader{
@@ -109,6 +143,14 @@ func NewSignalingServer(cfg *config.Config, db *database.DB, pushService *push.F
 		retrievalService:   retrievalService,
 		metadataAnalyzer:   metadataAnalyzer,
 		personalityService: personalityService,
+
+		// FZPN
+		neo4jClient:       neo4jClient,
+		graphStore:        graphStore,
+		fdpnEngine:        fdpnEngine,
+		signifierService:  signifierService,
+		transnarEngine:    transnarEngine,
+		personalityRouter: personalityRouter,
 	}
 }
 
@@ -134,6 +176,36 @@ func main() {
 		appLog.Fatal().Err(err).Msg("Config error")
 	}
 
+	// Build DATABASE_URL if not provided
+	if cfg.DatabaseURL == "" {
+		dbHost := os.Getenv("DB_HOST")
+		if dbHost == "" {
+			dbHost = "localhost"
+		}
+		dbPort := os.Getenv("DB_PORT")
+		if dbPort == "" {
+			dbPort = "5432"
+		}
+		dbUser := os.Getenv("DB_USER")
+		if dbUser == "" {
+			dbUser = "postgres"
+		}
+		dbPassword := os.Getenv("DB_PASSWORD")
+		dbName := os.Getenv("DB_NAME")
+		if dbName == "" {
+			dbName = "eva_db"
+		}
+		dbSSLMode := os.Getenv("DB_SSLMODE")
+		if dbSSLMode == "" {
+			dbSSLMode = "disable"
+		}
+
+		cfg.DatabaseURL = fmt.Sprintf(
+			"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+			dbHost, dbPort, dbUser, dbPassword, dbName, dbSSLMode,
+		)
+	}
+
 	db, err = database.NewDB(cfg.DatabaseURL)
 	if err != nil {
 		log.Fatalf("❌ DB error: %v", err)
@@ -151,7 +223,16 @@ func main() {
 	calService := calendar.NewService(context.Background())
 	log.Printf("✅ Calendar service initialized (OAuth mode)")
 
-	signalingServer = NewSignalingServer(cfg, db, pushService, calService)
+	// Neo4j Client (FZPN)
+	neo4jClient, err := graph.NewNeo4jClient(cfg)
+	if err != nil {
+		log.Printf("⚠️ Neo4j warning: %v. FZPN features will be disabled.", err)
+	} else {
+		defer neo4jClient.Close(context.Background())
+		log.Printf("✅ Neo4j initialized")
+	}
+
+	signalingServer = NewSignalingServer(cfg, db, neo4jClient, pushService, calService)
 
 	sch, err := scheduler.NewScheduler(cfg, db.GetConnection())
 	if err != nil {
@@ -207,6 +288,9 @@ func main() {
 			"wsUrl": "ws://localhost:8080/ws/pcm",
 		})
 	}).Methods("GET")
+
+	// ⌚ Google Fit Sync (v18)
+	api.HandleFunc("/google/fit/sync/{id}", syncGoogleFitHandler).Methods("POST")
 
 	router.PathPrefix("/").Handler(http.FileServer(http.Dir("./web")))
 
@@ -453,7 +537,59 @@ func (s *SignalingServer) setupGeminiSession(client *PCMClient, voiceName string
 		func(role, text string) {
 			if role == "user" {
 				go s.analyzeForTools(client, text)
+
+				// FZPN: Priming (FDPN Streaming)
+				if s.fdpnEngine != nil {
+					go func() {
+						// ⚡ FDPN Streaming Prime
+						err := s.fdpnEngine.StreamingPrime(client.ctx, strconv.FormatInt(client.IdosoID, 10), text)
+						if err != nil {
+							log.Printf("⚠️ FDPN Error: %v", err)
+						}
+					}()
+				}
+
+				// TransNAR: Desire Inference (NEW)
+				if s.transnarEngine != nil {
+					go func() {
+						// Get current personality
+						currentType := personality.Type9 // Default
+						if s.personalityRouter != nil {
+							// TODO: Get from personality state
+							currentType = personality.Type9
+						}
+
+						// Infer latent desire
+						desire := s.transnarEngine.InferDesire(
+							client.ctx,
+							client.IdosoID,
+							text,
+							currentType,
+						)
+
+						// If high confidence, inject into context
+						if s.transnarEngine.ShouldInterpellate(desire) {
+							log.Printf("🧠 [TransNAR] Desejo latente: %s (%.0f%%) - %s",
+								desire.Desire, desire.Confidence*100, desire.Reasoning)
+
+							// Store in client context for next LLM call
+							client.LatentDesire = desire
+						}
+					}()
+				}
+
+				// Lacan: Track Signifiers
+				if s.signifierService != nil {
+					go func() {
+						err := s.signifierService.TrackSignifiers(client.ctx, client.IdosoID, text)
+						if err != nil {
+							log.Printf("⚠️ Lacan Error: %v", err)
+						}
+					}()
+				}
 			}
+
+			// AUTO-SAVE (ambos roles)
 			go s.saveAsMemory(client.IdosoID, role, text)
 		},
 	)
@@ -469,20 +605,55 @@ func (s *SignalingServer) setupGeminiSession(client *PCMClient, voiceName string
 	var memoryTexts []string
 	if len(memories) > 0 {
 		for _, mem := range memories {
-			memText := fmt.Sprintf("[%s] %s: %s (similaridade: %.2f)",
+			memText := fmt.Sprintf("- [%s] %s: %s",
 				mem.Memory.Timestamp.Format("02/01"),
 				mem.Memory.Speaker,
 				mem.Memory.Content,
-				mem.Similarity,
 			)
 			memoryTexts = append(memoryTexts, memText)
 		}
 	}
+	medicalContext := strings.Join(memoryTexts, "\n")
 
-	instructions := signaling.BuildInstructions(client.IdosoID, s.db.GetConnection())
+	// 🎭 FZPN: Obter Estado de Personalidade & Lacan
+	var currentType int = 9 // Default Pacificador
+	var lacanState string = "Transferência não iniciada."
 
-	log.Printf("🚀 Iniciando sessão Gemini...")
-	err = client.GeminiClient.StartSession(instructions, nil, memoryTexts, voiceName)
+	// 1. Personalidade (Zeta)
+	if s.personalityService != nil {
+		state, err := s.personalityService.GetState(client.ctx, client.IdosoID)
+		if err == nil {
+			// Mapear emoção para tipo (Simples 9->6 ou 9->3 por enquanto, ou usar Router completo)
+			// Aqui usaremos o Router para determinar o "Modo Ativo"
+			if s.personalityRouter != nil {
+				activeType, _ := s.personalityRouter.RoutePersonality(personality.Type9, state.DominantEmotion)
+				currentType = int(activeType)
+			}
+		}
+	}
+
+	// 2. Inconsciente (Lacan) - Extrair significantes
+	if s.signifierService != nil {
+		sigs, err := s.signifierService.GetKeySignifiers(client.ctx, client.IdosoID, 5)
+		if err == nil && len(sigs) > 0 {
+			var words []string
+			for _, sig := range sigs {
+				words = append(words, fmt.Sprintf("'%s' (Carga: %.1f)", sig.Word, sig.EmotionalCharge))
+			}
+			lacanState = "Significantes Mestre: " + strings.Join(words, ", ")
+		}
+	}
+
+	// Adicionar contexto de relacionamento ao Lacan State (já que é psíquico)
+	relationshipContext := signaling.BuildInstructions(client.IdosoID, s.db.GetConnection())
+	lacanState += "\n" + relationshipContext
+
+	// ⚡ BUILD FINAL PROMPT (Co-Intelligence)
+	instructions := gemini.BuildSystemPrompt(currentType, lacanState, medicalContext)
+
+	log.Printf("🚀 Iniciando sessão Gemini (Co-Intelligence Mode)...")
+	// Passamos nil em memories e instructions antiga porque tudo agora está no System Prompt unificado
+	err = client.GeminiClient.StartSession(instructions, nil, nil, voiceName)
 	if err != nil {
 		return err
 	}
@@ -1180,6 +1351,46 @@ func callLogsHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"status": "saved", "message": "Log received"})
+}
+
+func syncGoogleFitHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	idosoIDStr := vars["id"]
+	idosoID, _ := strconv.ParseInt(idosoIDStr, 10, 64)
+
+	log.Printf("⌚ Iniciando sincronização Google Fit para idoso %d", idosoID)
+
+	// 1. Buscar tokens
+	_, accessToken, expiry, err := db.GetGoogleTokens(idosoID)
+	if err != nil || accessToken == "" || time.Now().After(expiry) {
+		http.Error(w, "Google account not linked or token expired", http.StatusUnauthorized)
+		return
+	}
+
+	// 2. Chamar serviço Google Fit
+	fitSvc := googlefit.NewService(context.Background())
+	healthData, err := fitSvc.GetAllHealthData(accessToken)
+	if err != nil {
+		log.Printf("❌ Erro ao buscar dados do Fit: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// 3. Salvar no Banco
+	err = db.SaveDeviceHealthData(idosoID, int(healthData.HeartRate), int(healthData.Steps))
+	if err != nil {
+		log.Printf("❌ Erro ao salvar dados de saúde: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("✅ Sincronização Google Fit concluída para idoso %d: %d BPM, %d passos", idosoID, int(healthData.HeartRate), int(healthData.Steps))
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status": "success",
+		"data":   healthData,
+	})
 }
 
 // initiateWebRTCCall handles the logic to start a WebRTC call
