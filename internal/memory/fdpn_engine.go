@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"eva-mind/internal/infrastructure/cache"
 	"eva-mind/internal/infrastructure/graph"
+	"eva-mind/internal/infrastructure/vector"
 	"fmt"
 	"log"
 	"strings"
@@ -15,6 +16,7 @@ import (
 type FDPNEngine struct {
 	neo4j         *graph.Neo4jClient
 	redis         *cache.RedisClient
+	qdrant        *vector.QdrantClient // NEW: Vector search
 	localCache    *sync.Map
 	activeThreads chan struct{} // Limiter for concurrency
 	maxDepth      int
@@ -38,10 +40,11 @@ type ActivatedNode struct {
 	Properties map[string]interface{} `json:"properties"`
 }
 
-func NewFDPNEngine(neo4j *graph.Neo4jClient, redis *cache.RedisClient) *FDPNEngine {
+func NewFDPNEngine(neo4j *graph.Neo4jClient, redis *cache.RedisClient, qdrant *vector.QdrantClient) *FDPNEngine {
 	return &FDPNEngine{
 		neo4j:         neo4j,
 		redis:         redis,
+		qdrant:        qdrant,
 		localCache:    &sync.Map{},
 		activeThreads: make(chan struct{}, 10), // Max 10 parallel threads
 		maxDepth:      3,

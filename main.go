@@ -25,6 +25,7 @@ import (
 	"eva-mind/internal/googlefit"
 	"eva-mind/internal/infrastructure/cache"
 	"eva-mind/internal/infrastructure/graph"
+	"eva-mind/internal/infrastructure/vector"
 	"eva-mind/internal/lacan"
 	"eva-mind/internal/logger"
 	"eva-mind/internal/maps"
@@ -114,8 +115,18 @@ func NewSignalingServer(cfg *config.Config, db *database.DB, neo4jClient *graph.
 	if err != nil {
 		log.Printf("⚠️ Redis error: %v. FDPN will run in degraded mode (no L2 cache).", err)
 	}
+
+	// Qdrant Vector Database
+	qdrantClient, err := vector.NewQdrantClient(cfg.QdrantHost, cfg.QdrantPort)
+	if err != nil {
+		log.Printf("⚠️ Qdrant error: %v. FDPN will run without vector search.", err)
+		qdrantClient = nil // Allow graceful degradation
+	} else {
+		log.Println("✅ Qdrant Vector DB connected")
+	}
+
 	// Initialize FDPN Engine (Fractal Dynamic Priming Network)
-	fdpnEngine := memory.NewFDPNEngine(neo4jClient, redisClient)
+	fdpnEngine := memory.NewFDPNEngine(neo4jClient, redisClient, qdrantClient)
 
 	signifierService := lacan.NewSignifierService(neo4jClient)
 

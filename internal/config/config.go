@@ -67,6 +67,10 @@ type Config struct {
 	RedisHost     string
 	RedisPort     string
 	RedisPassword string
+
+	// Qdrant
+	QdrantHost string
+	QdrantPort int
 }
 
 func Load() (*Config, error) {
@@ -131,7 +135,11 @@ func Load() (*Config, error) {
 		// Redis
 		RedisHost:     getEnvWithDefault("REDIS_HOST", "localhost"),
 		RedisPort:     getEnvWithDefault("REDIS_PORT", "6379"),
-		RedisPassword: getEnvWithDefault("REDIS_PASSWORD", ""),
+		RedisPassword: os.Getenv("REDIS_PASSWORD"),
+
+		// Qdrant
+		QdrantHost: getEnvWithDefault("QDRANT_HOST", "localhost"),
+		QdrantPort: getEnvInt("QDRANT_PORT", 6334),
 	}, nil
 }
 
