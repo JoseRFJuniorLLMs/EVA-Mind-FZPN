@@ -6,14 +6,14 @@ echo ""
 
 # Atualizar pip
 echo "📦 Atualizando pip..."
-python3 -m pip install --upgrade pip
+python3 -m pip install --upgrade pip --break-system-packages
 
 # Instalar dependências
 echo ""
 echo "📥 Instalando bibliotecas..."
 
-pip3 install qdrant-client
-pip3 install requests
+pip3 install qdrant-client --break-system-packages
+pip3 install requests --break-system-packages
 
 echo ""
 echo "✅ Dependências instaladas com sucesso!"
