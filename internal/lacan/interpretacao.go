@@ -3,6 +3,7 @@ package lacan
 import (
 	"context"
 	"database/sql"
+	"eva-mind/internal/infrastructure/graph"
 )
 
 // InterpretationService coordena todos os serviços lacanianos
@@ -10,20 +11,21 @@ type InterpretationService struct {
 	transferencia *TransferenceService
 	significante  *SignifierService
 	demandaDesejo *DemandDesireService
-	grandAutre    *Grand
+	grandAutre    *GrandAutreService // Corrected generic name if it was split
 
-	AutreService
-	db *sql.DB
+	db          *sql.DB
+	neo4jClient *graph.Neo4jClient
 }
 
 // NewInterpretationService cria serviço completo de interpretação
-func NewInterpretationService(db *sql.DB) *InterpretationService {
+func NewInterpretationService(db *sql.DB, neo4jClient *graph.Neo4jClient) *InterpretationService {
 	return &InterpretationService{
 		transferencia: NewTransferenceService(db),
-		significante:  NewSignifierService(db),
+		significante:  NewSignifierService(neo4jClient),
 		demandaDesejo: NewDemandDesireService(),
 		grandAutre:    NewGrandAutreService(),
 		db:            db,
+		neo4jClient:   neo4jClient,
 	}
 }
 

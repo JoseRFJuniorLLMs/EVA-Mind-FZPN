@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// SaveVitalSign saves a vital sign measurement to the database
+// SaveVitalSign saves a vital sign measurement to the database (manual/voice entry)
 func (db *DB) SaveVitalSign(idosoID int64, tipo, valor, unidade, metodo, observacao string) error {
 	query := `
 		INSERT INTO sinais_vitais (idoso_id, tipo, valor, unidade, metodo, data_medicao, observacao)
@@ -15,6 +15,29 @@ func (db *DB) SaveVitalSign(idosoID int64, tipo, valor, unidade, metodo, observa
 	if err != nil {
 		return fmt.Errorf("failed to save vital sign: %w", err)
 	}
+	return nil
+}
+
+// SaveDeviceHealthData saves health data from devices/Google Fit
+func (db *DB) SaveDeviceHealthData(idosoID int64, bpm int, steps int) error {
+	query := `
+		INSERT INTO sinais_vitais_health (cliente_id, bpm, timestamp_coleta, created_at)
+		VALUES ($1, $2, NOW(), NOW())
+	`
+	// Note: mapping idoso_id to cliente_id if they are the same in the DB
+	_, err := db.conn.Exec(query, idosoID, bpm)
+	if err != nil {
+		return fmt.Errorf("failed to save device health data: %w", err)
+	}
+
+	if steps > 0 {
+		querySteps := `
+			INSERT INTO atividade (cliente_id, passos, timestamp_coleta, created_at)
+			VALUES ($1, $2, NOW(), NOW())
+		`
+		_, _ = db.conn.Exec(querySteps, idosoID, steps)
+	}
+
 	return nil
 }
 

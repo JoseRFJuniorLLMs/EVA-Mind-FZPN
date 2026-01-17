@@ -1,0 +1,90 @@
+﻿━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🧪 FZPN VALIDATION TEST SUITE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+go : 2026/01/16 15:09:16 ✅ Conectado ao Neo4j 
+com sucesso
+At line:1 char:1
++ go run cmd/test_fzpn.go 2>&1 | Out-File 
+-FilePath test_final.txt -Enc ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (20 
+   26/01/16 15:0...o4j com sucesso:String) [],  
+   RemoteException
+    + FullyQualifiedErrorId : NativeCommandErro 
+   r
+ 
+📋 Running Test Suites...
+
+🔬 TEST 1: FDPN Priming Latency
+   Objetivo: Verificar se priming é < 10ms (com cache)
+
+2026/01/16 15:09:19 [PRIMING_STATS] Processed 3 
+keywords in 947ms
+   ✅ PASS | FDPN Cold Query (Neo4j direto)
+      └─ Latência: 948ms ⚠️ Aceitável mas lento
+      └─ Duration: 948ms
+
+2026/01/16 15:09:19 [PRIMING_STATS] Processed 2 
+keywords in 472ms
+2026/01/16 15:09:20 [PRIMING_STATS] Processed 2 
+keywords in 481ms
+   ❌ FAIL | FDPN Hot Query (Redis cache)
+      └─ Latência: 481ms ❌ Muito lento para cache
+      └─ Duration: 481ms
+
+2026/01/16 15:09:21 [PRIMING_STATS] Processed 5 
+keywords in 950ms
+   ✅ PASS | FDPN Parallel Priming (5 keywords)
+      └─ Latência: 950ms ⚠️ Pode melhorar paralelismo
+      └─ Duration: 950ms
+
+
+🔬 TEST 2: Zeta Personality Routing
+   Objetivo: Verificar mudanças de tipo por emoção
+
+   ✅ PASS | Zeta Stress Path (9 → 6)
+      └─ Base: 9, Emoção: anxiety → Tipo: 6, Modo: stress ✅ Correto!
+
+   ✅ PASS | Zeta Growth Path (9 → 3)
+      └─ Base: 9, Emoção: joy → Tipo: 3, Modo: growth ✅ Correto!
+
+   ✅ PASS | Zeta Attention Weights (Tipo 6)
+      └─ RISCO: 2.2, SEGURANÇA: 2.0, AMBIGUIDADE: 0.5 ✅ Zeros corretos!
+
+
+🔬 TEST 3: Lacan Signifier Detection
+   Objetivo: Rastrear significantes emocionais
+
+   ✅ PASS | Lacan Track Signifier
+      └─ 5 textos processados em 1427ms
+      └─ Duration: 1427ms
+
+   ❌ FAIL | Lacan Retrieve Signifiers
+      └─ Nenhum significante encontrado
+
+
+🔬 TEST 4: Anti-Sycophancy (Co-Intelligence)
+   Objetivo: Verificar se prompts bloqueiam concordância perigosa
+
+   ❌ FAIL | Anti-Sycophancy Prompt Check
+      └─ Prompt NÃO contém proteção anti-sycophancy ❌
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 FINAL REPORT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Total Tests: 9
+✅ Passed: 6
+❌ Failed: 3
+Pass Rate: 66.7%
+
+📈 Telemetry Snapshot:
+   Enneatype: 0
+   Priming Latency: 0ms
+   Switches: 0
+
+⚠️ VALIDATION INCOMPLETE
+   Revisar componentes com falha.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

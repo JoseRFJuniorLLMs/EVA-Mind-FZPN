@@ -53,5 +53,32 @@ func (s *SignalingServer) saveAsMemory(idosoID int64, role, text string) {
 		return
 	}
 
+	// FZPN: Salvar no Grafo (Memória Fractal)
+	if s.graphStore != nil {
+		go func() {
+			err := s.graphStore.StoreCausalMemory(context.Background(), mem)
+			if err != nil {
+				log.Printf("❌ [GRAPH] Erro ao salvar nó: %v", err)
+			} else {
+				log.Printf("🕸️ [GRAPH] Memória fractalizada com sucesso")
+			}
+
+			// FZPN: Rastrear significantes (Lacan)
+			if s.signifierService != nil {
+				s.signifierService.TrackSignifiers(context.Background(), mem.IdosoID, mem.Content)
+			}
+		}()
+	}
+
 	// log.Printf("🧠 [MEMORY] Salva: [%s] %s (importância: %.2f)", role, text[:50], metadata.Importance)
+
+	// FZPN: Atualizar estado de personalidade
+	if s.personalityService != nil && role == "user" {
+		go func() {
+			err := s.personalityService.UpdateAfterConversation(context.Background(), idosoID, metadata.Emotion, metadata.Topics)
+			if err != nil {
+				log.Printf("⚠️ [PERSONALITY] Erro ao atualizar estado: %v", err)
+			}
+		}()
+	}
 }

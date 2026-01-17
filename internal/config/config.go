@@ -57,6 +57,16 @@ type Config struct {
 
 	// Google Services
 	GoogleMapsAPIKey string
+
+	// Neo4j
+	Neo4jURI      string
+	Neo4jUsername string
+	Neo4jPassword string
+
+	// Redis
+	RedisHost     string
+	RedisPort     string
+	RedisPassword string
 }
 
 func Load() (*Config, error) {
@@ -112,6 +122,16 @@ func Load() (*Config, error) {
 
 		// Auth
 		JWTSecret: getEnvWithDefault("JWT_SECRET", "super-secret-default-key-change-me"),
+
+		// Neo4j
+		Neo4jURI:      getEnvWithDefault("NEO4J_URI", "neo4j://localhost:7687"),
+		Neo4jUsername: getEnvWithDefault("NEO4J_USERNAME", "neo4j"),
+		Neo4jPassword: getEnvWithDefault("NEO4J_PASSWORD", "password"),
+
+		// Redis
+		RedisHost:     getEnvWithDefault("REDIS_HOST", "localhost"),
+		RedisPort:     getEnvWithDefault("REDIS_PORT", "6379"),
+		RedisPassword: getEnvWithDefault("REDIS_PASSWORD", ""),
 	}, nil
 }
 
