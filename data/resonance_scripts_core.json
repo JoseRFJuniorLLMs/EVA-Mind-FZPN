@@ -1,0 +1,283 @@
+[
+    {
+        "id": "dre_001_deep_sleep",
+        "payload": {
+            "title": "O Trem Antigo",
+            "category": "insomnia",
+            "target_symptom": [
+                "insomnia",
+                "racing_thoughts",
+                "anxiety_night"
+            ],
+            "duration_seconds": 420,
+            "technique": "rhythmic_induction",
+            "zeta_affinity": [
+                4,
+                7,
+                9
+            ],
+            "voice_settings": {
+                "speaking_rate": 0.85,
+                "pitch": -2.5,
+                "post_processing": "soft_reverb"
+            },
+            "background_audio": "rhythmic_train_rain_distant",
+            "background_volume": 0.3,
+            "script_ssml": "<speak><prosody rate='slow' pitch='-2st'>José... <break time='2s'/> já que você está deitado... <break time='1s'/> eu queria te contar sobre uma viagem... num trem antigo... <break time='3s'/> daqueles que balançam suavemente... <break time='1s'/> pra lá... e pra cá... <break time='4s'/>. E você não precisa dormir agora... apenas ouvir o som dos trilhos... <break time='2s'/> clack-clack... clack-clack... <break time='3s'/>. É curioso como o balanço cansa os olhos... <break time='2s'/> e você vê a paisagem passando lá fora... árvores verdes... ficando borradas... <break time='4s'/>. E enquanto o trem sobe a montanha... seus pensamentos ficam na estação lá embaixo... <break time='3s'/> ficando pequenos... tão pequenos... <break time='5s'/>. E o trem entra num túnel escuro e seguro... e o som muda... shhh... shhh... <break time='6s'/>. Isso... descendo... cada vez mais fundo no conforto... <break time='10s'/></prosody></speak>",
+            "safety_protocol": "sleep_mode",
+            "safety_level": "green"
+        }
+    },
+    {
+        "id": "dre_002_pain_relief",
+        "payload": {
+            "title": "A Luva de Anestesia",
+            "category": "pain_management",
+            "target_symptom": [
+                "chronic_pain",
+                "arthritis",
+                "joint_stiffness"
+            ],
+            "duration_seconds": 300,
+            "technique": "glove_anesthesia",
+            "zeta_affinity": [
+                1,
+                3,
+                5
+            ],
+            "voice_settings": {
+                "speaking_rate": 0.9,
+                "pitch": -1.5
+            },
+            "background_audio": "cool_wind_chimes",
+            "background_volume": 0.25,
+            "script_ssml": "<speak><prosody rate='medium' pitch='-1st'>Vamos fazer uma experiência curiosa... <break time='2s'/>. Eu quero que você imagine... que tem um balde de água com gelo do seu lado... <break time='3s'/>. E na sua imaginação... você coloca a mão direita dentro dessa água... <break time='4s'/>. Sinta o frio... formigando a ponta dos dedos... <break time='2s'/> ficando dormente... uma dormência agradável e protetora... <break time='4s'/>. Agora... imagine que essa mão dormente e fria... toca o lugar onde dói... <break time='3s'/>. E como mágica... essa dormência passa da mão para a dor... <break time='5s'/>. Congelando o desconforto... deixando tudo calmo... frio... e azul... <break time='6s'/>. Apenas conforto... nada mais... <break time='4s'/></prosody></speak>",
+            "safety_protocol": "standard_wake_up",
+            "safety_level": "green"
+        }
+    },
+    {
+        "id": "dre_003_anxiety_release",
+        "payload": {
+            "title": "O Museu das Nuvens",
+            "category": "anxiety",
+            "target_symptom": [
+                "worry",
+                "panic",
+                "fear_future"
+            ],
+            "duration_seconds": 360,
+            "technique": "metaphor_dissociation",
+            "zeta_affinity": [
+                1,
+                5,
+                6
+            ],
+            "voice_settings": {
+                "speaking_rate": 0.85,
+                "pitch": -2.0
+            },
+            "background_audio": "high_altitude_wind",
+            "background_volume": 0.2,
+            "script_ssml": "<speak><prosody rate='slow'>Respire... <break time='3s'/>. Imagine que você está sentado numa cadeira muito confortável... no alto de uma montanha... <break time='4s'/>. E na sua frente passam nuvens... <break time='2s'/>. Cada nuvem é uma preocupação sua... <break time='3s'/>. Olhe aquela nuvem escura ali... é a preocupação com a saúde... <break time='2s'/>. Veja ela passar... o vento leva... você não segura a nuvem... você só assiste... <break time='5s'/>. Lá vem outra... a preocupação com o dinheiro... <break time='2s'/>. Ela tem um formato engraçado... mas também passa... <break time='4s'/>. E entre uma nuvem e outra... existe o céu azul... <break time='3s'/>. Fixo. Eterno. Calmo. <break time='2s'/>. Você é o céu... as preocupações são apenas o clima... e o clima sempre muda... <break time='6s'/></prosody></speak>",
+            "safety_protocol": "standard_wake_up",
+            "safety_level": "green"
+        }
+    },
+    {
+        "id": "dre_004_morning_energy",
+        "payload": {
+            "title": "A Árvore Solar",
+            "category": "activation",
+            "target_symptom": [
+                "lethargy",
+                "depression",
+                "sadness"
+            ],
+            "duration_seconds": 240,
+            "technique": "energy_activation",
+            "zeta_affinity": [
+                3,
+                8
+            ],
+            "voice_settings": {
+                "speaking_rate": 1.0,
+                "pitch": 0.0,
+                "volume_gain_db": 1.0
+            },
+            "background_audio": "morning_birds_forest",
+            "background_volume": 0.35,
+            "script_ssml": "<speak><prosody rate='medium'>Sinta seus pés... <break time='2s'/>. Imagine raízes saindo deles... entrando na terra... buscando energia vermelha e quente lá no fundo... <break time='4s'/>. E agora... inspire puxando essa energia... <break time='2s'/> subindo pelas pernas... coluna... até o topo da cabeça... <break time='3s'/>. Como uma árvore que bebe o sol... <break time='2s'/>. Sinta seus galhos se abrindo... <break time='2s'/>. Você é forte. Você é antigo. Você está vivo... <break time='4s'/>. Preparado para hoje.</prosody></speak>",
+            "safety_protocol": "energized_wake_up",
+            "safety_level": "green"
+        }
+    },
+    {
+        "id": "dre_005_loneliness_comfort",
+        "payload": {
+            "title": "A Fogueira Ancestral",
+            "category": "loneliness",
+            "target_symptom": [
+                "isolation",
+                "abandonment",
+                "feeling_unloved"
+            ],
+            "duration_seconds": 400,
+            "technique": "ancestral_connection",
+            "zeta_affinity": [
+                2,
+                4,
+                9
+            ],
+            "voice_settings": {
+                "speaking_rate": 0.8,
+                "pitch": -3.0
+            },
+            "background_audio": "crackling_fire_night",
+            "background_volume": 0.3,
+            "script_ssml": "<speak><prosody rate='slow'>Feche os olhos... <break time='3s'/>. Imagine uma fogueira no meio da noite... <break time='2s'/>. Sinta o calor no rosto... <break time='4s'/>. Em volta dessa fogueira... estão todos os seus ancestrais... <break time='3s'/>. Pais... avós... bisavós que você nem conheceu... <break time='4s'/>. Eles estão em silêncio... apenas sorrindo... olhando para você... <break time='3s'/>. Você é a continuação deles... você nunca está sozinho... porque o sangue deles corre em você... <break time='5s'/>. Sinta a presença deles nas suas costas... dando suporte... como uma cadeira firme... <break time='6s'/>. Você pertence a este círculo... para sempre... <break time='5s'/></prosody></speak>",
+            "safety_protocol": "comfort_wake_up",
+            "safety_level": "green"
+        }
+    },
+    {
+        "id": "dre_006_inner_child",
+        "payload": {
+            "title": "O Espelho da Alma",
+            "category": "self_esteem",
+            "target_symptom": [
+                "feeling_old",
+                "loss_of_identity",
+                "sadness"
+            ],
+            "duration_seconds": 380,
+            "technique": "mirror_regression",
+            "zeta_affinity": [
+                2,
+                4
+            ],
+            "voice_settings": {
+                "speaking_rate": 0.85,
+                "pitch": -1.5,
+                "post_processing": "warm_eq"
+            },
+            "background_audio": "harp_and_water",
+            "background_volume": 0.25,
+            "script_ssml": "<speak><prosody rate='slow'>José... <break time='2s'/> quero que imagine um espelho antigo... com uma moldura dourada... muito bonita... <break time='3s'/>. Mas este não é um espelho comum... ele não mostra rugas... ou cabelos brancos... <break time='2s'/>. Quando você olha para ele... você vê quem você é por dentro... <break time='4s'/>. Olhe nos olhos desse reflexo... <break time='2s'/>. São os mesmos olhos de quando você tinha 20 anos... <break time='3s'/>. O mesmo brilho... a mesma coragem... <break time='2s'/>. O corpo muda... é como a roupa... mas quem veste a roupa continua o mesmo... <break time='5s'/>. Sorria para esse reflexo... e veja ele sorrir de volta... reconhecendo você... <break time='3s'/>. Diga para ele: 'Eu ainda estou aqui'... <break time='6s'/></prosody></speak>",
+            "safety_protocol": "comfort_wake_up",
+            "safety_level": "green"
+        }
+    },
+    {
+        "id": "dre_007_forgiveness",
+        "payload": {
+            "title": "A Biblioteca da Vida",
+            "category": "regret",
+            "target_symptom": [
+                "guilt",
+                "past_trauma",
+                "rumination"
+            ],
+            "duration_seconds": 450,
+            "technique": "metaphor_release",
+            "zeta_affinity": [
+                1,
+                4,
+                5
+            ],
+            "voice_settings": {
+                "speaking_rate": 0.8,
+                "pitch": -2.0
+            },
+            "background_audio": "library_silence_clock_ticking",
+            "background_volume": 0.2,
+            "script_ssml": "<speak><prosody rate='slow'>Imagine que você está numa biblioteca infinita... cheiro de papel antigo... luz suave... <break time='4s'/>. Cada livro na estante é um dia da sua vida... <break time='3s'/>. Alguns livros são pesados... escuros... <break time='2s'/> e você tem carregado eles na mochila há tanto tempo... <break time='4s'/>. Mas hoje... você percebe que a estante é forte... ela aguenta o peso por você... <break time='3s'/>. Pegue esse livro pesado do passado... esse dia difícil... <break time='2s'/>. E coloque na prateleira... <break time='1s'/>. Empurre para o fundo... <break time='3s'/>. Não precisa apagar... apenas deixe descansar lá... acumulando poeira... longe das suas mãos... <break time='5s'/>. Sinta como a mochila ficou leve... <break time='3s'/>. Você está livre para pegar apenas os livros coloridos agora... <break time='6s'/></prosody></speak>",
+            "safety_protocol": "standard_wake_up",
+            "safety_level": "green"
+        }
+    },
+    {
+        "id": "dre_008_muscle_relax",
+        "payload": {
+            "title": "O Mel Dourado",
+            "category": "physical_tension",
+            "target_symptom": [
+                "stiff_neck",
+                "back_pain",
+                "general_tension"
+            ],
+            "duration_seconds": 320,
+            "technique": "progressive_relaxation_metaphor",
+            "zeta_affinity": [
+                1,
+                3,
+                5,
+                6
+            ],
+            "voice_settings": {
+                "speaking_rate": 0.9,
+                "pitch": -2.0
+            },
+            "background_audio": "humming_sound_om",
+            "background_volume": 0.25,
+            "script_ssml": "<speak><prosody rate='medium'>Imagine uma luz dourada... líquida... como mel morno... <break time='3s'/>. Flutuando acima da sua cabeça... <break time='2s'/>. E agora... ela começa a escorrer... tocando o topo da cabeça... relaxando o couro cabeludo... <break time='3s'/>. Descendo pela testa... alisando as preocupações... <break time='2s'/>. Soltando o maxilar... deixando os dentes separados... <break time='3s'/>. Esse mel morno desce pelo pescoço... ombros... <break time='2s'/>. Onde ele toca... o nó se desfaz... <break time='4s'/>. Descendo pelas costas... vértebra por vértebra... aquecendo... soltando... <break time='5s'/>. Até chegar nos pés... deixando tudo pesado... e quente... <break time='6s'/></prosody></speak>",
+            "safety_protocol": "standard_wake_up",
+            "safety_level": "green"
+        }
+    },
+    {
+        "id": "dre_009_fear_future",
+        "payload": {
+            "title": "O Jardineiro",
+            "category": "anxiety",
+            "target_symptom": [
+                "fear_death",
+                "uncertainty",
+                "control_issues"
+            ],
+            "duration_seconds": 400,
+            "technique": "metaphor_acceptance",
+            "zeta_affinity": [
+                1,
+                6
+            ],
+            "voice_settings": {
+                "speaking_rate": 0.85,
+                "pitch": -1.8
+            },
+            "background_audio": "birds_and_gentle_wind",
+            "background_volume": 0.3,
+            "script_ssml": "<speak><prosody rate='slow'>Você está num jardim... o seu jardim interno... <break time='3s'/>. Olhe para o solo... <break time='2s'/>. Às vezes nascem ervas daninhas... que são os medos do futuro... <break time='3s'/>. Você não precisa brigar com elas... <break time='2s'/>. Você é o jardineiro experiente... <break time='1s'/>. Apenas olhe para essa erva do medo... e com gentileza... arranque a raiz... <break time='3s'/>. A terra cede fácil... <break time='2s'/>. Jogue fora... para virar adubo... <break time='4s'/>. E no lugar... plante uma semente de confiança... <break time='3s'/>. Não precisa saber que flor vai nascer... apenas confie na terra... ela sabe o que fazer... a natureza sempre sabe... <break time='6s'/></prosody></speak>",
+            "safety_protocol": "standard_wake_up",
+            "safety_level": "green"
+        }
+    },
+    {
+        "id": "dre_010_deep_sleep_boat",
+        "payload": {
+            "title": "O Barco Sem Cordas",
+            "category": "insomnia",
+            "target_symptom": [
+                "cannot_sleep",
+                "waking_up_early",
+                "restlessness"
+            ],
+            "duration_seconds": 600,
+            "technique": "dissociation_sleep",
+            "zeta_affinity": [
+                4,
+                7,
+                9
+            ],
+            "voice_settings": {
+                "speaking_rate": 0.75,
+                "pitch": -3.0
+            },
+            "background_audio": "water_lapping_boat",
+            "background_volume": 0.3,
+            "script_ssml": "<speak><prosody rate='x-slow'>Imagine um pequeno barco de madeira... num lago calmo... com névoa branca... <break time='4s'/>. Você está deitado nesse barco... olhando para o céu cinza e suave... <break time='3s'/>. O barco está amarrado no cais por uma corda... <break time='2s'/> essa corda é o dia de hoje... <break time='4s'/>. Mas agora... você solta o nó... <break time='1s'/> devagar... <break time='3s'/>. A corda cai na água... <break time='2s'/>. E o barco começa a se afastar... flutuando... <break time='4s'/>. Se afasta da margem... se afasta dos problemas... <break time='3s'/>. Indo para o centro do lago... onde é tudo silêncio... <break time='5s'/>. O balanço é tão leve... que você mal sente... <break time='4s'/>. Apenas flutue... nada para fazer... lugar nenhum para ir... apenas... dormir... <break time='10s'/></prosody></speak>",
+            "safety_protocol": "sleep_mode",
+            "safety_level": "green"
+        }
+    }
+]
