@@ -1,0 +1,324 @@
+{
+    "profiles": {
+        "kids_standard": {
+            "tts": {
+                "rate": 1.0,
+                "pitch": 2.0,
+                "tone": "animated"
+            },
+            "ui": {
+                "fontFamily": "Comic Sans",
+                "fontSize": 20,
+                "backgroundColor": "#E3F2FD",
+                "primaryColor": "#9C27B0"
+            },
+            "content": {
+                "allowMetaphors": true,
+                "maxComplexity": 3,
+                "preferredCollections": [
+                    "aesop_fables",
+                    "visual_narratives"
+                ]
+            },
+            "interaction": {
+                "primaryInput": "voice",
+                "enableGamification": false,
+                "enableKaraoke": false
+            }
+        },
+        "kids_autism": {
+            "tts": {
+                "rate": 1.0,
+                "pitch": 0.0,
+                "tone": "monotone"
+            },
+            "ui": {
+                "fontFamily": "Arial",
+                "fontSize": 18,
+                "backgroundColor": "#FAFAFA",
+                "primaryColor": "#2196F3"
+            },
+            "content": {
+                "allowMetaphors": false,
+                "maxComplexity": 2,
+                "preferredCollections": [
+                    "social_algorithms",
+                    "aesop_fables"
+                ]
+            },
+            "interaction": {
+                "primaryInput": "voice",
+                "enableGamification": false,
+                "enableKaraoke": false
+            }
+        },
+        "kids_adhd": {
+            "tts": {
+                "rate": 1.25,
+                "pitch": 0.5,
+                "tone": "energetic"
+            },
+            "ui": {
+                "fontFamily": "Roboto",
+                "fontSize": 18,
+                "backgroundColor": "#FFFFFF",
+                "primaryColor": "#FF5722",
+                "enableAnimations": true
+            },
+            "content": {
+                "allowMetaphors": true,
+                "maxComplexity": 2,
+                "preferredCollections": [
+                    "micro_tasks",
+                    "aesop_fables"
+                ]
+            },
+            "interaction": {
+                "primaryInput": "voice",
+                "enableGamification": true,
+                "enableKaraoke": false,
+                "showVisualTimer": true
+            }
+        },
+        "kids_dyslexia": {
+            "tts": {
+                "rate": 1.0,
+                "pitch": 0.0,
+                "tone": "clear"
+            },
+            "ui": {
+                "fontFamily": "OpenDyslexic",
+                "fontSize": 20,
+                "letterSpacing": 1.8,
+                "backgroundColor": "#FDF6E3",
+                "primaryColor": "#37474F"
+            },
+            "content": {
+                "allowMetaphors": true,
+                "maxComplexity": 3,
+                "preferredCollections": [
+                    "visual_narratives",
+                    "aesop_fables"
+                ]
+            },
+            "interaction": {
+                "primaryInput": "voice",
+                "enableGamification": false,
+                "enableKaraoke": true
+            }
+        },
+        "teens_standard": {
+            "tts": {
+                "rate": 1.1,
+                "pitch": 0.0,
+                "tone": "casual"
+            },
+            "ui": {
+                "fontFamily": "Roboto",
+                "fontSize": 16,
+                "backgroundColor": "#121212",
+                "primaryColor": "#BB86FC"
+            },
+            "content": {
+                "allowMetaphors": true,
+                "maxComplexity": 5,
+                "preferredCollections": [
+                    "nasrudin_stories",
+                    "zen_koans"
+                ]
+            },
+            "interaction": {
+                "primaryInput": "text",
+                "enableGamification": false,
+                "enableKaraoke": false
+            }
+        },
+        "teens_autism": {
+            "tts": {
+                "rate": 1.0,
+                "pitch": 0.0,
+                "tone": "monotone"
+            },
+            "ui": {
+                "fontFamily": "Arial",
+                "fontSize": 16,
+                "backgroundColor": "#FAFAFA",
+                "primaryColor": "#2196F3"
+            },
+            "content": {
+                "allowMetaphors": false,
+                "maxComplexity": 3,
+                "preferredCollections": [
+                    "social_algorithms"
+                ]
+            },
+            "interaction": {
+                "primaryInput": "text",
+                "enableGamification": false,
+                "enableKaraoke": false
+            }
+        },
+        "teens_adhd": {
+            "tts": {
+                "rate": 1.3,
+                "pitch": 0.5,
+                "tone": "energetic"
+            },
+            "ui": {
+                "fontFamily": "Roboto",
+                "fontSize": 16,
+                "backgroundColor": "#121212",
+                "primaryColor": "#FF5722",
+                "enableAnimations": true
+            },
+            "content": {
+                "allowMetaphors": true,
+                "maxComplexity": 3,
+                "preferredCollections": [
+                    "micro_tasks",
+                    "nasrudin_stories"
+                ]
+            },
+            "interaction": {
+                "primaryInput": "voice",
+                "enableGamification": true,
+                "enableKaraoke": false,
+                "showVisualTimer": true
+            }
+        },
+        "teens_dyslexia": {
+            "tts": {
+                "rate": 1.0,
+                "pitch": 0.0,
+                "tone": "clear"
+            },
+            "ui": {
+                "fontFamily": "OpenDyslexic",
+                "fontSize": 18,
+                "letterSpacing": 1.8,
+                "backgroundColor": "#FDF6E3",
+                "primaryColor": "#37474F"
+            },
+            "content": {
+                "allowMetaphors": true,
+                "maxComplexity": 4,
+                "preferredCollections": [
+                    "visual_narratives",
+                    "nasrudin_stories"
+                ]
+            },
+            "interaction": {
+                "primaryInput": "voice",
+                "enableGamification": false,
+                "enableKaraoke": true
+            }
+        },
+        "adults_standard": {
+            "tts": {
+                "rate": 0.9,
+                "pitch": -1.5,
+                "tone": "empathetic"
+            },
+            "ui": {
+                "fontFamily": "Merriweather",
+                "fontSize": 18,
+                "backgroundColor": "#F5F5F5",
+                "primaryColor": "#795548"
+            },
+            "content": {
+                "allowMetaphors": true,
+                "maxComplexity": 7,
+                "preferredCollections": [
+                    "nasrudin_stories",
+                    "zen_koans",
+                    "resonance_scripts"
+                ]
+            },
+            "interaction": {
+                "primaryInput": "text",
+                "enableGamification": false,
+                "enableKaraoke": false
+            }
+        },
+        "adults_autism": {
+            "tts": {
+                "rate": 1.0,
+                "pitch": 0.0,
+                "tone": "monotone"
+            },
+            "ui": {
+                "fontFamily": "Arial",
+                "fontSize": 16,
+                "backgroundColor": "#FAFAFA",
+                "primaryColor": "#2196F3"
+            },
+            "content": {
+                "allowMetaphors": false,
+                "maxComplexity": 4,
+                "preferredCollections": [
+                    "social_algorithms"
+                ]
+            },
+            "interaction": {
+                "primaryInput": "text",
+                "enableGamification": false,
+                "enableKaraoke": false
+            }
+        },
+        "adults_adhd": {
+            "tts": {
+                "rate": 1.2,
+                "pitch": 0.0,
+                "tone": "energetic"
+            },
+            "ui": {
+                "fontFamily": "Roboto",
+                "fontSize": 16,
+                "backgroundColor": "#FFFFFF",
+                "primaryColor": "#FF5722",
+                "enableAnimations": true
+            },
+            "content": {
+                "allowMetaphors": true,
+                "maxComplexity": 4,
+                "preferredCollections": [
+                    "micro_tasks",
+                    "nasrudin_stories"
+                ]
+            },
+            "interaction": {
+                "primaryInput": "text",
+                "enableGamification": true,
+                "enableKaraoke": false,
+                "showVisualTimer": true
+            }
+        },
+        "adults_dyslexia": {
+            "tts": {
+                "rate": 0.9,
+                "pitch": 0.0,
+                "tone": "clear"
+            },
+            "ui": {
+                "fontFamily": "OpenDyslexic",
+                "fontSize": 20,
+                "letterSpacing": 1.8,
+                "backgroundColor": "#FDF6E3",
+                "primaryColor": "#37474F"
+            },
+            "content": {
+                "allowMetaphors": true,
+                "maxComplexity": 5,
+                "preferredCollections": [
+                    "visual_narratives",
+                    "resonance_scripts"
+                ]
+            },
+            "interaction": {
+                "primaryInput": "voice",
+                "enableGamification": false,
+                "enableKaraoke": true
+            }
+        }
+    }
+}
