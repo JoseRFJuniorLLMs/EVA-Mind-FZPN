@@ -8,6 +8,7 @@ import (
 
 	firebase "firebase.google.com/go/v4"
 	"firebase.google.com/go/v4/messaging"
+	"google.golang.org/api/option"
 )
 
 type FirebaseService struct {
@@ -28,10 +29,11 @@ func NewFirebaseService(credentialsPath string) (*FirebaseService, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// ✅ Usar credenciais padrão do Cloud Run (Workload Identity)
+	// ✅ Carregar credenciais do arquivo explicitamente
+	opt := option.WithCredentialsFile(credentialsPath)
 	app, err := firebase.NewApp(ctx, &firebase.Config{
 		ProjectID: "eva-push-01",
-	})
+	}, opt)
 	if err != nil {
 		return nil, fmt.Errorf("error initializing Firebase app: %w", err)
 	}
