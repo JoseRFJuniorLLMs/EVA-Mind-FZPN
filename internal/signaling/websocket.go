@@ -14,10 +14,8 @@ import (
 	"sync"
 	"time"
 
-	"eva-mind/internal/ab"
 	"eva-mind/internal/config"
 	"eva-mind/internal/gemini"
-	"eva-mind/internal/llm/thinking"
 	"eva-mind/internal/medgemma"
 	"eva-mind/internal/push"
 
@@ -39,7 +37,6 @@ type WebSocketSession struct {
 	IdosoID      int64
 	WSConn       *websocket.Conn
 	GeminiClient *gemini.Client
-	ToolsClient  *gemini.ToolsClient // ✅ DUAL-MODEL: Cliente para análise de tools
 	ctx          context.Context
 	cancel       context.CancelFunc
 	lastActivity time.Time
@@ -51,14 +48,11 @@ type WebSocketSession struct {
 }
 
 type SignalingServer struct {
-	cfg          *config.Config
-	db           *sql.DB
-	pushService  *push.FirebaseService
-	healthTriage *thinking.HealthTriageService
-	medgemma     *medgemma.MedGemmaService
-	abTest       *ab.ABTestService
-	sessions     sync.Map
-	clients      sync.Map
+	cfg         *config.Config
+	db          *sql.DB
+	pushService *push.FirebaseService
+	sessions    sync.Map
+	clients     sync.Map
 }
 
 func NewSignalingServer(cfg *config.Config, db *sql.DB, pushService *push.FirebaseService) *SignalingServer {
@@ -68,29 +62,7 @@ func NewSignalingServer(cfg *config.Config, db *sql.DB, pushService *push.Fireba
 		pushService: pushService,
 	}
 
-	// ✅ NOVO: Inicializar Health Triage Service
-	healthTriage, err := thinking.NewHealthTriageService(cfg.GoogleAPIKey, db, pushService)
-	if err != nil {
-		log.Printf("⚠️ Erro ao inicializar Health Triage: %v", err)
-		log.Printf("⚠️ Thinking Mode não estará disponível")
-	} else {
-		server.healthTriage = healthTriage
-		log.Printf("✅ Health Triage Service inicializado com sucesso")
-	}
-
-	// ✅ NOVO: Inicializar MedGemma Service
-	medgemmaService, err := medgemma.NewMedGemmaService(cfg.GoogleAPIKey)
-	if err != nil {
-		log.Printf("⚠️ Erro ao inicializar MedGemma: %v", err)
-		log.Printf("⚠️ Análise de imagens médicas não estará disponível")
-	} else {
-		server.medgemma = medgemmaService
-		log.Printf("✅ MedGemma Service inicializado com sucesso")
-	}
-
-	// ✅ NOVO: Inicializar A/B Testing Service
-	server.abTest = ab.NewABTestService(db)
-	log.Printf("✅ A/B Testing Service inicializado")
+	log.Printf("🚀 Signaling Server em modo VOZ PURA (Tools desabilitadas)")
 
 	go server.cleanupDeadSessions()
 	return server
@@ -310,8 +282,6 @@ func (s *SignalingServer) handleGeminiResponse(session *WebSocketSession, respon
 		if userText, ok := inputTrans["text"].(string); ok && userText != "" {
 			log.Printf("🗣️ [NATIVE] IDOSO: %s", userText)
 			go s.saveTranscription(session.IdosoID, "user", userText)
-			// ✅ DUAL-MODEL: Analisar transcrição para detectar tools
-			go s.analyzeForTools(session, userText, "user")
 		}
 	}
 
@@ -378,12 +348,6 @@ func (s *SignalingServer) handleGeminiResponse(session *WebSocketSession, respon
 				// ✅ NOVO: Usar sistema de buffer inteligente
 				s.bufferAudio(session, audioData)
 			}
-		}
-
-		// Processar function calls
-		if fnCall, ok := partMap["functionCall"].(map[string]interface{}); ok {
-			log.Printf("🔧 [GEMINI] Function call detectado")
-			s.executeTool(session, fnCall)
 		}
 	}
 }
@@ -468,201 +432,6 @@ func (s *SignalingServer) flushAudioBuffer(session *WebSocketSession) {
 	}
 }
 
-func (s *SignalingServer) executeTool(session *WebSocketSession, fnCall map[string]interface{}) {
-	name, _ := fnCall["name"].(string)
-	args, _ := fnCall["args"].(map[string]interface{})
-
-	log.Printf("🛠️ [TOOL] Executando: %s", name)
-
-	switch name {
-	case "alert_family":
-		reason, _ := args["reason"].(string)
-		severity, _ := args["severity"].(string)
-		if severity == "" {
-			severity = "alta"
-		}
-		log.Printf("🚨 Alerta enviado: %s (severidade: %s)", reason, severity)
-
-		if err := gemini.AlertFamilyWithSeverity(s.db, s.pushService, session.IdosoID, reason, severity); err != nil {
-			log.Printf("❌ Erro ao enviar alerta: %v", err)
-		} else {
-			log.Printf("✅ Família alertada com sucesso")
-		}
-
-	case "confirm_medication":
-		medication, _ := args["medication_name"].(string)
-		log.Printf("💊 Medicamento confirmado: %s", medication)
-
-		if err := gemini.ConfirmMedication(s.db, s.pushService, session.IdosoID, medication); err != nil {
-			log.Printf("❌ Erro ao confirmar medicamento: %v", err)
-		} else {
-			log.Printf("✅ Medicamento confirmado no sistema")
-		}
-
-	case "schedule_appointment":
-		timestamp, _ := args["timestamp"].(string)
-		tipo, _ := args["type"].(string)
-		descricao, _ := args["description"].(string)
-		log.Printf("📅 Agendamento: %s - %s às %s", tipo, descricao, timestamp)
-
-		if err := gemini.ScheduleAppointment(s.db, session.IdosoID, timestamp, tipo, descricao); err != nil {
-			log.Printf("❌ Erro ao agendar: %v", err)
-		} else {
-			log.Printf("✅ Agendamento criado com sucesso")
-		}
-
-	case "call_family_webrtc":
-		log.Printf("📹 Iniciando chamada de vídeo para família")
-		// TODO: Implementar lógica de chamada WebRTC
-
-	case "call_central_webrtc":
-		log.Printf("📹 Iniciando chamada de vídeo para central")
-		// TODO: Implementar lógica de chamada WebRTC
-
-	case "call_doctor_webrtc":
-		log.Printf("📹 Iniciando chamada de vídeo para médico")
-		// TODO: Implementar lógica de chamada WebRTC
-
-	case "call_caregiver_webrtc":
-		log.Printf("📹 Iniciando chamada de vídeo para cuidador")
-		// TODO: Implementar lógica de chamada WebRTC
-
-	case "open_camera_analysis":
-		log.Printf("📸 Solicitando abertura de câmera para análise")
-		// TODO: Enviar comando para mobile abrir câmera
-
-	case "analyze_medical_image":
-		imageB64, _ := args["image"].(string)
-		imageType, _ := args["type"].(string) // "prescription", "wound", "lab_result"
-
-		if imageB64 == "" {
-			log.Printf("❌ Imagem vazia")
-			return
-		}
-
-		log.Printf("🏥 Analisando imagem médica: tipo=%s", imageType)
-
-		// Decodificar imagem base64
-		imageData, err := base64.StdEncoding.DecodeString(imageB64)
-		if err != nil {
-			log.Printf("❌ Erro ao decodificar imagem: %v", err)
-			return
-		}
-
-		if s.medgemma == nil {
-			log.Printf("❌ MedGemma não disponível")
-			return
-		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-
-		auditLogger := medgemma.NewAuditLogger(s.db)
-
-		switch imageType {
-		case "prescription":
-			// Analisar receita médica
-			analysis, err := s.medgemma.AnalyzePrescription(ctx, imageData, "image/jpeg")
-			if err != nil {
-				log.Printf("❌ Erro ao analisar receita: %v", err)
-				return
-			}
-
-			log.Printf("✅ Receita analisada: %d medicamentos encontrados", len(analysis.Medications))
-
-			// Salvar análise no banco
-			analysisID, err := auditLogger.LogPrescriptionAnalysis(ctx, session.IdosoID, "", analysis)
-			if err != nil {
-				log.Printf("⚠️ Erro ao salvar análise: %v", err)
-			}
-
-			// Salvar medicamentos extraídos
-			err = auditLogger.SaveMedicationsFromPrescription(ctx, session.IdosoID, analysis.Medications)
-			if err != nil {
-				log.Printf("⚠️ Erro ao salvar medicamentos: %v", err)
-			}
-
-			// Notificar se houver medicamentos controlados
-			if analysis.ControlledMedications {
-				gemini.AlertFamily(s.db, s.pushService, session.IdosoID,
-					fmt.Sprintf("Nova receita com medicamentos controlados analisada. %d medicamentos identificados.", len(analysis.Medications)))
-			}
-
-			log.Printf("📋 Análise ID %d salva com sucesso", analysisID)
-
-		case "wound":
-			// Analisar ferida/lesão
-			analysis, err := s.medgemma.AnalyzeWound(ctx, imageData, "image/jpeg")
-			if err != nil {
-				log.Printf("❌ Erro ao analisar ferida: %v", err)
-				return
-			}
-
-			log.Printf("✅ Ferida analisada: tipo=%s, gravidade=%s", analysis.Type, analysis.Severity)
-
-			// Salvar análise no banco
-			analysisID, err := auditLogger.LogWoundAnalysis(ctx, session.IdosoID, "", analysis)
-			if err != nil {
-				log.Printf("⚠️ Erro ao salvar análise: %v", err)
-			}
-
-			// Notificar cuidador se grave
-			if analysis.Severity == "ALTO" || analysis.Severity == "CRÍTICO" {
-				alertMsg := fmt.Sprintf("🚨 Lesão detectada: %s - Gravidade: %s. %s",
-					analysis.Type, analysis.Severity, strings.Join(analysis.Recommendations, " "))
-
-				gemini.AlertFamily(s.db, s.pushService, session.IdosoID, alertMsg)
-				auditLogger.MarkNotified(ctx, analysisID)
-
-				log.Printf("🚨 Cuidador notificado sobre lesão grave")
-			}
-
-			log.Printf("📋 Análise ID %d salva com sucesso", analysisID)
-
-		default:
-			log.Printf("⚠️ Tipo de imagem não suportado: %s", imageType)
-		}
-
-	default:
-		log.Printf("⚠️ Tool desconhecida: %s", name)
-	}
-}
-
-// ✅ DUAL-MODEL: Analisa transcrição e executa tools se necessário
-func (s *SignalingServer) analyzeForTools(session *WebSocketSession, text string, role string) {
-	if session.ToolsClient == nil {
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	log.Printf("🔍 [TOOLS] Analisando transcrição: \"%s\"", text)
-
-	toolCalls, err := session.ToolsClient.AnalyzeTranscription(ctx, text, role)
-	if err != nil {
-		log.Printf("⚠️ [TOOLS] Erro ao analisar: %v", err)
-		return
-	}
-
-	if len(toolCalls) == 0 {
-		log.Printf("✅ [TOOLS] Nenhuma tool detectada")
-		return
-	}
-
-	for _, tc := range toolCalls {
-		log.Printf("🛠️ [TOOLS] Executando: %s com args: %+v", tc.Name, tc.Args)
-
-		// Converter para formato esperado por executeTool
-		fnCall := map[string]interface{}{
-			"name": tc.Name,
-			"args": tc.Args,
-		}
-
-		s.executeTool(session, fnCall)
-	}
-}
-
 // 💾 saveTranscription salva a transcrição no banco de forma assíncrona
 func (s *SignalingServer) saveTranscription(idosoID int64, role, content string) {
 	// Formatar mensagem: [HH:MM:SS] ROLE: content
@@ -721,33 +490,8 @@ func (s *SignalingServer) saveTranscription(idosoID int64, role, content string)
 		log.Printf("⚠️ Erro ao atualizar transcrição: %v", err)
 	}
 
-	// ✅ NOVO: Processar preocupações de saúde com Thinking Mode
-	// Apenas para mensagens do usuário (não da assistente)
-	if role == "user" && s.healthTriage != nil {
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-
-			// Buscar contexto do paciente
-			patientContext := BuildInstructions(idosoID, s.db)
-
-			// Processar com Thinking Mode
-			thinkingResponse, err := s.healthTriage.ProcessHealthConcern(
-				ctx,
-				idosoID,
-				content,
-				patientContext,
-			)
-
-			if err != nil {
-				log.Printf("⚠️ [HEALTH] Erro ao processar preocupação: %v", err)
-				return
-			}
-
 			if thinkingResponse != "" {
 				log.Printf("🏥 [HEALTH] Resposta do Thinking Mode gerada para idoso %d", idosoID)
-				// Opcionalmente, salvar resposta do Thinking Mode também
-				// s.saveTranscription(idosoID, "assistant_health", thinkingResponse)
 			}
 		}()
 	}
@@ -763,7 +507,6 @@ func (s *SignalingServer) createSession(sessionID, cpf string, idosoID int64, co
 	}
 
 	instructions := BuildInstructions(idosoID, s.db)
-	// ✅ FIX: Modo de voz NÃO usa tools (conflito com AUDIO modality)
 	if err := geminiClient.SendSetup(instructions, nil, nil, ""); err != nil {
 		cancel()
 		geminiClient.Close()
@@ -776,7 +519,6 @@ func (s *SignalingServer) createSession(sessionID, cpf string, idosoID int64, co
 		IdosoID:      idosoID,
 		WSConn:       conn,
 		GeminiClient: geminiClient,
-		ToolsClient:  gemini.NewToolsClient(s.cfg), // ✅ DUAL-MODEL: Cliente para tools
 		ctx:          ctx,
 		cancel:       cancel,
 		lastActivity: time.Now(),
