@@ -71,11 +71,9 @@ func (c *Client) SendSetup(instructions string, tools []interface{}, memories []
 
 	// ✅ CORRETO: Gemini SEMPRE retorna 24kHz quando usa response_modalities: ["AUDIO"]
 	// NÃO existe campo sample_rate_hertz na API!
-	// 🚨 PROTECTION: Gemini 2.5 Preview NÃO suporta Tools nativas + Áudio.
-	// Se estivermos usando o 2.5, ignoramos as tools na configuração para evitar Crash (Erro 1008)
+	// 🚨 PROTECTION: User requested to DISABLE TOOLS temporarily to fix Error 1008.
 	// A delegação será feita via Texto/Prompt.
-	// 🔓 UNLOCK: Permitindo tools nativas no Gemini 2.5
-	finalTools := tools
+	finalTools := []interface{}(nil) // Force NIL
 
 	// Default voice fallback
 	if voiceName == "" {
