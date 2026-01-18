@@ -36,6 +36,14 @@ func NewClient(ctx context.Context, cfg *config.Config) (*Client, error) {
 
 	url := fmt.Sprintf("wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=%s", cfg.GoogleAPIKey)
 
+	// DEBUG: Verify API Key loading (Masked)
+	if len(cfg.GoogleAPIKey) > 10 {
+		log.Printf("🔑 Connecting with Key: %s...", cfg.GoogleAPIKey[:10])
+	} else {
+		log.Printf("🔑 Connecting with Key (SHORT/INVALID): %s", cfg.GoogleAPIKey)
+	}
+	log.Printf("🔗 URL: %s", url)
+
 	conn, _, err := dialer.DialContext(ctx, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("erro ao conectar no websocket: %w", err)
