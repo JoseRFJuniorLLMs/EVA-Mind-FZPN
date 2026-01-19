@@ -1,0 +1,258 @@
+<svg viewBox="0 0 1400 1000" xmlns="http://www.w3.org/2000/svg">
+  <!-- Definições de gradientes e estilos -->
+  <defs>
+    <linearGradient id="grad1" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#667eea;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#764ba2;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="grad2" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#f093fb;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#f5576c;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="grad3" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#4facfe;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#00f2fe;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="grad4" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#43e97b;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#38f9d7;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="grad5" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#fa709a;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#fee140;stop-opacity:1" />
+    </linearGradient>
+    
+    <!-- Sombra -->
+    <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3"/>
+      <feOffset dx="2" dy="2" result="offsetblur"/>
+      <feComponentTransfer>
+        <feFuncA type="linear" slope="0.3"/>
+      </feComponentTransfer>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1400" height="1000" fill="#f8f9fa"/>
+  
+  <!-- Título -->
+  <text x="700" y="40" font-family="Arial, sans-serif" font-size="28" font-weight="bold" text-anchor="middle" fill="#2d3748">
+    EVA - Arquitetura Cognitiva "Thinking Fast and Slow"
+  </text>
+  <text x="700" y="70" font-family="Arial, sans-serif" font-size="16" text-anchor="middle" fill="#718096">
+    5 Camadas de Memória Integradas
+  </text>
+
+  <!-- Camada 1: Memória Narrativa (Episódica) -->
+  <g filter="url(#shadow)">
+    <rect x="50" y="120" width="280" height="160" rx="15" fill="url(#grad1)"/>
+    <text x="190" y="150" font-family="Arial, sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="white">
+      1. Memória Narrativa
+    </text>
+    <text x="190" y="175" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="white">
+      (Episódica)
+    </text>
+    
+    <text x="60" y="205" font-family="Arial, sans-serif" font-size="12" fill="white" font-weight="bold">
+      Tecnologia: PostgreSQL
+    </text>
+    <text x="60" y="225" font-family="Arial, sans-serif" font-size="11" fill="white">
+      • Tabela: historico_ligacoes
+    </text>
+    <text x="60" y="242" font-family="Arial, sans-serif" font-size="11" fill="white">
+      • Função: GetRecentMemories
+    </text>
+    <text x="60" y="259" font-family="Arial, sans-serif" font-size="11" fill="white">
+      • Carrega: últimas 5 conversas
+    </text>
+  </g>
+
+  <!-- Camada 2: Memória de Trabalho -->
+  <g filter="url(#shadow)">
+    <rect x="370" y="120" width="280" height="160" rx="15" fill="url(#grad2)"/>
+    <text x="510" y="150" font-family="Arial, sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="white">
+      2. Memória de Trabalho
+    </text>
+    <text x="510" y="175" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="white">
+      (Working Memory)
+    </text>
+    
+    <text x="380" y="205" font-family="Arial, sans-serif" font-size="12" fill="white" font-weight="bold">
+      Tecnologia: RAM (In-Memory)
+    </text>
+    <text x="380" y="225" font-family="Arial, sans-serif" font-size="11" fill="white">
+      • Buffer: session.pendingInsight
+    </text>
+    <text x="380" y="242" font-family="Arial, sans-serif" font-size="11" fill="white">
+      • Controle: Mutex/Thread-Safe
+    </text>
+    <text x="380" y="259" font-family="Arial, sans-serif" font-size="11" fill="white">
+      • Insights injetados via System Note
+    </text>
+  </g>
+
+  <!-- Camada 3: Memória Factual -->
+  <g filter="url(#shadow)">
+    <rect x="690" y="120" width="280" height="160" rx="15" fill="url(#grad3)"/>
+    <text x="830" y="150" font-family="Arial, sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="white">
+      3. Memória Factual
+    </text>
+    <text x="830" y="175" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="white">
+      (Semântica/Contexto)
+    </text>
+    
+    <text x="700" y="205" font-family="Arial, sans-serif" font-size="12" fill="white" font-weight="bold">
+      Tecnologia: PostgreSQL
+    </text>
+    <text x="700" y="225" font-family="Arial, sans-serif" font-size="11" fill="white">
+      • Tabela: analise_gemini
+    </text>
+    <text x="700" y="242" font-family="Arial, sans-serif" font-size="11" fill="white">
+      • Service: ContextService
+    </text>
+    <text x="700" y="259" font-family="Arial, sans-serif" font-size="11" fill="white">
+      • Formato: JSON estruturado
+    </text>
+  </g>
+
+  <!-- Camada 4: Memória Sensorial -->
+  <g filter="url(#shadow)">
+    <rect x="1010" y="120" width="280" height="160" rx="15" fill="url(#grad4)"/>
+    <text x="1150" y="150" font-family="Arial, sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="white">
+      4. Memória Sensorial
+    </text>
+    <text x="1150" y="175" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="white">
+      (Audio Buffer)
+    </text>
+    
+    <text x="1020" y="205" font-family="Arial, sans-serif" font-size="12" fill="white" font-weight="bold">
+      Tecnologia: Redis
+    </text>
+    <text x="1020" y="225" font-family="Arial, sans-serif" font-size="11" fill="white">
+      • Key: audio_buffer
+    </text>
+    <text x="1020" y="242" font-family="Arial, sans-serif" font-size="11" fill="white">
+      • Formato: PCM (áudio bruto)
+    </text>
+    <text x="1020" y="259" font-family="Arial, sans-serif" font-size="11" fill="white">
+      • Análise: Gemini 2.5 Flash Thinking
+    </text>
+  </g>
+
+  <!-- Camada 5: Memória Associativa -->
+  <g filter="url(#shadow)">
+    <rect x="370" y="330" width="660" height="160" rx="15" fill="url(#grad5)"/>
+    <text x="700" y="360" font-family="Arial, sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="white">
+      5. Memória Associativa (Grafo)
+    </text>
+    <text x="700" y="385" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="white">
+      Raciocínio Clínico Profundo - "Thinking Slow"
+    </text>
+    
+    <text x="380" y="415" font-family="Arial, sans-serif" font-size="12" fill="white" font-weight="bold">
+      Tecnologia: Neo4j (Graph Database)
+    </text>
+    <text x="380" y="435" font-family="Arial, sans-serif" font-size="11" fill="white">
+      • Service: GraphReasoningService
+    </text>
+    <text x="380" y="452" font-family="Arial, sans-serif" font-size="11" fill="white">
+      • Estrutura: Paciente → Sintoma → Medicamento → Efeito Colateral
+    </text>
+    <text x="380" y="469" font-family="Arial, sans-serif" font-size="11" fill="white">
+      • Objetivo: Descobrir relações ocultas e padrões complexos
+    </text>
+  </g>
+
+  <!-- Setas de Integração -->
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#4a5568" />
+    </marker>
+  </defs>
+
+  <!-- Seta 1→2 -->
+  <line x1="330" y1="200" x2="370" y2="200" stroke="#4a5568" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <!-- Seta 2→3 -->
+  <line x1="650" y1="200" x2="690" y2="200" stroke="#4a5568" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <!-- Seta 3→4 -->
+  <line x1="970" y1="200" x2="1010" y2="200" stroke="#4a5568" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <!-- Setas para Memória Associativa (Neo4j) -->
+  <line x1="190" y1="280" x2="500" y2="330" stroke="#4a5568" stroke-width="2" marker-end="url(#arrowhead)" stroke-dasharray="5,5"/>
+  <line x1="510" y1="280" x2="650" y2="330" stroke="#4a5568" stroke-width="2" marker-end="url(#arrowhead)" stroke-dasharray="5,5"/>
+  <line x1="830" y1="280" x2="750" y2="330" stroke="#4a5568" stroke-width="2" marker-end="url(#arrowhead)" stroke-dasharray="5,5"/>
+  <line x1="1150" y1="280" x2="900" y2="330" stroke="#4a5568" stroke-width="2" marker-end="url(#arrowhead)" stroke-dasharray="5,5"/>
+
+  <!-- Legenda de Objetivos -->
+  <g>
+    <rect x="50" y="540" width="1300" height="420" rx="15" fill="white" stroke="#e2e8f0" stroke-width="2"/>
+    <text x="700" y="575" font-family="Arial, sans-serif" font-size="20" font-weight="bold" text-anchor="middle" fill="#2d3748">
+      Objetivos e Funcionamento de Cada Camada
+    </text>
+    
+    <!-- Objetivo 1 -->
+    <circle cx="80" cy="615" r="8" fill="url(#grad1)"/>
+    <text x="100" y="620" font-family="Arial, sans-serif" font-size="13" font-weight="bold" fill="#2d3748">
+      Memória Narrativa:
+    </text>
+    <text x="100" y="640" font-family="Arial, sans-serif" font-size="12" fill="#4a5568">
+      Continuidade conversacional - "Como está aquele neto que você mencionou ontem?"
+    </text>
+    
+    <!-- Objetivo 2 -->
+    <circle cx="80" cy="675" r="8" fill="url(#grad2)"/>
+    <text x="100" y="680" font-family="Arial, sans-serif" font-size="13" font-weight="bold" fill="#2d3748">
+      Memória de Trabalho:
+    </text>
+    <text x="100" y="700" font-family="Arial, sans-serif" font-size="12" fill="#4a5568">
+      Reação em tempo real - Insights gerados durante a escuta são injetados antes da resposta
+    </text>
+    
+    <!-- Objetivo 3 -->
+    <circle cx="80" cy="735" r="8" fill="url(#grad3)"/>
+    <text x="100" y="740" font-family="Arial, sans-serif" font-size="13" font-weight="bold" fill="#2d3748">
+      Memória Factual:
+    </text>
+    <text x="100" y="760" font-family="Arial, sans-serif" font-size="12" fill="#4a5568">
+      Estados clínicos persistentes - Emoções detectadas, urgência, julgamentos médicos
+    </text>
+    <text x="100" y="778" font-family="Arial, sans-serif" font-size="12" fill="#4a5568">
+      Exemplo: {emoção: "tristeza", urgência: "alta", contexto: "perda recente"}
+    </text>
+    
+    <!-- Objetivo 4 -->
+    <circle cx="80" cy="813" r="8" fill="url(#grad4)"/>
+    <text x="100" y="818" font-family="Arial, sans-serif" font-size="13" font-weight="bold" fill="#2d3748">
+      Memória Sensorial:
+    </text>
+    <text x="100" y="838" font-family="Arial, sans-serif" font-size="12" fill="#4a5568">
+      Análise prosódica - Detecção de tom de voz, choro, urgência perdida na transcrição
+    </text>
+    <text x="100" y="856" font-family="Arial, sans-serif" font-size="12" fill="#4a5568">
+      "Mente Rápida" analisa os últimos segundos de áudio bruto
+    </text>
+    
+    <!-- Objetivo 5 -->
+    <circle cx="80" cy="891" r="8" fill="url(#grad5)"/>
+    <text x="100" y="896" font-family="Arial, sans-serif" font-size="13" font-weight="bold" fill="#2d3748">
+      Memória Associativa:
+    </text>
+    <text x="100" y="916" font-family="Arial, sans-serif" font-size="12" fill="#4a5568">
+      Raciocínio profundo - Navegação em grafos para descobrir relações clínicas complexas
+    </text>
+    <text x="100" y="934" font-family="Arial, sans-serif" font-size="12" fill="#4a5568">
+      "Thinking Slow" - Conexões: Paciente → Sintomas → Medicamentos → Interações → Riscos
+    </text>
+  </g>
+
+  <!-- Rodapé -->
+  <text x="700" y="985" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" fill="#a0aec0">
+    Arquitetura inspirada em "Thinking, Fast and Slow" (Daniel Kahneman) - Sistema 1 (rápido/intuitivo) + Sistema 2 (lento/analítico)
+  </text>
+</svg>

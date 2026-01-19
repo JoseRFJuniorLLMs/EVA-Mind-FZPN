@@ -31,7 +31,7 @@ func (db *DB) CreateVideoSession(sessionID string, idosoID int64, sdpOffer strin
 		VALUES ($1, $2, 'waiting_operator', $3, CURRENT_TIMESTAMP)
 	`
 	// Usamos ExecContext para boas práticas, mas aqui com context.Background() se não vier de cima
-	_, err := db.conn.Exec(query, sessionID, idosoID, sdpOffer)
+	_, err := db.Conn.Exec(query, sessionID, idosoID, sdpOffer)
 	if err != nil {
 		return fmt.Errorf("failed to create video session: %w", err)
 	}
@@ -43,7 +43,7 @@ func (db *DB) CreateSignalingMessage(sessionID string, sender string, msgType st
 		INSERT INTO signaling_messages (session_id, sender, type, payload)
 		VALUES ($1, $2, $3, $4)
 	`
-	_, err := db.conn.Exec(query, sessionID, sender, msgType, payload)
+	_, err := db.Conn.Exec(query, sessionID, sender, msgType, payload)
 	if err != nil {
 		return fmt.Errorf("failed to insert signaling message: %w", err)
 	}
@@ -54,7 +54,7 @@ func (db *DB) GetVideoSessionAnswer(sessionID string) (string, error) {
 	query := `SELECT sdp_answer FROM video_sessions WHERE session_id = $1`
 
 	var sdpAnswer sql.NullString
-	err := db.conn.QueryRow(query, sessionID).Scan(&sdpAnswer)
+	err := db.Conn.QueryRow(query, sessionID).Scan(&sdpAnswer)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return "", nil // Não encontrou a sessão ou não tem answer ainda
@@ -77,7 +77,7 @@ func (db *DB) GetOperatorCandidates(sessionID string, sinceID int64) ([]Signalin
 		ORDER BY id ASC
 	`
 
-	rows, err := db.conn.Query(query, sessionID, sinceID)
+	rows, err := db.Conn.Query(query, sessionID, sinceID)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +99,7 @@ func (db *DB) GetVideoSession(sessionID string) (*VideoSession, error) {
 	query := `SELECT id, session_id, idoso_id, status, sdp_offer, sdp_answer, created_em FROM video_sessions WHERE session_id = $1`
 
 	var s VideoSession
-	err := db.conn.QueryRow(query, sessionID).Scan(
+	err := db.Conn.QueryRow(query, sessionID).Scan(
 		&s.ID, &s.SessionID, &s.IdosoID, &s.Status, &s.SdpOffer, &s.SdpAnswer, &s.CreatedAt,
 	)
 	if err != nil {
@@ -115,7 +115,7 @@ func (db *DB) UpdateVideoSessionAnswer(sessionID string, sdpAnswer string) error
 		SET sdp_answer = $1, status = 'active' 
 		WHERE session_id = $2
 	`
-	_, err := db.conn.Exec(query, sdpAnswer, sessionID)
+	_, err := db.Conn.Exec(query, sdpAnswer, sessionID)
 	if err != nil {
 		return fmt.Errorf("failed to update video session answer: %w", err)
 	}
@@ -131,7 +131,7 @@ func (db *DB) GetMobileCandidates(sessionID string, sinceID int64) ([]SignalingM
 		ORDER BY id ASC
 	`
 
-	rows, err := db.conn.Query(query, sessionID, sinceID)
+	rows, err := db.Conn.Query(query, sessionID, sinceID)
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +180,7 @@ func (db *DB) GetPendingVideoSessions() ([]VideoSessionDetail, error) {
 		ORDER BY vs.created_em DESC
 	`
 
-	rows, err := db.conn.Query(query)
+	rows, err := db.Conn.Query(query)
 	if err != nil {
 		return nil, err
 	}

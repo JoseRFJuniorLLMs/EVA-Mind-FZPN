@@ -15,7 +15,7 @@ func (db *DB) SaveGoogleTokens(idosoID int64, refreshToken, accessToken string, 
 		    google_token_expiry = $3
 		WHERE id = $4
 	`
-	_, err := db.conn.Exec(query, refreshToken, accessToken, expiry, idosoID)
+	_, err := db.Conn.Exec(query, refreshToken, accessToken, expiry, idosoID)
 	if err != nil {
 		return fmt.Errorf("failed to save google tokens: %w", err)
 	}
@@ -32,7 +32,7 @@ func (db *DB) GetGoogleTokens(idosoID int64) (refreshToken, accessToken string, 
 	var rt, at sql.NullString
 	var exp sql.NullTime
 
-	err = db.conn.QueryRow(query, idosoID).Scan(&rt, &at, &exp)
+	err = db.Conn.QueryRow(query, idosoID).Scan(&rt, &at, &exp)
 	if err != nil {
 		return "", "", time.Time{}, fmt.Errorf("failed to get google tokens: %w", err)
 	}

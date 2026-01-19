@@ -5,12 +5,14 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"eva-mind/internal/config"
+	"eva-mind/internal/tools"
 	"fmt"
 	"log"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
+	// ✅ Importar tools
 )
 
 // AudioCallback é chamado quando áudio PCM é recebido do Gemini
@@ -66,73 +68,72 @@ func (c *Client) SetCallbacks(onAudio AudioCallback, onToolCall ToolCallCallback
 	c.onTranscript = onTranscript
 }
 
-// SendSetup envia configuração inicial com memórias episódicas
-func (c *Client) SendSetup(instructions string, tools []interface{}, memories []string, voiceName string) error {
-	// Enriquecer instruções com memórias relevantes
-	enrichedInstructions := instructions
+// SendSetup envia a configuração inicial da sessão
+func (c *Client) SendSetup(instructions string, voiceSettings map[string]interface{}, memories []string, initialAudio string, toolsDef []tools.FunctionDeclaration) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
-	if len(memories) > 0 {
-		enrichedInstructions += "\n\n=== MEMÓRIAS RELEVANTES DO PACIENTE ===\n"
-		for i, mem := range memories {
-			enrichedInstructions += fmt.Sprintf("%d. %s\n", i+1, mem)
-		}
-		enrichedInstructions += "=== FIM DAS MEMÓRIAS ===\n\n"
-		enrichedInstructions += "IMPORTANTE: Use essas memórias para contextualizar suas respostas e demonstrar que você se lembra do paciente.\n"
+	parsedMemories := []interface{}{}
+	for _, m := range memories {
+		parsedMemories = append(parsedMemories, m)
 	}
 
-	// ✅ CORRETO: Gemini SEMPRE retorna 24kHz quando usa response_modalities: ["AUDIO"]
-	// NÃO existe campo sample_rate_hertz na API!
-	// 🚨 PROTECTION: Gemini 2.5 Preview NÃO suporta Tools nativas + Áudio.
-	// Se estivermos usando o 2.5, ignoramos as tools na configuração para evitar Crash (Erro 1008)
-	// A delegação será feita via Texto/Prompt.
-	// 🔓 UNLOCK: Permitindo tools nativas no Gemini 2.5
-	finalTools := tools
-
-	// Default voice fallback
-	if voiceName == "" {
-		voiceName = "Aoede"
-	}
-
-	setupMsg := map[string]interface{}{
+	setup := map[string]interface{}{
 		"setup": map[string]interface{}{
 			"model": fmt.Sprintf("models/%s", c.cfg.ModelID),
-			"generation_config": map[string]interface{}{
-				"response_modalities": []string{"AUDIO"},
-				"speech_config": map[string]interface{}{
-					"voice_config": map[string]interface{}{
-						"prebuilt_voice_config": map[string]string{
-							"voice_name": voiceName,
+			"generationConfig": map[string]interface{}{
+				"responseModalities": []string{"AUDIO"},
+				"speechConfig": map[string]interface{}{
+					"voiceConfig": map[string]interface{}{
+						"prebuiltVoiceConfig": map[string]interface{}{
+							"voiceName": "Puck", // Voz padrão definida
 						},
 					},
 				},
+				"temperature": 0.6,
 			},
-			"system_instruction": map[string]interface{}{
-				"parts": []map[string]string{
-					{"text": enrichedInstructions},
+			"systemInstruction": map[string]interface{}{
+				"parts": []interface{}{
+					map[string]interface{}{
+						"text": instructions,
+					},
 				},
 			},
-			"tools": finalTools,
 		},
+	}
+
+	// ✅ Injetar Tools se houver
+	if len(toolsDef) > 0 {
+		toolsList := []interface{}{}
+		for _, t := range toolsDef {
+			toolsList = append(toolsList, t)
+		}
+
+		setup["setup"].(map[string]interface{})["tools"] = []interface{}{
+			map[string]interface{}{
+				"functionDeclarations": toolsList,
+			},
+		}
+		log.Printf("🛠️ [SETUP] %d tools enviadas para o Gemini", len(toolsDef))
 	}
 
 	log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	log.Printf("🔧 CONFIGURANDO GEMINI")
 	log.Printf("🎙️ Input: 16kHz PCM16 Mono")
 	log.Printf("🔊 Output: 24kHz PCM16 Mono (padrão Gemini)")
-	log.Printf("🗣️ Voz: %s", voiceName)
 	if len(memories) > 0 {
 		log.Printf("🧠 Memórias carregadas: %d", len(memories))
 	}
 	log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.conn.WriteJSON(setupMsg)
+	return c.conn.WriteJSON(setup)
 }
 
-// StartSession é um alias para SendSetup
+// StartSession é um alias para SendSetup (wrapper depreciado)
 func (c *Client) StartSession(instructions string, tools []interface{}, memories []string, voiceName string) error {
-	return c.SendSetup(instructions, tools, memories, voiceName)
+	// Adaptador simples para manter compatibilidade se necessário, mas ideal é atualizar chamadas
+	// Passando nil para toolsDef e map vazio para voiceSettings
+	return c.SendSetup(instructions, nil, memories, "", nil)
 }
 
 // SendAudio envia dados de áudio PCM para o Gemini
@@ -156,6 +157,28 @@ func (c *Client) SendAudio(audioData []byte) error {
 	return c.conn.WriteJSON(msg)
 }
 
+// SendText envia uma mensagem de texto (system note ou user message)
+func (c *Client) SendText(text string) error {
+	msg := map[string]interface{}{
+		"client_content": map[string]interface{}{
+			"turn_complete": true,
+			"turns": []map[string]interface{}{
+				{
+					"role": "user",
+					"parts": []map[string]interface{}{
+						{
+							"text": text,
+						},
+					},
+				},
+			},
+		},
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.conn.WriteJSON(msg)
+}
+
 // SendImage envia frames de imagem (JPEG) para o Gemini (Visão Computacional)
 func (c *Client) SendImage(imageData []byte) error {
 	encoded := base64.StdEncoding.EncodeToString(imageData)
@@ -171,6 +194,13 @@ func (c *Client) SendImage(imageData []byte) error {
 		},
 	}
 
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.conn.WriteJSON(msg)
+}
+
+// ✅ SendMessage envia uma mensagem genérica JSON para o Gemini (usado para ToolResponse e SystemNotes)
+func (c *Client) SendMessage(msg interface{}) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.conn.WriteJSON(msg)

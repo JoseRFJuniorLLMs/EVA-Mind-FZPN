@@ -1,0 +1,369 @@
+<svg viewBox="0 0 1400 1000" xmlns="http://www.w3.org/2000/svg">
+    <!-- Definitions -->
+    <defs>
+        <!-- Gradients -->
+        <linearGradient id="fastGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color:#FF6B6B;stop-opacity:1" />
+            <stop offset="100%" style="stop-color:#FF8E53;stop-opacity:1" />
+        </linearGradient>
+
+        <linearGradient id="slowGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color:#4ECDC4;stop-opacity:1" />
+            <stop offset="100%" style="stop-color:#44A08D;stop-opacity:1" />
+        </linearGradient>
+
+        <linearGradient id="memoryGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color:#A18CD1;stop-opacity:1" />
+            <stop offset="100%" style="stop-color:#FBC2EB;stop-opacity:1" />
+        </linearGradient>
+
+        <!-- Arrow marker -->
+        <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+            <polygon points="0 0, 10 3, 0 6" fill="#333" />
+        </marker>
+
+        <marker id="arrowhead-fast" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+            <polygon points="0 0, 10 3, 0 6" fill="#FF6B6B" />
+        </marker>
+
+        <marker id="arrowhead-slow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+            <polygon points="0 0, 10 3, 0 6" fill="#4ECDC4" />
+        </marker>
+
+        <!-- Glow effect -->
+        <filter id="glow">
+            <feGaussianBlur stdDeviation="3" result="coloredBlur" />
+            <feMerge>
+                <feMergeNode in="coloredBlur" />
+                <feMergeNode in="SourceGraphic" />
+            </feMerge>
+        </filter>
+    </defs>
+
+    <!-- Background -->
+    <rect width="1400" height="1000" fill="#f8f9fa" />
+
+    <!-- Title -->
+    <text x="700" y="40" font-family="Arial, sans-serif" font-size="28" font-weight="bold" text-anchor="middle"
+        fill="#2c3e50">
+        Arquitetura Cognitiva Dual do EVA
+    </text>
+    <text x="700" y="65" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#7f8c8d">
+        Thinking Fast and Slow em Ação
+    </text>
+
+    <!-- User Input -->
+    <g id="user">
+        <circle cx="700" cy="120" r="35" fill="#34495e" filter="url(#glow)" />
+        <text x="700" y="128" font-family="Arial, sans-serif" font-size="32" text-anchor="middle" fill="white">👵</text>
+        <text x="700" y="170" font-family="Arial, sans-serif" font-size="12" font-weight="bold" text-anchor="middle"
+            fill="#2c3e50">
+            Dona Maria
+        </text>
+        <text x="700" y="185" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" fill="#7f8c8d">
+            "Estou cansada..."
+        </text>
+    </g>
+
+    <!-- WebSocket Layer -->
+    <rect x="550" y="210" width="300" height="50" rx="10" fill="#ecf0f1" stroke="#95a5a6" stroke-width="2" />
+    <text x="700" y="240" font-family="Arial, sans-serif" font-size="14" font-weight="bold" text-anchor="middle"
+        fill="#2c3e50">
+        WebSocket (Full-Duplex)
+    </text>
+
+    <!-- Audio indicator -->
+    <path d="M 700 260 L 700 300" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)" />
+    <text x="720" y="285" font-family="Arial, sans-serif" font-size="10" fill="#7f8c8d">PCM16 @ 24kHz</text>
+
+    <!-- SISTEMA 1 - Fast Lane -->
+    <g id="system1">
+        <rect x="80" y="320" width="520" height="280" rx="15" fill="url(#fastGrad)" opacity="0.1" stroke="#FF6B6B"
+            stroke-width="3" />
+
+        <!-- Header -->
+        <rect x="95" y="335" width="490" height="50" rx="8" fill="url(#fastGrad)" opacity="0.9" />
+        <text x="340" y="355" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="white">
+            ⚡ SISTEMA 1: A Voz do Afeto
+        </text>
+        <text x="340" y="375" font-family="Arial, sans-serif" font-size="12" fill="white" opacity="0.9">
+            The Fast Lane | &lt;500ms latency
+        </text>
+
+        <!-- Components -->
+        <rect x="110" y="405" width="220" height="60" rx="8" fill="white" stroke="#FF6B6B" stroke-width="2" />
+        <text x="220" y="425" font-family="Arial, sans-serif" font-size="12" font-weight="bold" text-anchor="middle"
+            fill="#333">
+            Gemini 2.5 Flash
+        </text>
+        <text x="220" y="442" font-family="Arial, sans-serif" font-size="10" text-anchor="middle" fill="#666">
+            Native Audio Mode
+        </text>
+        <text x="220" y="457" font-family="Arial, sans-serif" font-size="9" text-anchor="middle" fill="#999">
+            Context: Imediato + Memória
+        </text>
+
+        <rect x="350" y="405" width="220" height="60" rx="8" fill="white" stroke="#FF6B6B" stroke-width="2" />
+        <text x="460" y="425" font-family="Arial, sans-serif" font-size="12" font-weight="bold" text-anchor="middle"
+            fill="#333">
+            Audio Buffer
+        </text>
+        <text x="460" y="442" font-family="Arial, sans-serif" font-size="10" text-anchor="middle" fill="#666">
+            9.600 bytes (400ms)
+        </text>
+        <text x="460" y="457" font-family="Arial, sans-serif" font-size="9" text-anchor="middle" fill="#999">
+            Anti-fragmentação
+        </text>
+
+        <!-- Storage -->
+        <rect x="110" y="485" width="140" height="50" rx="6" fill="white" stroke="#FF6B6B" stroke-width="1.5" />
+        <text x="180" y="505" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle"
+            fill="#333">
+            Redis Cache
+        </text>
+        <text x="180" y="520" font-family="Arial, sans-serif" font-size="9" text-anchor="middle" fill="#666">
+            RAM Speed
+        </text>
+
+        <rect x="270" y="485" width="140" height="50" rx="6" fill="white" stroke="#FF6B6B" stroke-width="1.5" />
+        <text x="340" y="505" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle"
+            fill="#333">
+            WebSocketSession
+        </text>
+        <text x="340" y="520" font-family="Arial, sans-serif" font-size="9" text-anchor="middle" fill="#666">
+            audioBuffer[]
+        </text>
+
+        <!-- Output -->
+        <rect x="430" y="485" width="140" height="50" rx="6" fill="white" stroke="#FF6B6B" stroke-width="1.5" />
+        <text x="500" y="505" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle"
+            fill="#333">
+            Transcrição
+        </text>
+        <text x="500" y="520" font-family="Arial, sans-serif" font-size="9" text-anchor="middle" fill="#666">
+            Bidirecional
+        </text>
+
+        <!-- Response -->
+        <rect x="200" y="555" width="280" height="30" rx="15" fill="#FF6B6B" opacity="0.2" stroke="#FF6B6B"
+            stroke-width="2" />
+        <text x="340" y="575" font-family="Arial, sans-serif" font-size="11" font-style="italic" text-anchor="middle"
+            fill="#333">
+            "Descanse, minha querida..." 💬
+        </text>
+    </g>
+
+    <!-- SISTEMA 2 - Slow Lane -->
+    <g id="system2">
+        <rect x="800" y="320" width="520" height="280" rx="15" fill="url(#slowGrad)" opacity="0.1" stroke="#4ECDC4"
+            stroke-width="3" />
+
+        <!-- Header -->
+        <rect x="815" y="335" width="490" height="50" rx="8" fill="url(#slowGrad)" opacity="0.9" />
+        <text x="1060" y="355" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="white">
+            🧠 SISTEMA 2: O Cérebro Clínico
+        </text>
+        <text x="1060" y="375" font-family="Arial, sans-serif" font-size="12" fill="white" opacity="0.9">
+            The Slow Lane | 10-20s reasoning
+        </text>
+
+        <!-- Components -->
+        <rect x="830" y="405" width="220" height="60" rx="8" fill="white" stroke="#4ECDC4" stroke-width="2" />
+        <text x="940" y="425" font-family="Arial, sans-serif" font-size="12" font-weight="bold" text-anchor="middle"
+            fill="#333">
+            Neo4j Graph DB
+        </text>
+        <text x="940" y="442" font-family="Arial, sans-serif" font-size="10" text-anchor="middle" fill="#666">
+            Conhecimento Médico
+        </text>
+        <text x="940" y="457" font-family="Arial, sans-serif" font-size="9" text-anchor="middle" fill="#999">
+            Relações + Histórico
+        </text>
+
+        <rect x="1070" y="405" width="220" height="60" rx="8" fill="white" stroke="#4ECDC4" stroke-width="2" />
+        <text x="1180" y="425" font-family="Arial, sans-serif" font-size="12" font-weight="bold" text-anchor="middle"
+            fill="#333">
+            Thinking Mode
+        </text>
+        <text x="1180" y="442" font-family="Arial, sans-serif" font-size="10" text-anchor="middle" fill="#666">
+            Extended CoT
+        </text>
+        <text x="1180" y="457" font-family="Arial, sans-serif" font-size="9" text-anchor="middle" fill="#999">
+            Gemini 2.5 Analysis
+        </text>
+
+        <!-- Analysis -->
+        <rect x="830" y="485" width="220" height="50" rx="6" fill="white" stroke="#4ECDC4" stroke-width="1.5" />
+        <text x="940" y="505" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle"
+            fill="#333">
+            PostgreSQL
+        </text>
+        <text x="940" y="520" font-family="Arial, sans-serif" font-size="9" text-anchor="middle" fill="#666">
+            analise_gemini JSONB
+        </text>
+
+        <rect x="1070" y="485" width="220" height="50" rx="6" fill="white" stroke="#4ECDC4" stroke-width="1.5" />
+        <text x="1180" y="505" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle"
+            fill="#333">
+            Pattern Detection
+        </text>
+        <text x="1180" y="520" font-family="Arial, sans-serif" font-size="9" text-anchor="middle" fill="#666">
+            Risco + Correlação
+        </text>
+
+        <!-- Insight -->
+        <rect x="920" y="555" width="280" height="30" rx="15" fill="#4ECDC4" opacity="0.2" stroke="#4ECDC4"
+            stroke-width="2" />
+        <text x="1060" y="575" font-family="Arial, sans-serif" font-size="11" font-style="italic" text-anchor="middle"
+            fill="#333">
+            "Cansaço = Losartana? Monitorar..." 🔬
+        </text>
+    </g>
+
+    <!-- Connection arrows -->
+    <path d="M 700 300 L 340 320" stroke="#FF6B6B" stroke-width="3" marker-end="url(#arrowhead-fast)" opacity="0.6" />
+    <path d="M 700 300 L 1060 320" stroke="#4ECDC4" stroke-width="3" marker-end="url(#arrowhead-slow)" opacity="0.6" />
+
+    <!-- Async trigger -->
+    <path d="M 600 435 L 800 435" stroke="#4ECDC4" stroke-width="2" stroke-dasharray="5,5"
+        marker-end="url(#arrowhead-slow)" />
+    <text x="700" y="425" font-family="Arial, sans-serif" font-size="10" text-anchor="middle" fill="#4ECDC4"
+        font-weight="bold">
+        go func() async
+    </text>
+
+    <!-- PENDING INSIGHT BRIDGE -->
+    <g id="bridge">
+        <rect x="620" y="635" width="160" height="80" rx="10" fill="#FFD93D" opacity="0.9" stroke="#F6C90E"
+            stroke-width="3" />
+        <text x="700" y="658" font-family="Arial, sans-serif" font-size="13" font-weight="bold" text-anchor="middle"
+            fill="#333">
+            🔗 Pending Insight
+        </text>
+        <text x="700" y="678" font-family="Arial, sans-serif" font-size="10" text-anchor="middle" fill="#555">
+            SetPendingInsight()
+        </text>
+        <text x="700" y="693" font-family="Arial, sans-serif" font-size="10" text-anchor="middle" fill="#555">
+            ConsumePendingInsight()
+        </text>
+        <text x="700" y="708" font-family="Arial, sans-serif" font-size="9" text-anchor="middle" fill="#777">
+            Mutex-protected
+        </text>
+    </g>
+
+    <!-- Bridge connections -->
+    <path d="M 1060 600 L 1060 665 L 780 665" stroke="#4ECDC4" stroke-width="2" marker-end="url(#arrowhead-slow)" />
+    <path d="M 620 665 L 340 665 L 340 600" stroke="#FF6B6B" stroke-width="2" marker-end="url(#arrowhead-fast)" />
+
+    <!-- MEMORY SYSTEM -->
+    <g id="memory">
+        <rect x="80" y="740" width="1240" height="180" rx="15" fill="url(#memoryGrad)" opacity="0.1" stroke="#A18CD1"
+            stroke-width="3" />
+
+        <rect x="95" y="755" width="1210" height="40" rx="8" fill="url(#memoryGrad)" opacity="0.9" />
+        <text x="700" y="780" font-family="Arial, sans-serif" font-size="16" font-weight="bold" text-anchor="middle"
+            fill="white">
+            🧠 Sistema de Memória Episódica (Terceiro Sistema Oculto)
+        </text>
+
+        <!-- Memory components -->
+        <rect x="120" y="815" width="280" height="75" rx="8" fill="white" stroke="#A18CD1" stroke-width="2" />
+        <text x="260" y="838" font-family="Arial, sans-serif" font-size="12" font-weight="bold" text-anchor="middle"
+            fill="#333">
+            GetRecentMemories()
+        </text>
+        <text x="260" y="855" font-family="Arial, sans-serif" font-size="10" text-anchor="middle" fill="#666">
+            Últimas 10 conversas completas
+        </text>
+        <text x="260" y="870" font-family="Arial, sans-serif" font-size="9" text-anchor="middle" fill="#999">
+            historico_ligacoes table
+        </text>
+        <text x="260" y="883" font-family="Arial, sans-serif" font-size="9" text-anchor="middle" fill="#A18CD1"
+            font-weight="bold">
+            → Injetado no contexto inicial
+        </text>
+
+        <rect x="440" y="815" width="280" height="75" rx="8" fill="white" stroke="#A18CD1" stroke-width="2" />
+        <text x="580" y="838" font-family="Arial, sans-serif" font-size="12" font-weight="bold" text-anchor="middle"
+            fill="#333">
+            Personality State
+        </text>
+        <text x="580" y="855" font-family="Arial, sans-serif" font-size="10" text-anchor="middle" fill="#666">
+            relationship_level: 1-10
+        </text>
+        <text x="580" y="870" font-family="Arial, sans-serif" font-size="9" text-anchor="middle" fill="#999">
+            dominant_emotion, favorite_topics
+        </text>
+        <text x="580" y="883" font-family="Arial, sans-serif" font-size="9" text-anchor="middle" fill="#A18CD1"
+            font-weight="bold">
+            → Evolução comportamental
+        </text>
+
+        <rect x="760" y="815" width="280" height="75" rx="8" fill="white" stroke="#A18CD1" stroke-width="2" />
+        <text x="900" y="838" font-family="Arial, sans-serif" font-size="12" font-weight="bold" text-anchor="middle"
+            fill="#333">
+            Post-Call Analysis
+        </text>
+        <text x="900" y="855" font-family="Arial, sans-serif" font-size="10" text-anchor="middle" fill="#666">
+            analyzeAndSaveConversation()
+        </text>
+        <text x="900" y="870" font-family="Arial, sans-serif" font-size="9" text-anchor="middle" fill="#999">
+            Urgência, Humor, Sintomas
+        </text>
+        <text x="900" y="883" font-family="Arial, sans-serif" font-size="9" text-anchor="middle" fill="#A18CD1"
+            font-weight="bold">
+            → Alertas automáticos
+        </text>
+
+        <rect x="1080" y="815" width="210" height="75" rx="8" fill="white" stroke="#A18CD1" stroke-width="2" />
+        <text x="1185" y="838" font-family="Arial, sans-serif" font-size="12" font-weight="bold" text-anchor="middle"
+            fill="#333">
+            Learning Loop
+        </text>
+        <text x="1185" y="855" font-family="Arial, sans-serif" font-size="10" text-anchor="middle" fill="#666">
+            Cada conversa →
+        </text>
+        <text x="1185" y="870" font-family="Arial, sans-serif" font-size="9" text-anchor="middle" fill="#999">
+            Sistema mais inteligente
+        </text>
+        <text x="1185" y="883" font-family="Arial, sans-serif" font-size="9" text-anchor="middle" fill="#A18CD1"
+            font-weight="bold">
+            → Neo4j update
+        </text>
+    </g>
+
+    <!-- Timeline annotation -->
+    <g id="timeline">
+        <text x="80" y="955" font-family="monospace" font-size="11" font-weight="bold" fill="#2c3e50">TIMELINE:</text>
+        <text x="80" y="975" font-family="monospace" font-size="10" fill="#e74c3c">T=0.0s: "Estou cansada" → Sistema
+            1</text>
+        <text x="350" y="975" font-family="monospace" font-size="10" fill="#e74c3c">T=0.4s: "Descanse, querida"
+            (resposta)</text>
+        <text x="80" y="990" font-family="monospace" font-size="10" fill="#3498db">T=0.5s: Sistema 2 acorda (goroutine
+            async)</text>
+        <text x="350" y="990" font-family="monospace" font-size="10" fill="#3498db">T=15s: Insight →
+            PendingInsight</text>
+        <text x="750" y="975" font-family="monospace" font-size="10" fill="#e74c3c">T=45s: "Vou ver novela" → Sistema
+            1</text>
+        <text x="750" y="990" font-family="monospace" font-size="10" fill="#9b59b6">T=45.3s: Consume insight + resposta
+            enriquecida</text>
+    </g>
+
+    <!-- Legend -->
+    <rect x="1150" y="85" width="220" height="105" rx="8" fill="white" stroke="#bdc3c7" stroke-width="2" />
+    <text x="1260" y="105" font-family="Arial, sans-serif" font-size="12" font-weight="bold" text-anchor="middle"
+        fill="#2c3e50">
+        Legenda
+    </text>
+    <line x1="1165" y1="120" x2="1195" y2="120" stroke="#FF6B6B" stroke-width="3" />
+    <text x="1205" y="125" font-family="Arial, sans-serif" font-size="10" fill="#333">Sistema 1 (Fast)</text>
+
+    <line x1="1165" y1="140" x2="1195" y2="140" stroke="#4ECDC4" stroke-width="3" />
+    <text x="1205" y="145" font-family="Arial, sans-serif" font-size="10" fill="#333">Sistema 2 (Slow)</text>
+
+    <line x1="1165" y1="160" x2="1195" y2="160" stroke="#A18CD1" stroke-width="3" />
+    <text x="1205" y="165" font-family="Arial, sans-serif" font-size="10" fill="#333">Memória Episódica</text>
+
+    <line x1="1165" y1="175" x2="1195" y2="175" stroke="#333" stroke-width="2" stroke-dasharray="5,5" />
+    <text x="1205" y="180" font-family="Arial, sans-serif" font-size="10" fill="#333">Async/Paralelo</text>
+</svg>

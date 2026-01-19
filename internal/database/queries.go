@@ -44,7 +44,7 @@ func (db *DB) GetPendingAgendamentos(limit int) ([]Agendamento, error) {
 		LIMIT $2
 	`
 
-	rows, err := db.conn.Query(query, time.Now(), limit)
+	rows, err := db.Conn.Query(query, time.Now(), limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query agendamentos: %w", err)
 	}
@@ -77,7 +77,7 @@ func (db *DB) GetIdoso(id int64) (*Idoso, error) {
 	`
 
 	var idoso Idoso
-	err := db.conn.QueryRow(query, id).Scan(
+	err := db.Conn.QueryRow(query, id).Scan(
 		&idoso.ID, &idoso.Nome, &idoso.DataNascimento, &idoso.Telefone, &idoso.CPF, &idoso.DeviceToken,
 		&idoso.Ativo, &idoso.NivelCognitivo, &idoso.LimitacoesAuditivas, &idoso.UsaAparelhoAuditivo,
 		&idoso.TomVoz, &idoso.PreferenciaHorario,
@@ -95,7 +95,7 @@ func (db *DB) GetIdoso(id int64) (*Idoso, error) {
 func (db *DB) UpdateAgendamentoStatus(id int64, status string) error {
 	query := `UPDATE agendamentos SET status = $1, atualizado_em = CURRENT_TIMESTAMP WHERE id = $2`
 
-	result, err := db.conn.Exec(query, status, id)
+	result, err := db.Conn.Exec(query, status, id)
 	if err != nil {
 		return fmt.Errorf("failed to update: %w", err)
 	}
@@ -123,7 +123,7 @@ func (db *DB) GetIdosoByCPF(cpf string) (*Idoso, error) {
 	`
 
 	var idoso Idoso
-	err := db.conn.QueryRow(query, cpf).Scan(
+	err := db.Conn.QueryRow(query, cpf).Scan(
 		&idoso.ID,
 		&idoso.CPF,
 		&idoso.Ativo,

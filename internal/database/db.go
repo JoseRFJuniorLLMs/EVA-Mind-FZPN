@@ -9,7 +9,7 @@ import (
 )
 
 type DB struct {
-	conn *sql.DB
+	Conn *sql.DB
 }
 
 func NewDB(connectionString string) (*DB, error) {
@@ -26,13 +26,13 @@ func NewDB(connectionString string) (*DB, error) {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	return &DB{conn: conn}, nil
+	return &DB{Conn: conn}, nil
 }
 
 func (db *DB) Close() error {
-	return db.conn.Close()
+	return db.Conn.Close()
 }
 
 func (db *DB) GetConnection() *sql.DB {
-	return db.conn
+	return db.Conn
 }

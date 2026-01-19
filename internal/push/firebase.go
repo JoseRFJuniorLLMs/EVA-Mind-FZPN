@@ -326,3 +326,35 @@ func (s *FirebaseService) SendDataMessage(deviceToken string, data map[string]st
 	log.Printf("📡 WebRTC Signal enviado para %s... ID: %s", deviceToken[:10], response)
 	return nil
 }
+
+// SendNotificationToTopic envia mensagem para um tópico específico
+func (s *FirebaseService) SendNotificationToTopic(topic, title, body string, data map[string]string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	message := &messaging.Message{
+		Topic: topic,
+		Notification: &messaging.Notification{
+			Title: title,
+			Body:  body,
+		},
+		Data: data,
+		Android: &messaging.AndroidConfig{
+			Priority: "high",
+			Notification: &messaging.AndroidNotification{
+				Sound:        "alert",
+				Priority:     messaging.PriorityHigh,
+				ChannelID:    "eva_alerts",
+				DefaultSound: true,
+			},
+		},
+	}
+
+	response, err := s.client.Send(ctx, message)
+	if err != nil {
+		return fmt.Errorf("error sending topic message: %w", err)
+	}
+
+	log.Printf("📢 Mensagem de tópico '%s' enviada! ID: %s", topic, response)
+	return nil
+}

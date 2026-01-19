@@ -11,7 +11,7 @@ func (db *DB) SaveVitalSign(idosoID int64, tipo, valor, unidade, metodo, observa
 		INSERT INTO sinais_vitais (idoso_id, tipo, valor, unidade, metodo, data_medicao, observacao)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 	`
-	_, err := db.conn.Exec(query, idosoID, tipo, valor, unidade, metodo, time.Now(), observacao)
+	_, err := db.Conn.Exec(query, idosoID, tipo, valor, unidade, metodo, time.Now(), observacao)
 	if err != nil {
 		return fmt.Errorf("failed to save vital sign: %w", err)
 	}
@@ -25,7 +25,7 @@ func (db *DB) SaveDeviceHealthData(idosoID int64, bpm int, steps int) error {
 		VALUES ($1, $2, NOW(), NOW())
 	`
 	// Note: mapping idoso_id to cliente_id if they are the same in the DB
-	_, err := db.conn.Exec(query, idosoID, bpm)
+	_, err := db.Conn.Exec(query, idosoID, bpm)
 	if err != nil {
 		return fmt.Errorf("failed to save device health data: %w", err)
 	}
@@ -35,7 +35,7 @@ func (db *DB) SaveDeviceHealthData(idosoID int64, bpm int, steps int) error {
 			INSERT INTO atividade (cliente_id, passos, timestamp_coleta, created_at)
 			VALUES ($1, $2, NOW(), NOW())
 		`
-		_, _ = db.conn.Exec(querySteps, idosoID, steps)
+		_, _ = db.Conn.Exec(querySteps, idosoID, steps)
 	}
 
 	return nil
@@ -50,7 +50,7 @@ func (db *DB) GetRecentVitalSigns(idosoID int64, tipo string, limit int) ([]Vita
 		ORDER BY data_medicao DESC
 		LIMIT $3
 	`
-	rows, err := db.conn.Query(query, idosoID, tipo, limit)
+	rows, err := db.Conn.Query(query, idosoID, tipo, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get vital signs: %w", err)
 	}

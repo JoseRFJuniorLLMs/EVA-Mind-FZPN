@@ -22,7 +22,7 @@ func (db *DB) CreateUser(name, email, passwordHash, role string) error {
 		INSERT INTO usuarios (nome, email, senha_hash, tipo, criado_em, atualizado_em, ativo)
 		VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, true)
 	`
-	_, err := db.conn.Exec(query, name, email, passwordHash, role)
+	_, err := db.Conn.Exec(query, name, email, passwordHash, role)
 	if err != nil {
 		return fmt.Errorf("failed to create user: %w", err)
 	}
@@ -37,7 +37,7 @@ func (db *DB) GetUserByEmail(email string) (*User, error) {
 	`
 	// Note: last_login might not exist in usuarios yet, passing NULL for now or we need to add it to schema
 	var u User
-	err := db.conn.QueryRow(query, email).Scan(
+	err := db.Conn.QueryRow(query, email).Scan(
 		&u.ID, &u.Name, &u.Email, &u.PasswordHash, &u.Role, &u.LastLogin, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if err != nil {
@@ -56,7 +56,7 @@ func (db *DB) GetUserByID(id int64) (*User, error) {
 		WHERE id = $1
 	`
 	var u User
-	err := db.conn.QueryRow(query, id).Scan(
+	err := db.Conn.QueryRow(query, id).Scan(
 		&u.ID, &u.Name, &u.Email, &u.PasswordHash, &u.Role, &u.LastLogin, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if err != nil {

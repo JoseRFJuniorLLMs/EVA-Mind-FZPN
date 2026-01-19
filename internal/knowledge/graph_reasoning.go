@@ -11,14 +11,16 @@ import (
 // GraphReasoningService orquestra o raciocínio clínico usando Neo4j e Gemini Thinking
 type GraphReasoningService struct {
 	neo4jClient  *graph.Neo4jClient
-	geminiClient *gemini.Client // REST client para "Thinking" (não streaming)
+	geminiClient *gemini.Client
 	cfg          *config.Config
+	context      *ContextService // ✅ NOVO
 }
 
-func NewGraphReasoningService(cfg *config.Config, neo4jClient *graph.Neo4jClient) *GraphReasoningService {
+func NewGraphReasoningService(cfg *config.Config, neo4jClient *graph.Neo4jClient, ctxService *ContextService) *GraphReasoningService {
 	return &GraphReasoningService{
 		neo4jClient: neo4jClient,
 		cfg:         cfg,
+		context:     ctxService,
 	}
 }
 
@@ -56,6 +58,11 @@ func (s *GraphReasoningService) AnalyzeGraphContext(ctx context.Context, idosoID
 	analysis, err := gemini.AnalyzeText(s.cfg, prompt)
 	if err != nil {
 		return "", fmt.Errorf("erro na análise do Gemini: %w", err)
+	}
+
+	// ✅ FASE 3: Persistir Factual Memory
+	if s.context != nil {
+		go s.context.SaveAnalysis(context.Background(), idosoID, "GRAPH", analysis)
 	}
 
 	return analysis, nil

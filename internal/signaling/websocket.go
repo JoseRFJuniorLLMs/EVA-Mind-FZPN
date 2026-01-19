@@ -15,14 +15,26 @@ import (
 	"time"
 
 	"eva-mind/internal/config"
+	"eva-mind/internal/database"
 	"eva-mind/internal/gemini"
 	"eva-mind/internal/infrastructure/graph"
+	"eva-mind/internal/infrastructure/redis"
 	"eva-mind/internal/knowledge"
+	"eva-mind/internal/tools"
 
+	// ✅ Importar tools
 	"eva-mind/internal/push"
 
 	"github.com/gorilla/websocket"
 )
+
+// ✅ Estrutura para parsear análise de áudio
+type AudioAnalysisResult struct {
+	Emotion   string `json:"emotion"`
+	Intensity int    `json:"intensity"`
+	Urgency   string `json:"urgency"`
+	Notes     string `json:"notes"`
+}
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
@@ -47,15 +59,45 @@ type WebSocketSession struct {
 	// ✅ NOVO: Buffer de áudio para envio em chunks maiores
 	audioBuffer []byte
 	audioMutex  sync.Mutex
+
+	// ✅ NOVO: O "Insight" pendente do raciocínio em background
+	pendingInsight string
+	insightMutex   sync.Mutex
+}
+
+// ✅ NOVO MÉTODO: Thread-safe setter para o GraphReasoning usar
+func (s *WebSocketSession) SetPendingInsight(insight string) {
+	s.insightMutex.Lock()
+	defer s.insightMutex.Unlock()
+	s.pendingInsight = insight
+}
+
+// ✅ NOVO MÉTODO: Thread-safe getter que limpa após ler (consumir uma vez)
+func (s *WebSocketSession) ConsumePendingInsight() string {
+	s.insightMutex.Lock()
+	defer s.insightMutex.Unlock()
+
+	if s.pendingInsight == "" {
+		return ""
+	}
+
+	// Pega o valor e limpa para não repetir na próxima vez
+	insight := s.pendingInsight
+	s.pendingInsight = ""
+	return insight
 }
 
 type SignalingServer struct {
-	cfg         *config.Config
-	db          *sql.DB
-	pushService *push.FirebaseService
-	knowledge   *knowledge.GraphReasoningService
-	sessions    sync.Map
-	clients     sync.Map
+	cfg           *config.Config
+	db            *sql.DB
+	pushService   *push.FirebaseService
+	knowledge     *knowledge.GraphReasoningService
+	audioAnalysis *knowledge.AudioAnalysisService // ✅ NOVO
+	context       *knowledge.ContextService       // ✅ NOVO: Factual Memory
+	tools         *tools.ToolsHandler             // ✅ NOVO: Read-Only Tools
+	redis         *redis.Client
+	sessions      sync.Map
+	clients       sync.Map
 }
 
 func NewSignalingServer(cfg *config.Config, db *sql.DB, pushService *push.FirebaseService) *SignalingServer {
@@ -67,13 +109,31 @@ func NewSignalingServer(cfg *config.Config, db *sql.DB, pushService *push.Fireba
 
 	log.Printf("🚀 Signaling Server em modo VOZ PURA (Tools desabilitadas)")
 
+	// ✅ NOVO: Wrapper do DB para ContextService
+	// Criar wrapper temporário já que recebemos sql.DB cru.
+	// Idealmente o server receberia *database.DB
+	dbWrapper := &database.DB{Conn: db}
+	ctxService := knowledge.NewContextService(dbWrapper)
+	server.context = ctxService
+	server.tools = tools.NewToolsHandler(dbWrapper) // ✅ Inicializa Tools Handler
+
 	// ✅ NOVO: Inicializar Knowledge Service (Neo4j Thinking)
 	neo4jClient, err := graph.NewNeo4jClient(cfg)
 	if err != nil {
 		log.Printf("⚠️ Erro ao conectar Neo4j: %v", err)
 	} else {
-		server.knowledge = knowledge.NewGraphReasoningService(cfg, neo4jClient)
+		server.knowledge = knowledge.NewGraphReasoningService(cfg, neo4jClient, ctxService)
 		log.Printf("✅ Graph Reasoning Service (Neo4j + Thinking) inicializado")
+	}
+
+	// ✅ NOVO: Inicializar Redis Client (Audio Buffer)
+	redisClient, err := redis.NewClient(cfg)
+	if err != nil {
+		log.Printf("⚠️ Erro ao conectar Redis: %v", err)
+	} else {
+		server.redis = redisClient
+		server.audioAnalysis = knowledge.NewAudioAnalysisService(cfg, redisClient, ctxService) // ✅ Inicializa Serviço de Áudio com Contexto
+		log.Printf("✅ Redis Video Buffer + Audio Analysis inicializado")
 	}
 
 	go server.cleanupDeadSessions()
@@ -244,6 +304,33 @@ func (s *SignalingServer) handleAudioMessage(session *WebSocketSession, pcmData 
 	session.lastActivity = time.Now()
 	session.mu.Unlock()
 
+	// ✅ CLOSED LOOP: Verificar se há insight pendente do raciocínio
+	// Se houver, enviamos como TEXTO (System Note) antes do áudio
+	// Isso garante que o Gemini processe o contexto antes de ouvir a nova fala
+	if insight := session.ConsumePendingInsight(); insight != "" {
+		log.Printf("💉 [INJECTION] Injetando insight no fluxo: %s", insight)
+
+		systemNote := fmt.Sprintf(`
+[SISTEMA - INFORMAÇÃO CRÍTICA DO BACKGROUND]
+Análise clínica recente (Neo4j): %s
+Use isso para guiar sua resposta ao próximo áudio.
+`, insight)
+
+		if err := session.GeminiClient.SendText(systemNote); err != nil {
+			log.Printf("⚠️ Erro ao injetar insight: %v", err)
+		}
+	}
+
+	// ✅ REDIS: Salvar chunk no buffer distribuído para análise posterior
+	if s.redis != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			// Use CPF or ID as key suffix
+			s.redis.AppendAudioChunk(ctx, session.ID, pcmData)
+		}()
+	}
+
 	if err := session.GeminiClient.SendAudio(pcmData); err != nil {
 		log.Printf("❌ Erro ao enviar áudio para Gemini")
 	}
@@ -309,8 +396,9 @@ func (s *SignalingServer) handleGeminiResponse(session *WebSocketSession, respon
 					}
 
 					if reasoning != "" {
-						log.Printf("🧠 [NEO4J] Raciocínio Clínico:\n%s", reasoning)
-						// Futuro: Injetar no prompt??
+						log.Printf("💡 [NEO4J] Insight gerado: %s", reasoning)
+						// ✅ CLOSED LOOP: Guardar insight na sessão para próxima interação
+						session.SetPendingInsight(reasoning)
 					}
 				}(session.IdosoID, userText)
 			}
@@ -326,9 +414,118 @@ func (s *SignalingServer) handleGeminiResponse(session *WebSocketSession, respon
 	}
 	// ========== FIM TRANSCRIÇÃO NATIVA ==========
 
-	// Detectar quando idoso terminou de falar
+	// Detectar quando idoso terminou de falar (Turn Complete)
 	if turnComplete, ok := serverContent["turnComplete"].(bool); ok && turnComplete {
-		log.Printf("🎙️ [Idoso terminou de falar]")
+		log.Printf("🎙️ [TURNO COMPLETO] Iniciando análise de áudio...")
+
+		// ✅ FASE 2.3: Audio Emotion Analysis (Redis Powered)
+		if s.audioAnalysis != nil {
+			go func(sessID string, uid int64) {
+				ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+				defer cancel()
+
+				analysisStr, err := s.audioAnalysis.AnalyzeAudioContext(ctx, sessID, uid)
+				if err != nil {
+					log.Printf("⚠️ [AUDIO] Erro: %v", err)
+					return
+				}
+
+				if analysisStr != "" {
+					log.Printf("👂 [AUDIO] Insight Auditivo Raw: %s", analysisStr)
+
+					// ✅ FASE 4: Critical Dispatcher (Análise de Segurança)
+					var result AudioAnalysisResult
+
+					// Tentar limpar blocos de código markdown se houver
+					cleanJson := strings.ReplaceAll(analysisStr, "```json", "")
+					cleanJson = strings.ReplaceAll(cleanJson, "```", "")
+
+					if err := json.Unmarshal([]byte(cleanJson), &result); err == nil {
+						log.Printf("🛡️ [SAFETY] Urgency Level: %s | Emotion: %s", result.Urgency, result.Emotion)
+
+						// 🚨 DETECÇÃO DE RISCO CRÍTICO
+						if strings.ToUpper(result.Urgency) == "CRITICA" || strings.ToUpper(result.Urgency) == "ALTA" {
+							log.Printf("🚨🚨🚨 ALERTA DE RISCO DETECTADO! DISPARANDO NOTIFICAÇÃO! 🚨🚨🚨")
+
+							alertTitle := "⚠️ ALERTA DE SAÚDE MENTAL"
+							alertBody := fmt.Sprintf("Idoso (ID: %d) apresenta sinais de %s com urgência %s. Notas: %s", uid, result.Emotion, result.Urgency, result.Notes)
+
+							// Enviar Push (Assumindo topic 'caregivers' ou token específico do responsável)
+							// TODO: Pegar token do responsável. Por enquanto, enviamos para um tópico geral de cuidadores
+							// ou se s.pushService suportar SendToTopic.
+
+							// Vou usar um método genérico SendAlert se existir, ou SendNotification
+							// Assumindo que o pushService tem suporte basico.
+							if s.pushService != nil {
+								// HACK: Enviar para o próprio idoso (teste) ou tópico
+								// Idealmente: s.db.GetResponsavelToken(uid)
+								go s.pushService.SendNotificationToTopic("cuidadores", alertTitle, alertBody, map[string]string{
+									"type":     "emergency_alert",
+									"idoso_id": fmt.Sprintf("%d", uid),
+								})
+							}
+						}
+					} else {
+						log.Printf("⚠️ [AUDIO] Falha ao parsear JSON de análise: %v", err)
+					}
+
+					// Mesclar ou setar insight pendente (para memória de trabalho)
+					session.SetPendingInsight(analysisStr)
+				}
+			}(session.ID, session.IdosoID)
+		}
+
+	}
+
+	// ✅ FASE 4.2: Manipulação de Tools (READ-ONLY)
+	if toolCall, ok := serverContent["toolCall"].(map[string]interface{}); ok {
+		log.Printf("🛠️ [GEMINI] Recebida solicitação de Tool Use: %+v", toolCall)
+
+		functionCalls, ok := toolCall["functionCalls"].([]interface{})
+		if ok && len(functionCalls) > 0 {
+			for _, fc := range functionCalls {
+				fcMap := fc.(map[string]interface{})
+				name := fcMap["name"].(string)
+				callID := fcMap["id"].(string) // Importante para responder
+				args := fcMap["args"].(map[string]interface{})
+
+				log.Printf("🛠️ [TOOL] Executando: %s (ID: %s)", name, callID)
+
+				// Executar via handler
+				var response map[string]interface{}
+				if s.tools != nil {
+					res, err := s.tools.ExecuteTool(name, args, session.IdosoID)
+					if err != nil {
+						response = map[string]interface{}{"error": err.Error()}
+					} else {
+						response = res
+					}
+				} else {
+					response = map[string]interface{}{"error": "Tools handler not initialized"}
+				}
+
+				// Enviar resposta de volta para o Gemini
+				toolResponse := map[string]interface{}{
+					"toolResponse": map[string]interface{}{
+						"functionResponses": []interface{}{
+							map[string]interface{}{
+								"name": name,
+								"id":   callID,
+								"response": map[string]interface{}{
+									"result": response,
+								},
+							},
+						},
+					},
+				}
+
+				if err := session.GeminiClient.SendMessage(toolResponse); err != nil {
+					log.Printf("❌ [TOOL] Erro ao enviar resposta: %v", err)
+				} else {
+					log.Printf("✅ [TOOL] Resposta enviada para %s", name)
+				}
+			}
+		}
 	}
 
 	// Processar modelTurn (resposta da EVA)
@@ -535,7 +732,22 @@ func (s *SignalingServer) createSession(sessionID, cpf string, idosoID int64, co
 	log.Printf("🧠 Carregando %d memórias episódicas para o contexto", len(memories))
 
 	instructions := BuildInstructions(idosoID, s.db)
-	if err := geminiClient.SendSetup(instructions, nil, memories, ""); err != nil {
+
+	// ✅ FASE 3: Injetar Memória Factual (Contexto de Análises Passadas)
+	if s.context != nil {
+		factualContext, err := s.context.GetContextSummary(ctx, idosoID)
+		if err != nil {
+			log.Printf("⚠️ Erro ao recuperar contexto factual: %v", err)
+		} else if factualContext != "" {
+			instructions += "\n" + factualContext
+			log.Printf("📚 Contexto factual injetado (%d chars)", len(factualContext))
+		}
+	}
+
+	// ✅ FASE 4.2: Configurar Tools
+	toolDefs := tools.GetToolDefinitions()
+
+	if err := geminiClient.SendSetup(instructions, nil, memories, "", toolDefs); err != nil {
 		cancel()
 		geminiClient.Close()
 		return nil, err
