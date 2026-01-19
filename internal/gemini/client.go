@@ -16,6 +16,9 @@ import (
 // AudioCallback é chamado quando áudio PCM é recebido do Gemini
 type AudioCallback func(audioBytes []byte)
 
+// ToolCallCallback é chamado quando uma ferramenta precisa ser executada
+type ToolCallCallback func(name string, args map[string]interface{}) map[string]interface{}
+
 // TranscriptCallback é chamado quando há transcrição de áudio (Input ou Output)
 type TranscriptCallback func(role, text string)
 
@@ -25,6 +28,7 @@ type Client struct {
 	mu           sync.Mutex
 	cfg          *config.Config
 	onAudio      AudioCallback
+	onToolCall   ToolCallCallback
 	onTranscript TranscriptCallback
 }
 
@@ -36,14 +40,6 @@ func NewClient(ctx context.Context, cfg *config.Config) (*Client, error) {
 
 	url := fmt.Sprintf("wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=%s", cfg.GoogleAPIKey)
 
-	// DEBUG: Verify API Key loading (Masked)
-	if len(cfg.GoogleAPIKey) > 10 {
-		log.Printf("🔑 Connecting with Key: %s...", cfg.GoogleAPIKey[:10])
-	} else {
-		log.Printf("🔑 Connecting with Key (SHORT/INVALID): %s", cfg.GoogleAPIKey)
-	}
-	log.Printf("🔗 URL: %s", url)
-
 	conn, _, err := dialer.DialContext(ctx, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("erro ao conectar no websocket: %w", err)
@@ -52,9 +48,10 @@ func NewClient(ctx context.Context, cfg *config.Config) (*Client, error) {
 	return &Client{conn: conn, cfg: cfg}, nil
 }
 
-// SetCallbacks configura os retornos de áudio e transcrição
-func (c *Client) SetCallbacks(onAudio AudioCallback, onTranscript TranscriptCallback) {
+// SetCallbacks configura os retornos de áudio, ferramentas e transcrição
+func (c *Client) SetCallbacks(onAudio AudioCallback, onToolCall ToolCallCallback, onTranscript TranscriptCallback) {
 	c.onAudio = onAudio
+	c.onToolCall = onToolCall
 	c.onTranscript = onTranscript
 }
 
@@ -264,8 +261,56 @@ func (c *Client) HandleResponses(ctx context.Context) error {
 					}
 				}
 			}
+
+			// ✅ Processar tool calls
+			if toolCall, ok := resp["toolCall"].(map[string]interface{}); ok {
+				log.Printf("🔧 Tool call detectado")
+				c.handleToolCalls(toolCall)
+			}
 		}
 	}
+}
+
+func (c *Client) handleToolCalls(toolCall map[string]interface{}) {
+	if fcList, ok := toolCall["functionCalls"].([]interface{}); ok {
+		for _, f := range fcList {
+			fc := f.(map[string]interface{})
+			name := fc["name"].(string)
+			args := fc["args"].(map[string]interface{})
+
+			if c.onToolCall != nil {
+				// ✅ FIX: Executar tools em goroutine separada para não travar a voz
+				go func(n string, a map[string]interface{}) {
+					defer func() {
+						if r := recover(); r != nil {
+							log.Printf("🚨 PANIC na Tool %s: %v", n, r)
+							c.SendToolResponse(n, map[string]interface{}{"error": "Internal error"})
+						}
+					}()
+
+					result := c.onToolCall(n, a)
+					c.SendToolResponse(n, result)
+				}(name, args)
+			}
+		}
+	}
+}
+
+// SendToolResponse envia o resultado da função de volta ao Gemini
+func (c *Client) SendToolResponse(name string, result map[string]interface{}) error {
+	msg := map[string]interface{}{
+		"tool_response": map[string]interface{}{
+			"function_responses": []map[string]interface{}{
+				{
+					"name":     name,
+					"response": result,
+				},
+			},
+		},
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.conn.WriteJSON(msg)
 }
 
 // Close fecha a conexão
