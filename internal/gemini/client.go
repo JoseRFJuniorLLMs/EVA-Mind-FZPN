@@ -7,6 +7,7 @@ import (
 	"eva-mind/internal/config"
 	"fmt"
 	"log"
+	"net/http"
 	"sync"
 	"time"
 
@@ -40,7 +41,20 @@ func NewClient(ctx context.Context, cfg *config.Config) (*Client, error) {
 
 	url := fmt.Sprintf("wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=%s", cfg.GoogleAPIKey)
 
-	conn, _, err := dialer.DialContext(ctx, url, nil)
+	// 🔍 DEBUG: Log API Key (Masked)
+	maskedKey := "N/A"
+	if len(cfg.GoogleAPIKey) > 8 {
+		maskedKey = cfg.GoogleAPIKey[:4] + "..." + cfg.GoogleAPIKey[len(cfg.GoogleAPIKey)-4:]
+	}
+	log.Printf("🔐 Gemini Config: Key=%s Model=%s", maskedKey, cfg.ModelID)
+
+	// Using query param for now as primary method, but adding header is good practice if supported by library
+	// The gorilla/websocket Dialer.DialContext takes headers as the third argument.
+	// Let's add the header authentication as well.
+	headers := make(http.Header)
+	headers.Add("x-goog-api-key", cfg.GoogleAPIKey)
+
+	conn, _, err := dialer.DialContext(ctx, url, headers)
 	if err != nil {
 		return nil, fmt.Errorf("erro ao conectar no websocket: %w", err)
 	}

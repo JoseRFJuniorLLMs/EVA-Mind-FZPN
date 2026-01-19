@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
@@ -93,7 +94,7 @@ func Load() (*Config, error) {
 		TwilioPhoneNumber: os.Getenv("TWILIO_PHONE_NUMBER"),
 
 		// Google/Gemini
-		GoogleAPIKey: os.Getenv("GOOGLE_API_KEY"),
+		GoogleAPIKey: strings.TrimSpace(os.Getenv("GOOGLE_API_KEY")),
 
 		// 🚨 EXPRESS ORDER: Gemini 2.5 para VOZ (Definitivo)
 		ModelID:             getEnvWithDefault("MODEL_ID", "gemini-2.5-flash-native-audio-preview-12-2025"),
