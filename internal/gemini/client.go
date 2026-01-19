@@ -3,7 +3,6 @@ package gemini
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"eva-mind/internal/config"
 	"eva-mind/internal/tools"
 	"fmt"
@@ -109,10 +108,11 @@ func (c *Client) SendSetup(instructions string, voiceSettings map[string]interfa
 				"speechConfig": map[string]interface{}{
 					"voiceConfig": map[string]interface{}{
 						"prebuiltVoiceConfig": map[string]interface{}{
-							"voiceName": "Puck",
+							"voiceName": voiceSettings["voiceName"],
 						},
 					},
 				},
+
 				"temperature": 0.6,
 			},
 			"systemInstruction": map[string]interface{}{
@@ -158,9 +158,6 @@ func (c *Client) SendSetup(instructions string, voiceSettings map[string]interfa
 		log.Printf("🧠 Memórias: %d", len(memories))
 	}
 
-	// 🔍 DEBUG: Imprimir payload exato que está sendo enviado
-	payloadBytes, _ := json.MarshalIndent(setup, "", "  ")
-	log.Printf("📦 [SETUP PAYLOAD]:\n%s", string(payloadBytes))
 	log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	return c.conn.WriteJSON(setup)
@@ -262,12 +259,6 @@ func (c *Client) HandleResponses(ctx context.Context) error {
 		default:
 			resp, err := c.ReadResponse()
 			if err != nil {
-				// 🔍 ANÁLISE DE ERRO MELHORADA
-				if websocket.IsCloseError(err, websocket.CloseInvalidFramePayloadData, websocket.ClosePolicyViolation) {
-					log.Printf("❌ ERRO CRÍTICO (1007/1008): O servidor rejeitou o payload.")
-					log.Printf("💡 DICA: Verifique se o modelo '%s' suporta todas as funcionalidades enviadas (Tools, Visão).", c.cfg.ModelID)
-					log.Printf("💡 DICA: 'API Key not found' nesse contexto geralmente significa 'Payload Inválido para este endpoint'.")
-				}
 				log.Printf("❌ Erro ao ler resposta: %v", err)
 				return err
 			}

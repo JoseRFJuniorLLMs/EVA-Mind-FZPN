@@ -233,7 +233,7 @@ func (s *SignalingServer) handleControlMessage(conn *websocket.Conn, message []b
 			return currentSession
 		}
 
-		session, err := s.createSession(msg.SessionID, msg.CPF, idoso.ID, conn)
+		session, err := s.createSession(msg.SessionID, msg.CPF, idoso.ID, idoso.VoiceName, conn)
 		if err != nil {
 			s.sendError(conn, "Erro ao criar sessão")
 			return currentSession
@@ -732,7 +732,7 @@ func (s *SignalingServer) saveTranscription(idosoID int64, role, content string)
 	}
 }
 
-func (s *SignalingServer) createSession(sessionID, cpf string, idosoID int64, conn *websocket.Conn) (*WebSocketSession, error) {
+func (s *SignalingServer) createSession(sessionID, cpf string, idosoID int64, voiceName string, conn *websocket.Conn) (*WebSocketSession, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 
 	geminiClient, err := gemini.NewClient(ctx, s.cfg)
@@ -761,7 +761,11 @@ func (s *SignalingServer) createSession(sessionID, cpf string, idosoID int64, co
 	// ✅ FASE 4.2: Configurar Tools
 	toolDefs := tools.GetToolDefinitions()
 
-	if err := geminiClient.SendSetup(instructions, nil, memories, "", toolDefs); err != nil {
+	voiceSettings := map[string]interface{}{
+		"voiceName": voiceName,
+	}
+
+	if err := geminiClient.SendSetup(instructions, voiceSettings, memories, "", toolDefs); err != nil {
 		cancel()
 		geminiClient.Close()
 		return nil, err
@@ -954,7 +958,7 @@ func (s *SignalingServer) cleanupDeadSessions() {
 
 func (s *SignalingServer) getIdosoByCPF(cpf string) (*Idoso, error) {
 	query := `
-		SELECT id, nome, cpf, device_token, ativo, nivel_cognitivo
+		SELECT id, nome, cpf, device_token, ativo, nivel_cognitivo, COALESCE(voice_name, 'Aoede')
 		FROM idosos 
 		WHERE cpf = $1 AND ativo = true
 	`
@@ -967,6 +971,7 @@ func (s *SignalingServer) getIdosoByCPF(cpf string) (*Idoso, error) {
 		&idoso.DeviceToken,
 		&idoso.Ativo,
 		&idoso.NivelCognitivo,
+		&idoso.VoiceName,
 	)
 
 	if err != nil {
@@ -1280,6 +1285,7 @@ type Idoso struct {
 	DeviceToken    sql.NullString
 	Ativo          bool
 	NivelCognitivo string
+	VoiceName      string // ✅ NOVO: Preferência de voz
 }
 
 // 🧠 GetRecentMemories recupera as últimas conversas para contexto
