@@ -498,8 +498,12 @@ func (s *SignalingServer) createSession(sessionID, cpf string, idosoID int64, co
 		return nil, err
 	}
 
+	// 🧠 MEMÓRIA: Recuperar últimas 5 conversas para contexto (Narrativa Completa)
+	memories := s.GetRecentMemories(idosoID)
+	log.Printf("🧠 Carregando %d memórias episódicas para o contexto", len(memories))
+
 	instructions := BuildInstructions(idosoID, s.db)
-	if err := geminiClient.SendSetup(instructions, nil, nil, ""); err != nil {
+	if err := geminiClient.SendSetup(instructions, nil, memories, ""); err != nil {
 		cancel()
 		geminiClient.Close()
 		return nil, err
@@ -801,6 +805,10 @@ func BuildInstructions(idosoID int64, db *sql.DB) string {
 	var medsList []string
 	if errMeds == nil {
 		defer rows.Close()
+		// ... resto da logica de medicamentos ...
+	}
+	if errMeds == nil {
+		defer rows.Close()
 		for rows.Next() {
 			var mNome, mDosagem, mHorarios, mObs string
 			if err := rows.Scan(&mNome, &mDosagem, &mHorarios, &mObs); err == nil {
@@ -1008,4 +1016,52 @@ type Idoso struct {
 	DeviceToken    sql.NullString
 	Ativo          bool
 	NivelCognitivo string
+}
+
+// 🧠 GetRecentMemories recupera as últimas conversas para contexto
+func (s *SignalingServer) GetRecentMemories(idosoID int64) []string {
+	// Limite de 10 conversas ou o que couber (com 1M tokens, 10 é tranquilo)
+	query := `
+		SELECT inicio_chamada, transcricao_completa, analise_gemini->>'summary' as resumo
+		FROM historico_ligacoes
+		WHERE idoso_id = $1 
+		  AND fim_chamada IS NOT NULL
+		  AND transcricao_completa IS NOT NULL
+		ORDER BY inicio_chamada DESC
+		LIMIT 10
+	`
+
+	rows, err := s.db.Query(query, idosoID)
+	if err != nil {
+		log.Printf("⚠️ Erro ao buscar memórias: %v", err)
+		return []string{}
+	}
+	defer rows.Close()
+
+	var tempMemories []string
+
+	for rows.Next() {
+		var inicio time.Time
+		var transcricao string
+		var resumo sql.NullString
+
+		if err := rows.Scan(&inicio, &transcricao, &resumo); err != nil {
+			continue
+		}
+
+		// Preferir transcrição completa (Narrativa Completa)
+		content := transcricao
+
+		dataStr := inicio.Format("02/01/2006 15:04")
+		memoryEntry := fmt.Sprintf("DATA: %s\nCONVERSA:\n%s", dataStr, content)
+		tempMemories = append(tempMemories, memoryEntry)
+	}
+
+	// Inverter para cronológico (Antigo -> Novo)
+	var memories []string
+	for i := len(tempMemories) - 1; i >= 0; i-- {
+		memories = append(memories, tempMemories[i])
+	}
+
+	return memories
 }
