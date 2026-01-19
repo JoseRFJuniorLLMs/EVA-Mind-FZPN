@@ -486,14 +486,6 @@ func (s *SignalingServer) saveTranscription(idosoID int64, role, content string)
 			return
 		}
 		log.Printf("📝 Novo histórico criado: #%d para idoso %d", historyID, idosoID)
-	} else if err != nil {
-		log.Printf("⚠️ Erro ao atualizar transcrição: %v", err)
-	}
-
-			if thinkingResponse != "" {
-				log.Printf("🏥 [HEALTH] Resposta do Thinking Mode gerada para idoso %d", idosoID)
-			}
-		}()
 	}
 }
 

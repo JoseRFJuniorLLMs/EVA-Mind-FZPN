@@ -18,3 +18,5 @@ go.sum
 
 deploy.sh
 log.sh
+
+deploy_vm.sh
