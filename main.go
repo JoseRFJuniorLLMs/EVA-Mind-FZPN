@@ -138,6 +138,52 @@ func NewSignalingServer(cfg *config.Config, db *database.DB, neo4jClient *graph.
 	log.Printf("✅ Serviço de Personalidade Afetiva inicializado")
 	log.Printf("✅ FZPN Engine (Phase 2) initialized")
 
+	// 📊 STARTUP SUMMARY
+	log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	log.Printf("🚀 EVA-Mind V2 - Status Report")
+	log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	log.Printf("✅ Services Status:")
+	log.Printf("  - Database: Connected (Postgres)")
+
+	if qdrantClient != nil {
+		log.Printf("  - Vector DB: ✅ Qdrant Connected")
+	} else {
+		log.Printf("  - Vector DB: ⚠️ Disabled (Check connection)")
+	}
+
+	if redisClient != nil {
+		log.Printf("  - Cache: ✅ Redis Connected")
+	} else {
+		log.Printf("  - Cache: ⚠️ Disabled (Check connection)")
+	}
+
+	if neo4jClient != nil {
+		log.Printf("  - Graph DB: ✅ Neo4j Connected")
+	} else {
+		log.Printf("  - Graph DB: ⚠️ Disabled")
+	}
+
+	if pushService != nil {
+		log.Printf("  - Push: ✅ Firebase Initialized")
+	}
+
+	log.Printf("\n🛠️  Active Tools (V2):")
+	log.Printf("  - [DB] get_vitals")
+	log.Printf("  - [DB] get_agendamentos")
+
+	if cfg.EnableGoogleSearch {
+		log.Printf("  - [Vertex] Google Search: ⚠️ API Key Limited (See logs)")
+	} else {
+		log.Printf("  - [Vertex] Google Search: 🌑 Disabled")
+	}
+
+	if cfg.EnableCodeExecution {
+		log.Printf("  - [Vertex] Code Execution: ⚠️ API Key Limited (See logs)")
+	} else {
+		log.Printf("  - [Vertex] Code Execution: 🌑 Disabled")
+	}
+	log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
 	return &SignalingServer{
 		upgrader: websocket.Upgrader{
 			CheckOrigin:     func(r *http.Request) bool { return true },
@@ -435,6 +481,23 @@ func (s *SignalingServer) handleClientMessages(client *PCMClient) {
 			case "hangup":
 				log.Printf("🔴 Hangup from %s", client.CPF)
 				return
+
+			case "vision":
+				// ✅ FZPN V2: Vision Support
+				// Payload: { type: "vision", payload: "BASE64..." }
+				if payload, ok := data["payload"].(string); ok {
+					if client.GeminiClient != nil {
+						// Decode base64 if needed, or pass directly depending on client.go
+						// client.go SendImage expects []byte
+						imgBytes, err := base64.StdEncoding.DecodeString(payload)
+						if err == nil {
+							client.GeminiClient.SendImage(imgBytes)
+							log.Printf("👁️ [VISION] Frame recebido e enviado (%d bytes)", len(imgBytes))
+						} else {
+							log.Printf("❌ [VISION] Erro ao decodificar Base64")
+						}
+					}
+				}
 			}
 		}
 
