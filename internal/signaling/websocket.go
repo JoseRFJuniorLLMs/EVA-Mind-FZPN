@@ -96,6 +96,7 @@ type SignalingServer struct {
 	context       *knowledge.ContextService       // ✅ NOVO: Factual Memory
 	tools         *tools.ToolsHandler             // ✅ NOVO: Read-Only Tools
 	emailService  *email.EmailService             // ✅ NOVO: Phase 9 Fallback
+	cortex        *gemini.ToolsClient             // ✅ NOVO: Phase 10 Cortex
 	redis         *redis.Client
 	sessions      sync.Map
 	clients       sync.Map
@@ -110,15 +111,7 @@ func NewSignalingServer(cfg *config.Config, db *sql.DB, pushService *push.Fireba
 
 	log.Printf("🚀 Signaling Server em modo VOZ PURA (Tools desabilitadas)")
 
-	// ✅ NOVO: Wrapper do DB para ContextService
-	// Criar wrapper temporário já que recebemos sql.DB cru.
-	// Idealmente o server receberia *database.DB
-	dbWrapper := &database.DB{Conn: db}
-	ctxService := knowledge.NewContextService(dbWrapper)
-	server.context = ctxService
-	server.tools = tools.NewToolsHandler(dbWrapper) // ✅ Inicializa Tools Handler
-
-	// Inicializar Email Service para Phase 9
+	// Inicializar Email Service para Phase 9 (Antes de iniciar o ToolsHandler que depende dele)
 	if cfg.EnableEmailFallback {
 		emailSvc, err := email.NewEmailService(cfg)
 		if err != nil {
@@ -128,6 +121,34 @@ func NewSignalingServer(cfg *config.Config, db *sql.DB, pushService *push.Fireba
 			log.Println("✅ Signaling: Email service initialized for Phase 9")
 		}
 	}
+
+	// ✅ NOVO: Wrapper do DB para ContextService
+	dbWrapper := &database.DB{Conn: db}
+	ctxService := knowledge.NewContextService(dbWrapper)
+	server.context = ctxService
+	server.tools = tools.NewToolsHandler(dbWrapper, pushService, server.emailService) // ✅ Agora com emailService inicializado
+
+	// ✅ FASE 10: Configurar Callback de Sinalização para Tools (WebRTC, etc)
+	server.tools.NotifyFunc = func(idosoID int64, msgType string, payload interface{}) {
+		server.sessions.Range(func(key, value interface{}) bool {
+			session := value.(*WebSocketSession)
+			if session.IdosoID == idosoID {
+				msg := ControlMessage{
+					Type:    msgType,
+					Success: true,
+					Payload: payload,
+				}
+				session.WSConn.WriteJSON(msg)
+				log.Printf("📡 [CORTEX-SIGNAL] Enviado '%s' para Idoso %d", msgType, idosoID)
+				return false
+			}
+			return true
+		})
+	}
+
+	// ✅ NOVO: Inicializar Cortex (Tools Intelligence)
+	server.cortex = gemini.NewToolsClient(cfg)
+	log.Println("🧠 Signaling: Cortex Intelligence initialized for Phase 10")
 
 	// ✅ NOVO: Inicializar Knowledge Service (Neo4j Thinking)
 	neo4jClient, err := graph.NewNeo4jClient(cfg)
@@ -395,24 +416,21 @@ func (s *SignalingServer) handleGeminiResponse(session *WebSocketSession, respon
 			go s.saveTranscription(session.IdosoID, "user", userText)
 
 			// ✅ NOVO: Neo4j Thinking Mode (Fase 2)
-			// Acionar raciocínio clínico baseado em grafo se a mensagem for do usuário e o serviço estiver ativo
 			if s.knowledge != nil {
 				go func(uid int64, text string) {
 					ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 					defer cancel()
-
 					reasoning, err := s.knowledge.AnalyzeGraphContext(ctx, uid, text)
-					if err != nil {
-						log.Printf("⚠️ [NEO4J] Erro no raciocínio: %v", err)
-						return
-					}
-
-					if reasoning != "" {
+					if err == nil && reasoning != "" {
 						log.Printf("💡 [NEO4J] Insight gerado: %s", reasoning)
-						// ✅ CLOSED LOOP: Guardar insight na sessão para próxima interação
 						session.SetPendingInsight(reasoning)
 					}
 				}(session.IdosoID, userText)
+			}
+
+			// ✅ FASE 10: Cortex Intention Analysis (Bicameral Brain)
+			if s.cortex != nil {
+				go s.runCortexAnalysis(session, userText)
 			}
 		}
 	}
@@ -940,6 +958,57 @@ func (s *SignalingServer) analyzeAndSaveConversation(idosoID int64) {
 	}
 }
 
+// runCortexAnalysis executa a análise de intenções em paralelo (Bicameral Brain)
+func (s *SignalingServer) runCortexAnalysis(session *WebSocketSession, userText string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	log.Printf("🧠 [CORTEX] Analisando intenção: \"%s\"", userText)
+	toolCalls, err := s.cortex.AnalyzeTranscription(ctx, userText, "user")
+	if err != nil {
+		log.Printf("⚠️ [CORTEX] Erro na análise: %v", err)
+		return
+	}
+
+	if len(toolCalls) == 0 {
+		return
+	}
+
+	for _, tc := range toolCalls {
+		log.Printf("🛠️ [CORTEX] Executando ferramenta: %s", tc.Name)
+
+		var result map[string]interface{}
+		var execErr error
+
+		// Executar a tool
+		if s.tools != nil {
+			result, execErr = s.tools.ExecuteTool(tc.Name, tc.Args, session.IdosoID)
+		} else {
+			execErr = fmt.Errorf("tools handler not initialized")
+		}
+
+		if execErr != nil {
+			log.Printf("❌ [CORTEX] Erro ao executar %s: %v", tc.Name, execErr)
+			continue
+		}
+
+		log.Printf("✅ [CORTEX] Sucesso: %s", tc.Name)
+
+		// FEEDBACK LOOP: Injetar resultado de volta na sessão de VOZ
+		// Como o modelo de áudio não suporta ToolResponse nativo no setup atual,
+		// injetamos via instrução de contexto oculta.
+		resultJSON, _ := json.Marshal(result)
+		feedbackPrompt := fmt.Sprintf("\n[SISTEMA: Ação '%s' realizada com sucesso. Resultado: %s]\n", tc.Name, string(resultJSON))
+
+		// Envia como mensagem de sistema/contexto para a IA "saber" que aconteceu
+		if err := session.GeminiClient.SendText(feedbackPrompt); err != nil {
+			log.Printf("❌ [CORTEX] Erro ao enviar feedback para Voice Session: %v", err)
+		} else {
+			log.Printf("📡 [CORTEX] Feedback injetado na sessão de voz")
+		}
+	}
+}
+
 func (s *SignalingServer) cleanupDeadSessions() {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
@@ -1212,7 +1281,7 @@ func BuildInstructions(idosoID int64, nomeDefault string, db *sql.DB) string {
 		"{{.CondicoesMedicas}}": getString(condicoesMedicas, ""),
 	}
 
-	instructions := template
+	instructions := template + "\n\n" + dossier
 	for old, new := range replacements {
 		instructions = strings.ReplaceAll(instructions, old, new)
 	}

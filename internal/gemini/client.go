@@ -103,19 +103,19 @@ func (c *Client) SendSetup(instructions string, voiceSettings map[string]interfa
 	setup := map[string]interface{}{
 		"setup": map[string]interface{}{
 			"model": fmt.Sprintf("models/%s", c.cfg.ModelID),
-			"generationConfig": map[string]interface{}{
-				"responseModalities": []string{"AUDIO"},
-				"speechConfig": map[string]interface{}{
-					"voiceConfig": map[string]interface{}{
-						"prebuiltVoiceConfig": map[string]interface{}{
-							"voiceName": voiceSettings["voiceName"],
+			"generation_config": map[string]interface{}{
+				"response_modalities": []string{"AUDIO"},
+				"speech_config": map[string]interface{}{
+					"voice_config": map[string]interface{}{
+						"prebuilt_voice_config": map[string]interface{}{
+							"voice_name": voiceSettings["voiceName"],
 						},
 					},
 				},
 
 				"temperature": 0.6,
 			},
-			"systemInstruction": map[string]interface{}{
+			"system_instruction": map[string]interface{}{
 				"parts": []interface{}{
 					map[string]interface{}{
 						"text": instructions,

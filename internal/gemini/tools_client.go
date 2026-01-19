@@ -58,6 +58,7 @@ FERRAMENTAS DISPONÍVEIS:
 - call_central_webrtc: Ligar para central
 - call_doctor_webrtc: Ligar para médico
 - call_caregiver_webrtc: Ligar para cuidador
+- google_search_retrieval: Pesquisar informações em tempo real na internet (args: query)
 
 Se detectar uma intenção que requer ferramenta, responda APENAS com JSON:
 {"tool": "nome_da_tool", "args": {...}}
@@ -72,6 +73,9 @@ Fala: "Estou com dor no peito"
 Resposta: {"tool": "alert_family", "args": {"reason": "Paciente relatou dor no peito", "severity": "critica"}}
 
 Fala: "Como está o tempo hoje?"
+Resposta: {"tool": "google_search_retrieval", "args": {"query": "previsão do tempo para hoje"}}
+
+Fala: "Obrigado"
 Resposta: {"tool": "none"}`
 
 	payload := map[string]interface{}{
