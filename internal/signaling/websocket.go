@@ -745,7 +745,7 @@ func (s *SignalingServer) createSession(sessionID, cpf string, idosoID int64, vo
 	memories := s.GetRecentMemories(idosoID)
 	log.Printf("🧠 Carregando %d memórias episódicas para o contexto", len(memories))
 
-	instructions := BuildInstructions(idosoID, s.db)
+	instructions := BuildInstructions(idosoID, idoso.Nome, s.db)
 
 	// ✅ FASE 3: Injetar Memória Factual (Contexto de Análises Passadas)
 	if s.context != nil {
@@ -994,15 +994,13 @@ func (s *SignalingServer) sendError(conn *websocket.Conn, errMsg string) {
 	})
 }
 
-func BuildInstructions(idosoID int64, db *sql.DB) string {
-	// 1. QUERY EXAUSTIVA: Recuperar TODOS os campos relevantes da tabela 'idosos'
+func BuildInstructions(idosoID int64, nomeDefault string, db *sql.DB) string {
+	// 1. QUERY RESILIENTE: Buscar apenas o essencial primeiro
 	query := `
 		SELECT 
 			nome, 
 			EXTRACT(YEAR FROM AGE(data_nascimento)) as idade,
 			nivel_cognitivo, 
-			limitacoes_auditivas, 
-			usa_aparelho_auditivo, 
 			tom_voz,
 			preferencia_horario_ligacao
 		FROM idosos 
@@ -1011,30 +1009,28 @@ func BuildInstructions(idosoID int64, db *sql.DB) string {
 
 	var nome, nivelCognitivo, tomVoz string
 	var idade int
-	var limitacoesAuditivas, usaAparelhoAuditivo sql.NullBool
 	var preferenciaHorario sql.NullString
 
-	// ✅ Campos que não existem na tabela 'idosos' mas são usados no prompt
-	// Inicializados com valores padrão para evitar erro de compilação
+	// ✅ Campos fixos/legados para evitar crash
 	var mobilidade string = "Não informada"
 	var limitacoesVisuais, familiarPrincipal, contatoEmergencia, medicoResponsavel sql.NullString
 	var medicamentosAtuais, medicamentosRegulares, condicoesMedicas, sentimento, notasGerais, endereco sql.NullString
-	var ambienteRuidoso sql.NullBool
+	var limitacoesAuditivas, usaAparelhoAuditivo, ambienteRuidoso sql.NullBool
 
 	err := db.QueryRow(query, idosoID).Scan(
 		&nome,
 		&idade,
 		&nivelCognitivo,
-		&limitacoesAuditivas,
-		&usaAparelhoAuditivo,
 		&tomVoz,
 		&preferenciaHorario,
 	)
 
 	if err != nil {
-		log.Printf("❌ [BuildInstructions] ERRO CRÍTICO ao buscar dados: %v", err)
-		// Fallback mínimo
-		return "Você é a EVA, assistente de saúde virtual. Fale em português de forma clara."
+		log.Printf("⚠️ [BuildInstructions] Usando dados parciais para %s devido a erro SQL: %v", nomeDefault, err)
+		nome = nomeDefault
+		idade = 0
+		nivelCognitivo = "Não informado"
+		tomVoz = "Suave"
 	}
 
 	// ✅ NOVO: Buscar medicamentos da tabela RELACIONAL 'medicamentos'
