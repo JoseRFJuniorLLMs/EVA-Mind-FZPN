@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/joho/godotenv"
@@ -81,8 +82,21 @@ type Config struct {
 }
 
 func Load() (*Config, error) {
+	// Tenta carregar do diretório atual
 	if err := godotenv.Load(); err != nil {
-		log.Println("ℹ️  Info: Ficheiro .env não encontrado ou não pôde ser carregado. Lendo variáveis de ambiente do sistema.")
+		// Se falhar, tenta carregar do diretório do executável (comum em SystemD)
+		ex, exErr := os.Executable()
+		if exErr == nil {
+			exPath := filepath.Dir(ex)
+			envPath := filepath.Join(exPath, ".env")
+			if err2 := godotenv.Load(envPath); err2 != nil {
+				log.Printf("⚠️ Arquivo .env não encontrado em %s nem no diretório atual.", envPath)
+			} else {
+				log.Printf("✅ Carregado .env do diretório do binário: %s", envPath)
+			}
+		} else {
+			log.Printf("⚠️ Erro ao determinar path do executável: %v", exErr)
+		}
 	}
 
 	return &Config{
