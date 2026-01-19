@@ -1092,14 +1092,15 @@ func BuildInstructions(idosoID int64, nomeDefault string, db *sql.DB) string {
 		WHERE id = $1
 	`
 
+	// ✅ Campos da Query
 	var nome, nivelCognitivo, tomVoz string
 	var idade int
 	var preferenciaHorario sql.NullString
+	var medicamentosAtuais, condicoesMedicas, endereco sql.NullString
 
-	// ✅ Campos fixos/legados para evitar crash
+	// ✅ Campos fixos para evitar crash/missing
 	var mobilidade string = "Não informada"
-	var limitacoesVisuais, familiarPrincipal, contatoEmergencia, medicoResponsavel sql.NullString
-	var medicamentosAtuais, medicamentosRegulares, condicoesMedicas, sentimento, notasGerais, endereco sql.NullString
+	var limitacoesVisuais, familiarPrincipal, contatoEmergencia, medicoResponsavel, sentimento, notasGerais sql.NullString
 	var limitacoesAuditivas, usaAparelhoAuditivo, ambienteRuidoso sql.NullBool
 
 	err := db.QueryRow(query, idosoID).Scan(
@@ -1159,7 +1160,7 @@ func BuildInstructions(idosoID int64, nomeDefault string, db *sql.DB) string {
 		FROM agendamentos
 		WHERE idoso_id = $1 
 		  AND status = 'agendado'
-		  AND data_hora_agendada BETWEEN NOW() AND NOW() + INTERVAL '24 hours'
+		  AND data_hora_agendada >= NOW()
 		ORDER BY data_hora_agendada ASC
 	`
 	rowsAgenda, errAgenda := db.Query(agendaQuery, idosoID)
@@ -1172,9 +1173,9 @@ func BuildInstructions(idosoID int64, nomeDefault string, db *sql.DB) string {
 			var aDadosJSON sql.NullString
 
 			if err := rowsAgenda.Scan(&aTipo, &aData, &aDadosJSON); err == nil {
-				// Formatar hora: "14:30"
-				hora := aData.Format("15:04")
-				item := fmt.Sprintf("- Às %s: %s", hora, strings.Title(aTipo))
+				// Formatar data e hora: "19/01 às 14:30"
+				dataHora := aData.Format("02/01 às 15:04")
+				item := fmt.Sprintf("- [%s]: %s", dataHora, strings.Title(aTipo))
 
 				// Se tiver detalhes extras no JSON
 				if aDadosJSON.Valid && aDadosJSON.String != "{}" {
@@ -1229,29 +1230,23 @@ func BuildInstructions(idosoID int64, nomeDefault string, db *sql.DB) string {
 	} else {
 		// Fallback para campos de texto antigos se a tabela relacional estiver vazia
 		medsA := getString(medicamentosAtuais, "")
-		medsR := getString(medicamentosRegulares, "")
-		if medsA == "" && medsR == "" {
+		if medsA == "" {
 			dossier += "Nenhum medicamento registrado no sistema.\n"
 		} else {
-			if medsA != "" {
-				dossier += fmt.Sprintf("Atuais (Legado): %s\n", medsA)
-			}
-			if medsR != "" {
-				dossier += fmt.Sprintf("Regulares (Legado): %s\n", medsR)
-			}
+			dossier += fmt.Sprintf("Medicamentos (Legado): %s\n", medsA)
 		}
 	}
 	dossier += "INSTRUÇÃO: Se o paciente perguntar o que deve tomar, consulte EXCLUSIVAMENTE esta lista acima.\n"
 
-	dossier += "\n📅 --- AGENDA DO DIA (PRÓXIMAS 24H) ---\n"
+	dossier += "\n📅 --- AGENDA COMPLETA (FUTURO) ---\n"
 	if len(agendaList) > 0 {
-		dossier += "O paciente tem os seguintes compromissos agendados para hoje/amanhã:\n"
+		dossier += "O paciente tem os seguintes compromissos agendados no sistema:\n"
 		for _, a := range agendaList {
 			dossier += a + "\n"
 		}
-		dossier += "DICA: Se for um compromisso médico, pergunte se ele já sabe como vai (transporte).\n"
+		dossier += "DICA: Mencione compromissos importantes se forem relevantes para o momento da conversa.\n"
 	} else {
-		dossier += "Nenhum compromisso agendado para as próximas 24 horas.\n"
+		dossier += "Nenhum compromisso agendado no futuro.\n"
 	}
 
 	dossier += "\n📞 --- REDE DE APOIO ---\n"
