@@ -3,12 +3,10 @@ package gemini
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"eva-mind/internal/config"
 	"eva-mind/internal/tools"
 	"fmt"
 	"log"
-	"net/url"
 	"sync"
 	"time"
 
@@ -36,80 +34,63 @@ type Client struct {
 
 // NewClient cria um novo cliente Gemini usando WebSocket direto
 func NewClient(ctx context.Context, cfg *config.Config) (*Client, error) {
-	// ✅ VALIDAÇÃO CRÍTICA: Verificar se API key existe
+	// ✅ VALIDAÇÃO: Verificar se API key existe
 	if cfg.GoogleAPIKey == "" {
-		return nil, fmt.Errorf("ERRO CRÍTICO: GOOGLE_API_KEY está vazia!")
+		return nil, fmt.Errorf("ERRO: GOOGLE_API_KEY está vazia")
 	}
 
 	dialer := websocket.Dialer{
 		HandshakeTimeout: 10 * time.Second,
 	}
 
-	// ✅ FIX: Usar url.QueryEscape para garantir que a chave seja passada corretamente
-	escapedKey := url.QueryEscape(cfg.GoogleAPIKey)
+	// ✅ FIX DEFINITIVO: Usar v1beta (não v1alpha!) conforme documentação oficial
+	// https://ai.google.dev/api/live
 	wsURL := fmt.Sprintf(
-		"wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=%s",
-		escapedKey,
+		"wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=%s",
+		cfg.GoogleAPIKey,
 	)
 
-	// 🔍 DEBUG: Log detalhado (mas mascarado)
-	maskedKey := "VAZIO"
+	// 🔍 DEBUG
+	maskedKey := "N/A"
 	if len(cfg.GoogleAPIKey) > 8 {
 		maskedKey = cfg.GoogleAPIKey[:4] + "..." + cfg.GoogleAPIKey[len(cfg.GoogleAPIKey)-4:]
-	} else if len(cfg.GoogleAPIKey) > 0 {
-		maskedKey = "***" // Muito curta
 	}
 
 	log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	log.Printf("🔌 Conectando ao Gemini WebSocket")
-	log.Printf("🔑 API Key: %s (length=%d)", maskedKey, len(cfg.GoogleAPIKey))
+	log.Printf("🔑 API Key: %s (len=%d)", maskedKey, len(cfg.GoogleAPIKey))
 	log.Printf("🤖 Model: %s", cfg.ModelID)
-	log.Printf("🌐 URL (primeiros 80 chars): %s...", wsURL[:min(80, len(wsURL))])
+	log.Printf("📡 API Version: v1beta")
 	log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	// ✅ Conectar
 	conn, resp, err := dialer.DialContext(ctx, wsURL, nil)
 	if err != nil {
-		// Debug detalhado do erro
 		if resp != nil {
 			log.Printf("❌ Falha na conexão WebSocket")
-			log.Printf("   Status Code: %d", resp.StatusCode)
-			log.Printf("   Status: %s", resp.Status)
-
-			// Ler corpo da resposta se houver
+			log.Printf("   Status: %d - %s", resp.StatusCode, resp.Status)
 			if resp.Body != nil {
 				body := make([]byte, 1024)
 				n, _ := resp.Body.Read(body)
 				if n > 0 {
-					log.Printf("   Response Body: %s", string(body[:n]))
+					log.Printf("   Body: %s", string(body[:n]))
 				}
 			}
 		}
-
-		return nil, fmt.Errorf("erro ao conectar no websocket: %w", err)
+		return nil, fmt.Errorf("erro ao conectar: %w", err)
 	}
 
-	log.Printf("✅ WebSocket conectado com sucesso!")
-
+	log.Printf("✅ WebSocket conectado!")
 	return &Client{conn: conn, cfg: cfg}, nil
 }
 
-// Helper function para min
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-// SetCallbacks configura os retornos de áudio, ferramentas e transcrição
+// SetCallbacks configura callbacks
 func (c *Client) SetCallbacks(onAudio AudioCallback, onToolCall ToolCallCallback, onTranscript TranscriptCallback) {
 	c.onAudio = onAudio
 	c.onToolCall = onToolCall
 	c.onTranscript = onTranscript
 }
 
-// SendSetup envia a configuração inicial da sessão
+// SendSetup envia configuração inicial
 func (c *Client) SendSetup(instructions string, voiceSettings map[string]interface{}, memories []string, initialAudio string, toolsDef []tools.FunctionDeclaration) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -127,7 +108,7 @@ func (c *Client) SendSetup(instructions string, voiceSettings map[string]interfa
 				"speechConfig": map[string]interface{}{
 					"voiceConfig": map[string]interface{}{
 						"prebuiltVoiceConfig": map[string]interface{}{
-							"voiceName": "Puck", // Voz padrão definida
+							"voiceName": "Puck",
 						},
 					},
 				},
@@ -143,10 +124,8 @@ func (c *Client) SendSetup(instructions string, voiceSettings map[string]interfa
 		},
 	}
 
-	// ✅ PREPARAR TOOLS (Function Calls + Grounding + Code Execution)
+	// Tools
 	var toolsPayload []interface{}
-
-	// 1. Custom Function Declarations (Read-Only Tools like GetVitals)
 	if len(toolsDef) > 0 {
 		toolsList := []interface{}{}
 		for _, t := range toolsDef {
@@ -155,52 +134,40 @@ func (c *Client) SendSetup(instructions string, voiceSettings map[string]interfa
 		toolsPayload = append(toolsPayload, map[string]interface{}{
 			"functionDeclarations": toolsList,
 		})
-		log.Printf("✅ [SETUP] Function Declarations habilitadas: %d tools", len(toolsDef))
+		log.Printf("✅ [SETUP] Function Declarations: %d tools", len(toolsDef))
 	}
 
-	// ⚠️ CRITICAL FIX: Google Search e Code Execution causam erro 1008
-	// com chaves do AI Studio (AIzaSy...). Só funcionam com Vertex AI.
-	//
-	// SOLUÇÃO: Desabilitar automaticamente essas features
-
 	if c.cfg.EnableGoogleSearch {
-		log.Printf("⚠️  [SETUP] Google Search Grounding DESABILITADO")
-		log.Printf("    Motivo: Requer Vertex AI ou chave com allowlist especial")
-		log.Printf("    Causa erro 1008 com chaves AI Studio normais")
-		// NÃO adicionar googleSearchRetrieval ao toolsPayload
+		log.Printf("⚠️  [SETUP] Google Search DESABILITADO (requer Vertex AI)")
 	}
 
 	if c.cfg.EnableCodeExecution {
-		log.Printf("⚠️  [SETUP] Code Execution DESABILITADO")
-		log.Printf("    Motivo: Requer Vertex AI ou chave com allowlist especial")
-		log.Printf("    Causa erro 1008 com chaves AI Studio normais")
-		// NÃO adicionar codeExecution ao toolsPayload
+		log.Printf("⚠️  [SETUP] Code Execution DESABILITADO (requer Vertex AI)")
 	}
 
-	// Injetar no payload de setup
 	if len(toolsPayload) > 0 {
 		setup["setup"].(map[string]interface{})["tools"] = toolsPayload
-		log.Printf("🛠️ [SETUP] Total de ferramentas ativas: %d", len(toolsPayload))
+		log.Printf("🛠️ [SETUP] Ferramentas ativas: %d", len(toolsPayload))
 	}
 
 	log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	log.Printf("🔧 CONFIGURANDO GEMINI")
 	log.Printf("🎙️ Input: 16kHz PCM16 Mono")
-	log.Printf("🔊 Output: 24kHz PCM16 Mono (padrão Gemini)")
+	log.Printf("🔊 Output: 24kHz PCM16 Mono")
 	if len(memories) > 0 {
-		log.Printf("🧠 Memórias carregadas: %d", len(memories))
+		log.Printf("🧠 Memórias: %d", len(memories))
 	}
 	log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	return c.conn.WriteJSON(setup)
 }
 
-// StartSession é um alias para SendSetup (wrapper depreciado)
+// StartSession é alias depreciado
 func (c *Client) StartSession(instructions string, tools []interface{}, memories []string, voiceName string) error {
 	return c.SendSetup(instructions, nil, memories, "", nil)
 }
 
-// SendAudio envia dados de áudio PCM para o Gemini
+// SendAudio envia áudio PCM
 func (c *Client) SendAudio(audioData []byte) error {
 	encoded := base64.StdEncoding.EncodeToString(audioData)
 
@@ -220,7 +187,7 @@ func (c *Client) SendAudio(audioData []byte) error {
 	return c.conn.WriteJSON(msg)
 }
 
-// SendText envia uma mensagem de texto (system note ou user message)
+// SendText envia mensagem de texto
 func (c *Client) SendText(text string) error {
 	msg := map[string]interface{}{
 		"client_content": map[string]interface{}{
@@ -242,7 +209,7 @@ func (c *Client) SendText(text string) error {
 	return c.conn.WriteJSON(msg)
 }
 
-// SendImage envia frames de imagem (JPEG) para o Gemini (Visão Computacional)
+// SendImage envia imagem JPEG
 func (c *Client) SendImage(imageData []byte) error {
 	encoded := base64.StdEncoding.EncodeToString(imageData)
 
@@ -262,14 +229,14 @@ func (c *Client) SendImage(imageData []byte) error {
 	return c.conn.WriteJSON(msg)
 }
 
-// SendMessage envia uma mensagem genérica JSON para o Gemini (usado para ToolResponse e SystemNotes)
+// SendMessage envia mensagem genérica
 func (c *Client) SendMessage(msg interface{}) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.conn.WriteJSON(msg)
 }
 
-// ReadResponse lê a próxima resposta bruta do WebSocket
+// ReadResponse lê resposta
 func (c *Client) ReadResponse() (map[string]interface{}, error) {
 	var response map[string]interface{}
 	err := c.conn.ReadJSON(&response)
@@ -279,7 +246,7 @@ func (c *Client) ReadResponse() (map[string]interface{}, error) {
 	return response, nil
 }
 
-// HandleResponses processa o loop de mensagens
+// HandleResponses processa loop de mensagens
 func (c *Client) HandleResponses(ctx context.Context) error {
 	log.Printf("👂 HandleResponses: loop iniciado")
 
@@ -295,31 +262,22 @@ func (c *Client) HandleResponses(ctx context.Context) error {
 				return err
 			}
 
-			// Debug de respostas
-			if respBytes, _ := json.Marshal(resp); len(respBytes) > 0 {
-				preview := string(respBytes)
-				if len(preview) > 300 {
-					preview = preview[:300] + "..."
-				}
-				// log.Printf("📦 Gemini Response: %s", preview)
-			}
-
 			// Verificar setupComplete
 			if setupComplete, ok := resp["setupComplete"].(bool); ok && setupComplete {
-				log.Printf("✅ Gemini Setup Complete - Pronto para receber áudio!")
+				log.Printf("✅ Gemini Setup Complete - Pronto!")
 				continue
 			}
 
-			// Debug de erros
+			// Erros
 			if errMsg, ok := resp["error"]; ok {
 				log.Printf("❌ Gemini Error: %v", errMsg)
 				continue
 			}
 
-			// Processar áudio e transcrição
+			// Áudio e transcrição
 			if serverContent, ok := resp["serverContent"].(map[string]interface{}); ok {
 
-				// Capturar Transcrição do Usuário (Input)
+				// Transcrição do usuário
 				if inputTrans, ok := serverContent["inputAudioTranscription"].(map[string]interface{}); ok {
 					if userText, ok := inputTrans["text"].(string); ok && userText != "" {
 						if c.onTranscript != nil {
@@ -328,7 +286,7 @@ func (c *Client) HandleResponses(ctx context.Context) error {
 					}
 				}
 
-				// Capturar Transcrição da IA (Output)
+				// Transcrição da IA
 				if audioTrans, ok := serverContent["audioTranscription"].(map[string]interface{}); ok {
 					if aiText, ok := audioTrans["text"].(string); ok && aiText != "" {
 						if c.onTranscript != nil {
@@ -345,12 +303,12 @@ func (c *Client) HandleResponses(ctx context.Context) error {
 								continue
 							}
 
-							// Procurar por inlineData (áudio)
+							// Áudio
 							if inlineData, ok := part["inlineData"].(map[string]interface{}); ok {
 								if audioB64, ok := inlineData["data"].(string); ok {
 									audioBytes, err := base64.StdEncoding.DecodeString(audioB64)
 									if err != nil {
-										log.Printf("❌ Erro ao decodificar base64: %v", err)
+										log.Printf("❌ Erro decode base64: %v", err)
 										continue
 									}
 									if c.onAudio != nil {
@@ -363,7 +321,7 @@ func (c *Client) HandleResponses(ctx context.Context) error {
 				}
 			}
 
-			// Processar tool calls
+			// Tool calls
 			if toolCall, ok := resp["toolCall"].(map[string]interface{}); ok {
 				log.Printf("🔧 Tool call detectado")
 				c.handleToolCalls(toolCall)
@@ -383,7 +341,7 @@ func (c *Client) handleToolCalls(toolCall map[string]interface{}) {
 				go func(n string, a map[string]interface{}) {
 					defer func() {
 						if r := recover(); r != nil {
-							log.Printf("🚨 PANIC na Tool %s: %v", n, r)
+							log.Printf("🚨 PANIC Tool %s: %v", n, r)
 							c.SendToolResponse(n, map[string]interface{}{"error": "Internal error"})
 						}
 					}()
@@ -396,7 +354,7 @@ func (c *Client) handleToolCalls(toolCall map[string]interface{}) {
 	}
 }
 
-// SendToolResponse envia o resultado da função de volta ao Gemini
+// SendToolResponse envia resultado de ferramenta
 func (c *Client) SendToolResponse(name string, result map[string]interface{}) error {
 	msg := map[string]interface{}{
 		"tool_response": map[string]interface{}{
@@ -413,7 +371,7 @@ func (c *Client) SendToolResponse(name string, result map[string]interface{}) er
 	return c.conn.WriteJSON(msg)
 }
 
-// Close fecha a conexão
+// Close fecha conexão
 func (c *Client) Close() error {
 	if c.conn != nil {
 		return c.conn.Close()
