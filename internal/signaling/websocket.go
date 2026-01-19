@@ -16,7 +16,7 @@ import (
 
 	"eva-mind/internal/config"
 	"eva-mind/internal/gemini"
-	"eva-mind/internal/medgemma"
+
 	"eva-mind/internal/push"
 
 	"github.com/gorilla/websocket"
