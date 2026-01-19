@@ -44,6 +44,11 @@ func (s *SignifierService) TrackSignifiers(ctx context.Context, idosoID int64, t
 
 // incrementSignifier incrementa frequência de um significante no Grafo
 func (s *SignifierService) incrementSignifier(ctx context.Context, idosoID int64, word, contextStr string) error {
+	// ✅ Proteção: Se Neo4j off, ignora
+	if s.client == nil {
+		return nil
+	}
+
 	query := `
 		// Criar Person se não existir
 		MERGE (p:Person {id: $idosoId})
@@ -78,6 +83,11 @@ func (s *SignifierService) incrementSignifier(ctx context.Context, idosoID int64
 
 // GetKeySignifiers retorna os N significantes mais frequentes
 func (s *SignifierService) GetKeySignifiers(ctx context.Context, idosoID int64, topN int) ([]Signifier, error) {
+	// ✅ Proteção contra Panic: Se Neo4j estiver offline
+	if s.client == nil {
+		return []Signifier{}, nil
+	}
+
 	query := `
 		MATCH (s:Significante {idoso_id: $idosoId})
 		WHERE s.frequency >= 3
