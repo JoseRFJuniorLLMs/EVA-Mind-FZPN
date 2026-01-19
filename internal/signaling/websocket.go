@@ -1131,10 +1131,12 @@ func BuildInstructions(idosoID int64, db *sql.DB) string {
 
 	dossier += "\n💊 --- MEDICAMENTOS (FONTE OFICIAL) ---\n"
 	if len(medsList) > 0 {
+		log.Printf("🛡️ [SAFETY] Monitoramento de interação medicamentosa ativado. Medicamentos verificados: %v", medsList)
 		dossier += "O paciente possui os seguintes medicamentos prescritos e ativos no sistema:\n"
 		for _, m := range medsList {
 			dossier += m + "\n"
 		}
+
 		// Fallback visual para os campos legados, caso existam e não estejam na lista (opcional, mas bom para debug)
 		oldMeds := getString(medicamentosAtuais, "")
 		if oldMeds != "" {
@@ -1223,8 +1225,18 @@ func BuildInstructions(idosoID int64, db *sql.DB) string {
 	O sistema irá processar esse comando e te devolver a resposta.
 	`
 
+	// 5.5. 🛡️ PROTOCOLO DE SEGURANÇA MÉDICA (NOVO)
+	safetyProtocol := fmt.Sprintf(`
+	
+	🚨 PROTOCOLO DE SEGURANÇA (INTERAÇÃO MEDICAMENTOSA):
+	Sempre que o paciente mencionar um novo mal-estar (ex: tontura, dor, náusea) ou perguntar sobre um novo remédio:
+	1. Verifique SILENCIOSAMENTE em sua base de conhecimento se há interação perigosa com a lista de "MEDICAMENTOS (FONTE OFICIAL)" mostrada acima.
+	2. Se houver qualquer risco, ALERTE IMEDIATAMENTE o paciente de forma calma mas firme.
+	3. Recomende que ele NÃO tome nada sem falar com o médico responsável: %s.
+	`, getString(medicoResponsavel, "médico cadastrado"))
+
 	// 6. ANEXAR DOSSIÊ AO FINAL
-	finalInstructions := instructions + agentProtocol + dossier
+	finalInstructions := instructions + agentProtocol + safetyProtocol + dossier
 
 	log.Printf("✅ [BuildInstructions] Instruções finais geradas (%d chars)", len(finalInstructions))
 	return finalInstructions
