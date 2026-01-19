@@ -1003,31 +1003,23 @@ func BuildInstructions(idosoID int64, db *sql.DB) string {
 			nivel_cognitivo, 
 			limitacoes_auditivas, 
 			usa_aparelho_auditivo, 
-			limitacoes_visuais,
-			mobilidade,
 			tom_voz,
-			preferencia_horario_ligacao,
-			ambiente_ruidoso,
-			familiar_principal, 
-			contato_emergencia, 
-			medico_responsavel,
-			medicamentos_atuais,
-			medicamentos_regulares,
-			condicoes_medicas,
-			sentimento,
-			notas_gerais,
-			endereco
+			preferencia_horario_ligacao
 		FROM idosos 
 		WHERE id = $1
 	`
 
-	var nome, nivelCognitivo, tomVoz, mobilidade string
+	var nome, nivelCognitivo, tomVoz string
 	var idade int
-	var limitacoesAuditivas, usaAparelhoAuditivo, ambienteRuidoso sql.NullBool
+	var limitacoesAuditivas, usaAparelhoAuditivo sql.NullBool
+	var preferenciaHorario sql.NullString
 
-	// Campos que podem ser NULL
-	var limitacoesVisuais, preferenciaHorario, familiarPrincipal, contatoEmergencia, medicoResponsavel sql.NullString
+	// ✅ Campos que não existem na tabela 'idosos' mas são usados no prompt
+	// Inicializados com valores padrão para evitar erro de compilação
+	var mobilidade string = "Não informada"
+	var limitacoesVisuais, familiarPrincipal, contatoEmergencia, medicoResponsavel sql.NullString
 	var medicamentosAtuais, medicamentosRegulares, condicoesMedicas, sentimento, notasGerais, endereco sql.NullString
+	var ambienteRuidoso sql.NullBool
 
 	err := db.QueryRow(query, idosoID).Scan(
 		&nome,
@@ -1035,20 +1027,8 @@ func BuildInstructions(idosoID int64, db *sql.DB) string {
 		&nivelCognitivo,
 		&limitacoesAuditivas,
 		&usaAparelhoAuditivo,
-		&limitacoesVisuais,
-		&mobilidade,
 		&tomVoz,
 		&preferenciaHorario,
-		&ambienteRuidoso,
-		&familiarPrincipal,
-		&contatoEmergencia,
-		&medicoResponsavel,
-		&medicamentosAtuais,
-		&medicamentosRegulares,
-		&condicoesMedicas,
-		&sentimento,
-		&notasGerais,
-		&endereco,
 	)
 
 	if err != nil {
