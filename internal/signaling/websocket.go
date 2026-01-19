@@ -1002,7 +1002,10 @@ func BuildInstructions(idosoID int64, nomeDefault string, db *sql.DB) string {
 			EXTRACT(YEAR FROM AGE(data_nascimento)) as idade,
 			nivel_cognitivo, 
 			tom_voz,
-			preferencia_horario_ligacao
+			preferencia_horario_ligacao,
+			medicamentos_atuais,
+			condicoes_medicas,
+			endereco
 		FROM idosos 
 		WHERE id = $1
 	`
@@ -1023,6 +1026,9 @@ func BuildInstructions(idosoID int64, nomeDefault string, db *sql.DB) string {
 		&nivelCognitivo,
 		&tomVoz,
 		&preferenciaHorario,
+		&medicamentosAtuais,
+		&condicoesMedicas,
+		&endereco,
 	)
 
 	if err != nil {
