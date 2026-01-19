@@ -16,7 +16,8 @@ credentials/
 vendor/
 go.sum
 
+# Shell Scripts / Deploy (Contendo segredos)
 deploy.sh
 log.sh
-
 deploy_vm.sh
+deploy_fixed.sh
