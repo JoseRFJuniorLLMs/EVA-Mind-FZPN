@@ -124,31 +124,30 @@ func (c *Client) SendSetup(instructions string, voiceSettings map[string]interfa
 		},
 	}
 
-	// Tools
-	var toolsPayload []interface{}
-	if len(toolsDef) > 0 {
-		toolsList := []interface{}{}
-		for _, t := range toolsDef {
-			toolsList = append(toolsList, t)
+	// ⚠️ CRITICAL ARCHITECTURE FIX:
+	// O modelo 'gemini-2.5-flash-native-audio-preview' NÃO suporta Tools via WebSocket.
+	// Ele é estritamente para Audio Streaming (Input/Output).
+	// Tools devem ser processadas por um client separado (REST/gRPC) usando outro modelo.
+	// Portanto, enviamos NIL para tools aqui, igual ao EVA-Mind original.
+
+	/*
+		// Tools Logic - DISABLED FOR AUDIO WEBSOCKET
+		var toolsPayload []interface{}
+		if len(toolsDef) > 0 {
+			toolsList := []interface{}{}
+			for _, t := range toolsDef {
+				toolsList = append(toolsList, t)
+			}
+			toolsPayload = append(toolsPayload, map[string]interface{}{
+				"functionDeclarations": toolsList,
+			})
+			log.Printf("⚠️ [SETUP] Tools ignoradas para Audio WebSocket (Architectural Fix)")
 		}
-		toolsPayload = append(toolsPayload, map[string]interface{}{
-			"functionDeclarations": toolsList,
-		})
-		log.Printf("✅ [SETUP] Function Declarations: %d tools", len(toolsDef))
-	}
 
-	if c.cfg.EnableGoogleSearch {
-		log.Printf("⚠️  [SETUP] Google Search DESABILITADO (requer Vertex AI)")
-	}
-
-	if c.cfg.EnableCodeExecution {
-		log.Printf("⚠️  [SETUP] Code Execution DESABILITADO (requer Vertex AI)")
-	}
-
-	if len(toolsPayload) > 0 {
-		setup["setup"].(map[string]interface{})["tools"] = toolsPayload
-		log.Printf("🛠️ [SETUP] Ferramentas ativas: %d", len(toolsPayload))
-	}
+		if len(toolsPayload) > 0 {
+			setup["setup"].(map[string]interface{})["tools"] = toolsPayload
+		}
+	*/
 
 	log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	log.Printf("🔧 CONFIGURANDO GEMINI")
