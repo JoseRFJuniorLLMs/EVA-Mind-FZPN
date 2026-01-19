@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	// ✅ Importar tools
 )
 
 // AudioCallback é chamado quando áudio PCM é recebido do Gemini
@@ -48,10 +47,6 @@ func NewClient(ctx context.Context, cfg *config.Config) (*Client, error) {
 		maskedKey = cfg.GoogleAPIKey[:4] + "..." + cfg.GoogleAPIKey[len(cfg.GoogleAPIKey)-4:]
 	}
 	log.Printf("🔐 Gemini Config: Key=%s Model=%s", maskedKey, cfg.ModelID)
-
-	// Using query param for now as primary method, but adding header is good practice if supported by library
-	// The gorilla/websocket Dialer.DialContext takes headers as the third argument.
-	// But EVA-Mind (working) uses nil, so we revert to nil to match it exactly.
 
 	conn, _, err := dialer.DialContext(ctx, url, nil)
 	if err != nil {
@@ -102,19 +97,44 @@ func (c *Client) SendSetup(instructions string, voiceSettings map[string]interfa
 		},
 	}
 
-	// ✅ Injetar Tools se houver
+	// ✅ PREPARAR TOOLS (Function Calls + Grounding + Code Execution)
+	var toolsPayload []interface{}
+
+	// 1. Custom Function Declarations (Read-Only Tools like GetVitals)
 	if len(toolsDef) > 0 {
 		toolsList := []interface{}{}
 		for _, t := range toolsDef {
 			toolsList = append(toolsList, t)
 		}
+		toolsPayload = append(toolsPayload, map[string]interface{}{
+			"functionDeclarations": toolsList,
+		})
+		log.Printf("✅ [SETUP] Function Declarations habilitadas: %d tools", len(toolsDef))
+	}
 
-		setup["setup"].(map[string]interface{})["tools"] = []interface{}{
-			map[string]interface{}{
-				"functionDeclarations": toolsList,
-			},
-		}
-		log.Printf("🛠️ [SETUP] %d tools enviadas para o Gemini", len(toolsDef))
+	// ⚠️ CRITICAL FIX: Google Search e Code Execution causam erro 1008
+	// com chaves do AI Studio (AIzaSy...). Só funcionam com Vertex AI.
+	//
+	// SOLUÇÃO: Desabilitar automaticamente essas features
+
+	if c.cfg.EnableGoogleSearch {
+		log.Printf("⚠️  [SETUP] Google Search Grounding DESABILITADO")
+		log.Printf("    Motivo: Requer Vertex AI ou chave com allowlist especial")
+		log.Printf("    Causa erro 1008 com chaves AI Studio normais")
+		// NÃO adicionar googleSearchRetrieval ao toolsPayload
+	}
+
+	if c.cfg.EnableCodeExecution {
+		log.Printf("⚠️  [SETUP] Code Execution DESABILITADO")
+		log.Printf("    Motivo: Requer Vertex AI ou chave com allowlist especial")
+		log.Printf("    Causa erro 1008 com chaves AI Studio normais")
+		// NÃO adicionar codeExecution ao toolsPayload
+	}
+
+	// Injetar no payload de setup
+	if len(toolsPayload) > 0 {
+		setup["setup"].(map[string]interface{})["tools"] = toolsPayload
+		log.Printf("🛠️ [SETUP] Total de ferramentas ativas: %d", len(toolsPayload))
 	}
 
 	log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -131,8 +151,6 @@ func (c *Client) SendSetup(instructions string, voiceSettings map[string]interfa
 
 // StartSession é um alias para SendSetup (wrapper depreciado)
 func (c *Client) StartSession(instructions string, tools []interface{}, memories []string, voiceName string) error {
-	// Adaptador simples para manter compatibilidade se necessário, mas ideal é atualizar chamadas
-	// Passando nil para toolsDef e map vazio para voiceSettings
 	return c.SendSetup(instructions, nil, memories, "", nil)
 }
 
@@ -140,12 +158,11 @@ func (c *Client) StartSession(instructions string, tools []interface{}, memories
 func (c *Client) SendAudio(audioData []byte) error {
 	encoded := base64.StdEncoding.EncodeToString(audioData)
 
-	// ✅ INPUT: 16kHz (correto para captura do microfone)
 	msg := map[string]interface{}{
 		"realtime_input": map[string]interface{}{
 			"media_chunks": []map[string]string{
 				{
-					"mime_type": "audio/pcm;rate=16000", // ✅ Correto para INPUT
+					"mime_type": "audio/pcm;rate=16000",
 					"data":      encoded,
 				},
 			},
@@ -199,7 +216,7 @@ func (c *Client) SendImage(imageData []byte) error {
 	return c.conn.WriteJSON(msg)
 }
 
-// ✅ SendMessage envia uma mensagem genérica JSON para o Gemini (usado para ToolResponse e SystemNotes)
+// SendMessage envia uma mensagem genérica JSON para o Gemini (usado para ToolResponse e SystemNotes)
 func (c *Client) SendMessage(msg interface{}) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -232,7 +249,7 @@ func (c *Client) HandleResponses(ctx context.Context) error {
 				return err
 			}
 
-			// ✅ DEBUG: Mostrar TODAS as respostas do Gemini
+			// Debug de respostas
 			if respBytes, _ := json.Marshal(resp); len(respBytes) > 0 {
 				preview := string(respBytes)
 				if len(preview) > 300 {
@@ -241,7 +258,7 @@ func (c *Client) HandleResponses(ctx context.Context) error {
 				// log.Printf("📦 Gemini Response: %s", preview)
 			}
 
-			// ✅ Verificar setupComplete
+			// Verificar setupComplete
 			if setupComplete, ok := resp["setupComplete"].(bool); ok && setupComplete {
 				log.Printf("✅ Gemini Setup Complete - Pronto para receber áudio!")
 				continue
@@ -253,23 +270,21 @@ func (c *Client) HandleResponses(ctx context.Context) error {
 				continue
 			}
 
-			// ✅ Processar áudio e transcrição
+			// Processar áudio e transcrição
 			if serverContent, ok := resp["serverContent"].(map[string]interface{}); ok {
 
-				// ▶️ 1. Capturar Transcrição do Usuário (Input)
+				// Capturar Transcrição do Usuário (Input)
 				if inputTrans, ok := serverContent["inputAudioTranscription"].(map[string]interface{}); ok {
 					if userText, ok := inputTrans["text"].(string); ok && userText != "" {
-						// log.Printf("🗣️ [CLIENT] IDOSO: %s", userText)
 						if c.onTranscript != nil {
 							c.onTranscript("user", userText)
 						}
 					}
 				}
 
-				// ▶️ 2. Capturar Transcrição da IA (Output)
+				// Capturar Transcrição da IA (Output)
 				if audioTrans, ok := serverContent["audioTranscription"].(map[string]interface{}); ok {
 					if aiText, ok := audioTrans["text"].(string); ok && aiText != "" {
-						// log.Printf("💬 [CLIENT] EVA: %s", aiText)
 						if c.onTranscript != nil {
 							c.onTranscript("assistant", aiText)
 						}
@@ -284,7 +299,7 @@ func (c *Client) HandleResponses(ctx context.Context) error {
 								continue
 							}
 
-							// ✅ Procurar por inlineData (áudio)
+							// Procurar por inlineData (áudio)
 							if inlineData, ok := part["inlineData"].(map[string]interface{}); ok {
 								if audioB64, ok := inlineData["data"].(string); ok {
 									audioBytes, err := base64.StdEncoding.DecodeString(audioB64)
@@ -292,7 +307,6 @@ func (c *Client) HandleResponses(ctx context.Context) error {
 										log.Printf("❌ Erro ao decodificar base64: %v", err)
 										continue
 									}
-									// ✅ CHAMAR CALLBACK
 									if c.onAudio != nil {
 										c.onAudio(audioBytes)
 									}
@@ -303,7 +317,7 @@ func (c *Client) HandleResponses(ctx context.Context) error {
 				}
 			}
 
-			// ✅ Processar tool calls
+			// Processar tool calls
 			if toolCall, ok := resp["toolCall"].(map[string]interface{}); ok {
 				log.Printf("🔧 Tool call detectado")
 				c.handleToolCalls(toolCall)
@@ -320,7 +334,6 @@ func (c *Client) handleToolCalls(toolCall map[string]interface{}) {
 			args := fc["args"].(map[string]interface{})
 
 			if c.onToolCall != nil {
-				// ✅ FIX: Executar tools em goroutine separada para não travar a voz
 				go func(n string, a map[string]interface{}) {
 					defer func() {
 						if r := recover(); r != nil {

@@ -72,6 +72,12 @@ type Config struct {
 	// Qdrant
 	QdrantHost string
 	QdrantPort int
+	AppURL     string
+
+	// Feature Flags (V2)
+	EnableGoogleSearch   bool
+	EnableCodeExecution  bool
+	EnableContextCaching bool
 }
 
 func Load() (*Config, error) {
@@ -141,6 +147,12 @@ func Load() (*Config, error) {
 		// Qdrant
 		QdrantHost: getEnvWithDefault("QDRANT_HOST", "localhost"),
 		QdrantPort: getEnvInt("QDRANT_PORT", 6334),
+		AppURL:     getEnv("APP_URL", "https://eva-mind-fzpn.fly.dev"),
+
+		// Load Feature Flags (Default: true for testing V2)
+		EnableGoogleSearch:   getEnvBool("ENABLE_GOOGLE_SEARCH", true),
+		EnableCodeExecution:  getEnvBool("ENABLE_CODE_EXECUTION", true),
+		EnableContextCaching: getEnvBool("ENABLE_CONTEXT_CACHING", true),
 	}, nil
 }
 
@@ -151,19 +163,28 @@ func getEnvWithDefault(key, defaultValue string) string {
 	return defaultValue
 }
 
+func getEnv(key, fallback string) string {
+	if value, ok := os.LookupEnv(key); ok {
+		return value
+	}
+	return fallback
+}
+
+func getEnvBool(key string, fallback bool) bool {
+	val := getEnv(key, "")
+	if val == "" {
+		return fallback
+	}
+	// Aceita "true", "1", "yes", "on"
+	return val == "true" || val == "1" || val == "yes" || val == "on"
+}
+
 func getEnvInt(key string, defaultValue int) int {
 	if value := os.Getenv(key); value != "" {
 		var intValue int
 		if _, err := fmt.Sscanf(value, "%d", &intValue); err == nil {
 			return intValue
 		}
-	}
-	return defaultValue
-}
-
-func getEnvBool(key string, defaultValue bool) bool {
-	if value := os.Getenv(key); value != "" {
-		return value == "true" || value == "1" || value == "yes"
 	}
 	return defaultValue
 }

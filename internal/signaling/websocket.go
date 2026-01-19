@@ -22,7 +22,6 @@ import (
 	"eva-mind/internal/knowledge"
 	"eva-mind/internal/tools"
 
-	// ✅ Importar tools
 	"eva-mind/internal/push"
 
 	"github.com/gorilla/websocket"
@@ -294,6 +293,30 @@ func (s *SignalingServer) handleControlMessage(conn *websocket.Conn, message []b
 		// log.Printf("📡 [SIGNAL] Relay de %s -> %s", senderCPF, msg.TargetCPF)
 		return currentSession
 
+		// ... (existing cases)
+
+	case "vision":
+		// ✅ NOVO (V2): Processamento de Visão
+		// Payload deve ser string Base64 do frame JPEG
+		if payloadStr, ok := msg.Payload.(string); ok && currentSession != nil {
+			log.Printf("👁️ [VISION] Recebido frame de imagem (%d bytes)", len(payloadStr))
+
+			// Decodificar Base64
+			imageData, err := base64.StdEncoding.DecodeString(payloadStr)
+			if err != nil {
+				log.Printf("❌ Erro ao decodificar imagem: %v", err)
+				return currentSession
+			}
+
+			// Enviar para Gemini
+			if err := currentSession.GeminiClient.SendImage(imageData); err != nil {
+				log.Printf("❌ Erro ao enviar imagem para Gemini: %v", err)
+			}
+		} else {
+			log.Printf("⚠️ [VISION] Payload inválido ou sessão nula")
+		}
+		return currentSession
+
 	default:
 		return currentSession
 	}
@@ -526,6 +549,21 @@ func (s *SignalingServer) handleGeminiResponse(session *WebSocketSession, respon
 				}
 			}
 		}
+	}
+
+	// ✅ FASE 5: Interruption Handling (Barge-in)
+	if interrupted, ok := serverContent["interrupted"].(bool); ok && interrupted {
+		log.Printf("🛑 [INTERRUPT] Usuário interrompeu! Enviando comando clear_buffer.")
+
+		// Enviar sinal para o cliente limpar o buffer de áudio imediatamente
+		interruptMsg := ControlMessage{
+			Type: "clear_buffer",
+		}
+		if err := session.WSConn.WriteJSON(interruptMsg); err != nil {
+			log.Printf("⚠️ Erro ao enviar interrupt: %v", err)
+		}
+
+		return // Não processar mais nada deste frame
 	}
 
 	// Processar modelTurn (resposta da EVA)
@@ -1241,6 +1279,12 @@ func getString(ns sql.NullString, def string) string {
 
 func generateSessionID() string {
 	return fmt.Sprintf("session-%d", time.Now().Unix())
+}
+
+// ✅ Estrutura Envelope Universal (V2 Protocol)
+type IncomingMessage struct {
+	Type    string `json:"type"`    // "audio", "text", "vision", "ping"
+	Payload string `json:"payload"` // Base64 do áudio ou da imagem
 }
 
 type ControlMessage struct {
