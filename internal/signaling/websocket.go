@@ -16,6 +16,8 @@ import (
 
 	"eva-mind/internal/config"
 	"eva-mind/internal/gemini"
+	"eva-mind/internal/infrastructure/graph"
+	"eva-mind/internal/knowledge"
 
 	"eva-mind/internal/push"
 
@@ -51,6 +53,7 @@ type SignalingServer struct {
 	cfg         *config.Config
 	db          *sql.DB
 	pushService *push.FirebaseService
+	knowledge   *knowledge.GraphReasoningService
 	sessions    sync.Map
 	clients     sync.Map
 }
@@ -63,6 +66,15 @@ func NewSignalingServer(cfg *config.Config, db *sql.DB, pushService *push.Fireba
 	}
 
 	log.Printf("🚀 Signaling Server em modo VOZ PURA (Tools desabilitadas)")
+
+	// ✅ NOVO: Inicializar Knowledge Service (Neo4j Thinking)
+	neo4jClient, err := graph.NewNeo4jClient(cfg)
+	if err != nil {
+		log.Printf("⚠️ Erro ao conectar Neo4j: %v", err)
+	} else {
+		server.knowledge = knowledge.NewGraphReasoningService(cfg, neo4jClient)
+		log.Printf("✅ Graph Reasoning Service (Neo4j + Thinking) inicializado")
+	}
 
 	go server.cleanupDeadSessions()
 	return server
@@ -282,6 +294,26 @@ func (s *SignalingServer) handleGeminiResponse(session *WebSocketSession, respon
 		if userText, ok := inputTrans["text"].(string); ok && userText != "" {
 			log.Printf("🗣️ [NATIVE] IDOSO: %s", userText)
 			go s.saveTranscription(session.IdosoID, "user", userText)
+
+			// ✅ NOVO: Neo4j Thinking Mode (Fase 2)
+			// Acionar raciocínio clínico baseado em grafo se a mensagem for do usuário e o serviço estiver ativo
+			if s.knowledge != nil {
+				go func(uid int64, text string) {
+					ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+					defer cancel()
+
+					reasoning, err := s.knowledge.AnalyzeGraphContext(ctx, uid, text)
+					if err != nil {
+						log.Printf("⚠️ [NEO4J] Erro no raciocínio: %v", err)
+						return
+					}
+
+					if reasoning != "" {
+						log.Printf("🧠 [NEO4J] Raciocínio Clínico:\n%s", reasoning)
+						// Futuro: Injetar no prompt??
+					}
+				}(session.IdosoID, userText)
+			}
 		}
 	}
 

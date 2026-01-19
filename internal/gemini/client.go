@@ -7,7 +7,6 @@ import (
 	"eva-mind/internal/config"
 	"fmt"
 	"log"
-	"net/http"
 	"sync"
 	"time"
 
@@ -50,11 +49,9 @@ func NewClient(ctx context.Context, cfg *config.Config) (*Client, error) {
 
 	// Using query param for now as primary method, but adding header is good practice if supported by library
 	// The gorilla/websocket Dialer.DialContext takes headers as the third argument.
-	// Let's add the header authentication as well.
-	headers := make(http.Header)
-	headers.Add("x-goog-api-key", cfg.GoogleAPIKey)
+	// But EVA-Mind (working) uses nil, so we revert to nil to match it exactly.
 
-	conn, _, err := dialer.DialContext(ctx, url, headers)
+	conn, _, err := dialer.DialContext(ctx, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("erro ao conectar no websocket: %w", err)
 	}
