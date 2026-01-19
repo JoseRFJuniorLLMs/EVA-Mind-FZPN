@@ -8,6 +8,7 @@ import (
 	"eva-mind/internal/tools"
 	"fmt"
 	"log"
+	"net/url"
 	"sync"
 	"time"
 
@@ -35,25 +36,70 @@ type Client struct {
 
 // NewClient cria um novo cliente Gemini usando WebSocket direto
 func NewClient(ctx context.Context, cfg *config.Config) (*Client, error) {
+	// ✅ VALIDAÇÃO CRÍTICA: Verificar se API key existe
+	if cfg.GoogleAPIKey == "" {
+		return nil, fmt.Errorf("ERRO CRÍTICO: GOOGLE_API_KEY está vazia!")
+	}
+
 	dialer := websocket.Dialer{
 		HandshakeTimeout: 10 * time.Second,
 	}
 
-	url := fmt.Sprintf("wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=%s", cfg.GoogleAPIKey)
+	// ✅ FIX: Usar url.QueryEscape para garantir que a chave seja passada corretamente
+	escapedKey := url.QueryEscape(cfg.GoogleAPIKey)
+	wsURL := fmt.Sprintf(
+		"wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=%s",
+		escapedKey,
+	)
 
-	// 🔍 DEBUG: Log API Key (Masked)
-	maskedKey := "N/A"
+	// 🔍 DEBUG: Log detalhado (mas mascarado)
+	maskedKey := "VAZIO"
 	if len(cfg.GoogleAPIKey) > 8 {
 		maskedKey = cfg.GoogleAPIKey[:4] + "..." + cfg.GoogleAPIKey[len(cfg.GoogleAPIKey)-4:]
+	} else if len(cfg.GoogleAPIKey) > 0 {
+		maskedKey = "***" // Muito curta
 	}
-	log.Printf("🔐 Gemini Config: Key=%s Model=%s", maskedKey, cfg.ModelID)
 
-	conn, _, err := dialer.DialContext(ctx, url, nil)
+	log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	log.Printf("🔌 Conectando ao Gemini WebSocket")
+	log.Printf("🔑 API Key: %s (length=%d)", maskedKey, len(cfg.GoogleAPIKey))
+	log.Printf("🤖 Model: %s", cfg.ModelID)
+	log.Printf("🌐 URL (primeiros 80 chars): %s...", wsURL[:min(80, len(wsURL))])
+	log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	// ✅ Conectar
+	conn, resp, err := dialer.DialContext(ctx, wsURL, nil)
 	if err != nil {
+		// Debug detalhado do erro
+		if resp != nil {
+			log.Printf("❌ Falha na conexão WebSocket")
+			log.Printf("   Status Code: %d", resp.StatusCode)
+			log.Printf("   Status: %s", resp.Status)
+
+			// Ler corpo da resposta se houver
+			if resp.Body != nil {
+				body := make([]byte, 1024)
+				n, _ := resp.Body.Read(body)
+				if n > 0 {
+					log.Printf("   Response Body: %s", string(body[:n]))
+				}
+			}
+		}
+
 		return nil, fmt.Errorf("erro ao conectar no websocket: %w", err)
 	}
 
+	log.Printf("✅ WebSocket conectado com sucesso!")
+
 	return &Client{conn: conn, cfg: cfg}, nil
+}
+
+// Helper function para min
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // SetCallbacks configura os retornos de áudio, ferramentas e transcrição

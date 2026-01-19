@@ -293,30 +293,6 @@ func (s *SignalingServer) handleControlMessage(conn *websocket.Conn, message []b
 		// log.Printf("📡 [SIGNAL] Relay de %s -> %s", senderCPF, msg.TargetCPF)
 		return currentSession
 
-		// ... (existing cases)
-
-	case "vision":
-		// ✅ NOVO (V2): Processamento de Visão
-		// Payload deve ser string Base64 do frame JPEG
-		if payloadStr, ok := msg.Payload.(string); ok && currentSession != nil {
-			log.Printf("👁️ [VISION] Recebido frame de imagem (%d bytes)", len(payloadStr))
-
-			// Decodificar Base64
-			imageData, err := base64.StdEncoding.DecodeString(payloadStr)
-			if err != nil {
-				log.Printf("❌ Erro ao decodificar imagem: %v", err)
-				return currentSession
-			}
-
-			// Enviar para Gemini
-			if err := currentSession.GeminiClient.SendImage(imageData); err != nil {
-				log.Printf("❌ Erro ao enviar imagem para Gemini: %v", err)
-			}
-		} else {
-			log.Printf("⚠️ [VISION] Payload inválido ou sessão nula")
-		}
-		return currentSession
-
 	default:
 		return currentSession
 	}
