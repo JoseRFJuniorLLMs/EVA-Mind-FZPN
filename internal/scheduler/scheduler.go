@@ -335,16 +335,37 @@ func (s *Scheduler) checkMissedCalls() {
 					UPDATE alertas SET enviado = true WHERE id = $1
 				`, alertID)
 			}
-		} else {
-			log.Printf("⚠️ Sem token de cuidador para notificar sobre %s", nomeIdoso)
+			// 📩 ESCUDO DE SEGURANÇA: Tentar outros meios (Email) e Escalamento
+			log.Printf("⚠️ Tentando meios alternativos para %s...", nomeIdoso)
 
-			// TODO: Tentar outros meios (SMS, Email)
-			if phoneCuidador.Valid && phoneCuidador.String != "" {
-				log.Printf("📞 TODO: Enviar SMS para %s", phoneCuidador.String)
+			if emailCuidador.Valid && emailCuidador.String != "" && s.emailService != nil {
+				subject := fmt.Sprintf("⚠️ Alerta de Chamada Perdida: %s", nomeIdoso)
+				body := fmt.Sprintf(`
+					<h2>Atenção! Chamada Não Atendida</h2>
+					<p>A EVA tentou entrar em contato com <b>%s</b> hoje às %s, mas não houve resposta.</p>
+					<p>Como não conseguimos enviar a notificação via aplicativo, estamos enviando este email de segurança.</p>
+					<p>Por favor, verifique o bem-estar do idoso assim que possível.</p>
+					<hr>
+					<p><small>Este é um aviso automático gerado pelo sistema EVA-Mind.</small></p>
+				`, nomeIdoso, time.Now().Format("15:04"))
+
+				if errEmail := s.emailService.SendEmail(emailCuidador.String, subject, body); errEmail != nil {
+					log.Printf("❌ Falha crítica ao enviar email de segurança para %s: %v", emailCuidador.String, errEmail)
+				} else {
+					log.Printf("📧 Email de segurança enviado com sucesso para %s", emailCuidador.String)
+					// Marcar alerta como enviado (mesmo que por email)
+					_, _ = s.db.Exec(`UPDATE alertas SET enviado = true WHERE id = $1`, alertID)
+				}
 			}
-			if emailCuidador.Valid && emailCuidador.String != "" {
-				log.Printf("📧 TODO: Enviar email para %s", emailCuidador.String)
-			}
+
+			// Forçar escalamento para que o painel de monitoramento destaque o problema
+			log.Printf("🚨 Escalando alerta ID %d para monitoramento administrativo", alertID)
+			_, _ = s.db.Exec(`
+				UPDATE alertas 
+				SET necessita_escalamento = true,
+					tempo_escalamento = NOW()
+				WHERE id = $1
+			`, alertID)
 		}
 
 		log.Printf("✅ Chamada perdida processada completamente para %s", nomeIdoso)

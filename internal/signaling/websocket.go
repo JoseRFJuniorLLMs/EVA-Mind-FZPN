@@ -16,6 +16,7 @@ import (
 
 	"eva-mind/internal/config"
 	"eva-mind/internal/database"
+	"eva-mind/internal/email"
 	"eva-mind/internal/gemini"
 	"eva-mind/internal/infrastructure/graph"
 	"eva-mind/internal/infrastructure/redis"
@@ -94,6 +95,7 @@ type SignalingServer struct {
 	audioAnalysis *knowledge.AudioAnalysisService // ✅ NOVO
 	context       *knowledge.ContextService       // ✅ NOVO: Factual Memory
 	tools         *tools.ToolsHandler             // ✅ NOVO: Read-Only Tools
+	emailService  *email.EmailService             // ✅ NOVO: Phase 9 Fallback
 	redis         *redis.Client
 	sessions      sync.Map
 	clients       sync.Map
@@ -115,6 +117,17 @@ func NewSignalingServer(cfg *config.Config, db *sql.DB, pushService *push.Fireba
 	ctxService := knowledge.NewContextService(dbWrapper)
 	server.context = ctxService
 	server.tools = tools.NewToolsHandler(dbWrapper) // ✅ Inicializa Tools Handler
+
+	// Inicializar Email Service para Phase 9
+	if cfg.EnableEmailFallback {
+		emailSvc, err := email.NewEmailService(cfg)
+		if err != nil {
+			log.Printf("⚠️ Signaling: Email service not configured: %v", err)
+		} else {
+			server.emailService = emailSvc
+			log.Println("✅ Signaling: Email service initialized for Phase 9")
+		}
+	}
 
 	// ✅ NOVO: Inicializar Knowledge Service (Neo4j Thinking)
 	neo4jClient, err := graph.NewNeo4jClient(cfg)
@@ -233,7 +246,7 @@ func (s *SignalingServer) handleControlMessage(conn *websocket.Conn, message []b
 			return currentSession
 		}
 
-		session, err := s.createSession(msg.SessionID, msg.CPF, idoso.ID, idoso.VoiceName, conn)
+		session, err := s.createSession(msg.SessionID, msg.CPF, idoso.ID, idoso.Nome, idoso.VoiceName, conn)
 		if err != nil {
 			s.sendError(conn, "Erro ao criar sessão")
 			return currentSession
@@ -732,7 +745,7 @@ func (s *SignalingServer) saveTranscription(idosoID int64, role, content string)
 	}
 }
 
-func (s *SignalingServer) createSession(sessionID, cpf string, idosoID int64, voiceName string, conn *websocket.Conn) (*WebSocketSession, error) {
+func (s *SignalingServer) createSession(sessionID, cpf string, idosoID int64, nome, voiceName string, conn *websocket.Conn) (*WebSocketSession, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 
 	geminiClient, err := gemini.NewClient(ctx, s.cfg)
@@ -745,7 +758,7 @@ func (s *SignalingServer) createSession(sessionID, cpf string, idosoID int64, vo
 	memories := s.GetRecentMemories(idosoID)
 	log.Printf("🧠 Carregando %d memórias episódicas para o contexto", len(memories))
 
-	instructions := BuildInstructions(idosoID, idoso.Nome, s.db)
+	instructions := BuildInstructions(idosoID, nome, s.db)
 
 	// ✅ FASE 3: Injetar Memória Factual (Contexto de Análises Passadas)
 	if s.context != nil {
@@ -918,7 +931,7 @@ func (s *SignalingServer) analyzeAndSaveConversation(idosoID int64) {
 			analysis.RecommendedAction,
 		)
 
-		err := gemini.AlertFamily(s.db, s.pushService, idosoID, alertMsg)
+		err := gemini.AlertFamily(s.db, s.pushService, s.emailService, idosoID, alertMsg)
 		if err != nil {
 			log.Printf("❌ [ANÁLISE] Erro ao alertar família: %v", err)
 		} else {
@@ -1184,23 +1197,42 @@ func BuildInstructions(idosoID int64, nomeDefault string, db *sql.DB) string {
 	dossier += fmt.Sprintf("Tom de Voz Ideal: %s\n", tomVoz)
 	dossier += "--------------------------------------------------------\n"
 
-	// 4. Substituições no Template
-	instructions := template
-	instructions = strings.ReplaceAll(instructions, "{{nome_idoso}}", nome)
-	instructions = strings.ReplaceAll(instructions, "{{idade}}", fmt.Sprintf("%d", idade))
-	instructions = strings.ReplaceAll(instructions, "{{nivel_cognitivo}}", nivelCognitivo)
-	instructions = strings.ReplaceAll(instructions, "{{tom_voz}}", tomVoz)
+	// 4. Substituições no Template (Suporte a múltiplos estilos)
+	// Suporta tanto o estilo manual {{nome_idoso}} quanto o estilo do text/template {{.NomeIdoso}}
+	replacements := map[string]string{
+		"{{nome_idoso}}":        nome,
+		"{{.NomeIdoso}}":        nome,
+		"{{idade}}":             fmt.Sprintf("%d", idade),
+		"{{.Idade}}":            fmt.Sprintf("%d", idade),
+		"{{nivel_cognitivo}}":   nivelCognitivo,
+		"{{.NivelCognitivo}}":   nivelCognitivo,
+		"{{tom_voz}}":           tomVoz,
+		"{{.TomVoz}}":           tomVoz,
+		"{{condicoes_medicas}}": getString(condicoesMedicas, ""),
+		"{{.CondicoesMedicas}}": getString(condicoesMedicas, ""),
+	}
 
-	// Injeta a lista formatada ou o legado
+	instructions := template
+	for old, new := range replacements {
+		instructions = strings.ReplaceAll(instructions, old, new)
+	}
+
+	// Injeta a lista formatada ou o legado para medicamentos
 	medsString := strings.Join(medsList, ", ")
 	if medsString == "" {
 		medsString = getString(medicamentosAtuais, "Nenhum")
 	}
 	instructions = strings.ReplaceAll(instructions, "{{medicamentos}}", medsString)
-	instructions = strings.ReplaceAll(instructions, "{{condicoes_medicas}}", getString(condicoesMedicas, ""))
+	instructions = strings.ReplaceAll(instructions, "{{.MedicamentosAtuais}}", medsString)
 
-	// Limpar tags condicionais não usadas
-	tags := []string{"{{#limitacoes_auditivas}}", "{{/limitacoes_auditivas}}", "{{#usa_aparelho_auditivo}}", "{{/usa_aparelho_auditivo}}", "{{#primeira_interacao}}", "{{/primeira_interacao}}", "{{^primeira_interacao}}", "{{taxa_adesao}}"}
+	// Limpar tags condicionais não usadas (estilo Mustache/Template)
+	tags := []string{
+		"{{#limitacoes_auditivas}}", "{{/limitacoes_auditivas}}",
+		"{{#usa_aparelho_auditivo}}", "{{/usa_aparelho_auditivo}}",
+		"{{#primeira_interacao}}", "{{/primeira_interacao}}",
+		"{{^primeira_interacao}}", "{{taxa_adesao}}",
+		"{{.LimitacoesAuditivas}}", "{{.UsaAparelhoAuditivo}}",
+	}
 	for _, tag := range tags {
 		instructions = strings.ReplaceAll(instructions, tag, "")
 	}

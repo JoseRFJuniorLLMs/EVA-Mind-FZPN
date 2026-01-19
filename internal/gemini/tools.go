@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"eva-mind/internal/email"
 	"eva-mind/internal/push"
 	"fmt"
 	"log"
@@ -398,12 +399,12 @@ func GetDefaultTools() []interface{} {
 }
 
 // AlertFamily envia notificação push para cuidadores com sistema de fallback
-func AlertFamily(db *sql.DB, pushService *push.FirebaseService, idosoID int64, reason string) error {
-	return AlertFamilyWithSeverity(db, pushService, idosoID, reason, "alta")
+func AlertFamily(db *sql.DB, pushService *push.FirebaseService, emailService *email.EmailService, idosoID int64, reason string) error {
+	return AlertFamilyWithSeverity(db, pushService, emailService, idosoID, reason, "alta")
 }
 
 // AlertFamilyWithSeverity envia alertas com níveis de severidade
-func AlertFamilyWithSeverity(db *sql.DB, pushService *push.FirebaseService, idosoID int64, reason, severity string) error {
+func AlertFamilyWithSeverity(db *sql.DB, pushService *push.FirebaseService, emailService *email.EmailService, idosoID int64, reason, severity string) error {
 	// 1. Buscar todos os cuidadores ativos (primários e secundários)
 	query := `
 		SELECT 
@@ -520,11 +521,35 @@ func AlertFamilyWithSeverity(db *sql.DB, pushService *push.FirebaseService, idos
 			WHERE id = $1
 		`, alertID)
 
-		// TODO: Implementar SMS via Twilio
-		// TODO: Implementar Email
-		// TODO: Implementar ligação telefônica para casos críticos
+		// 📧 ESCUDO DE SEGURANÇA: Fallback para Email
+		if emailService != nil {
+			for _, cg := range caregivers {
+				if cg.Email.Valid && cg.Email.String != "" {
+					subject := fmt.Sprintf("🚨 ALERTA DE EMERGÊNCIA (%s): %s", severity, elderName)
+					body := fmt.Sprintf(`
+						<h2>Atenção! Alerta de Emergência Detectado</h2>
+						<p>O sistema EVA-Mind detectou uma situação de urgência para <b>%s</b>.</p>
+						<p><b>Motivo do Alerta:</b> %s</p>
+						<hr>
+						<p>Como não conseguimos confirmar a entrega via aplicativo móvel, este email de segurança foi enviado.</p>
+						<p>Por favor, verifique a situação imediatamente.</p>
+					`, elderName, reason)
 
-		return fmt.Errorf("all push notifications failed, alert needs escalation")
+					if errEmail := emailService.SendEmail(cg.Email.String, subject, body); errEmail != nil {
+						log.Printf("❌ Falha ao enviar email de fallback para %s: %v", cg.Email.String, errEmail)
+					} else {
+						log.Printf("📧 Email de fallback enviado com sucesso para %s", cg.Email.String)
+						successCount++
+						// Marcar como enviado
+						_, _ = db.Exec(`UPDATE alertas SET enviado = true, data_envio = NOW() WHERE id = $1`, alertID)
+					}
+				}
+			}
+		}
+
+		if successCount == 0 {
+			return fmt.Errorf("all notification methods (Push/Email) failed, alert needs immediate escalation")
+		}
 	}
 
 	log.Printf("✅ Alert sent to %d of %d caregivers", successCount, len(tokens))
