@@ -133,7 +133,6 @@ func NewSignalingServer(cfg *config.Config, db *database.DB, neo4jClient *graph.
 	// Initialize TransNAR Engine (Transference Narrative Reasoning)
 	transnarEngine := transnar.NewEngine(signifierService, personalityRouter, fdpnEngine)
 	log.Println("✅ TransNAR Engine initialized")
-
 	log.Printf("✅ Serviços de Memória Episódica inicializados")
 	log.Printf("✅ Serviço de Personalidade Afetiva inicializado")
 	log.Printf("✅ FZPN Engine (Phase 2) initialized")
@@ -165,6 +164,20 @@ func NewSignalingServer(cfg *config.Config, db *database.DB, neo4jClient *graph.
 
 	if pushService != nil {
 		log.Printf("  - Push: ✅ Firebase Initialized")
+	}
+
+	log.Printf("\n🧠  Cognitive Engines (FZPN):")
+	if transnarEngine != nil {
+		log.Printf("  - TransNAR: ✅ Reasoning Engine Active")
+	}
+	if signifierService != nil {
+		log.Printf("  - Lacan: ✅ Signifier Tracking Active")
+	}
+	if personalityService != nil {
+		log.Printf("  - Personality: ✅ Affective State Active")
+	}
+	if fdpnEngine != nil {
+		log.Printf("  - FDPN: ✅ Fractal Priming Active")
 	}
 
 	log.Printf("\n🛠️  Active Tools (V2):")

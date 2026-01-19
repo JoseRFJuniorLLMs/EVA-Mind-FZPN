@@ -149,9 +149,9 @@ func Load() (*Config, error) {
 		QdrantPort: getEnvInt("QDRANT_PORT", 6334),
 		AppURL:     getEnv("APP_URL", "https://eva-mind-fzpn.fly.dev"),
 
-		// Load Feature Flags (Default: true for testing V2)
-		EnableGoogleSearch:   getEnvBool("ENABLE_GOOGLE_SEARCH", true),
-		EnableCodeExecution:  getEnvBool("ENABLE_CODE_EXECUTION", true),
+		// Load Feature Flags (Default: false for safety/compatibility)
+		EnableGoogleSearch:   getEnvBool("ENABLE_GOOGLE_SEARCH", false),
+		EnableCodeExecution:  getEnvBool("ENABLE_CODE_EXECUTION", false),
 		EnableContextCaching: getEnvBool("ENABLE_CONTEXT_CACHING", true),
 	}, nil
 }

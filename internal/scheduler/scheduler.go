@@ -202,7 +202,12 @@ func (s *Scheduler) checkMissedCalls() {
 		SELECT a.id, a.idoso_id, i.nome, c.device_token, c.telefone, c.email
 		FROM agendamentos a
 		JOIN idosos i ON i.id = a.idoso_id
-		LEFT JOIN cuidadores c ON c.idoso_id = i.id AND c.ativo = true AND c.prioridade = 1
+		LEFT JOIN (
+			SELECT DISTINCT ON (idoso_id) idoso_id, device_token, telefone, email
+			FROM cuidadores
+			WHERE ativo = true AND device_token IS NOT NULL AND device_token != ''
+			ORDER BY idoso_id, prioridade ASC
+		) c ON c.idoso_id = i.id
 		WHERE a.status = 'em_andamento' 
 		  AND a.data_hora_agendada < (NOW() - INTERVAL '45 seconds')
 	`
