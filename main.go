@@ -258,6 +258,7 @@ func NewSignalingServer(
 		personalityService,
 		zetaRouter,
 		pushService,
+		embeddingService,
 	)
 
 	// 🧠 Iniciar Scheduler de Pattern Mining (Gap 1)

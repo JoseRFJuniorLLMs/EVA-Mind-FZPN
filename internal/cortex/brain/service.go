@@ -40,16 +40,15 @@ func NewService(
 	personalitySvc *ps.PersonalityService,
 	zeta *ps.ZetaRouter,
 	push *push.FirebaseService,
-	// embedder *memory.EmbeddingService, // Keeping for backward compat if needed?
+	embedder *memory.EmbeddingService, // Restored
 ) *Service {
 	return &Service{
-		db:           db,
-		qdrantClient: qdrant,
-		// fdpnEngine:         fdpn,
+		db:                 db,
+		qdrantClient:       qdrant,
 		personalityService: personalitySvc,
 		zetaRouter:         zeta,
 		pushService:        push,
-		// embeddingService:   embedder,
-		unifiedRetrieval: unified,
+		embeddingService:   embedder, // Restored
+		unifiedRetrieval:   unified,
 	}
 }

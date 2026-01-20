@@ -40,6 +40,7 @@ type UnifiedContext struct {
 	MedicalContext   string // Do GraphRAG (Neo4j)
 	VitalSigns       string // Sinais vitais recentes
 	ReportedSymptoms string // Sintomas relatados
+	Agendamentos     string // Agendamentos futuros (Real)
 
 	// SIMBÓLICO (Linguagem, Estrutura, Grafo)
 	LacanianAnalysis *InterpretationResult // Análise lacaniana completa
@@ -128,7 +129,12 @@ func (u *UnifiedRetrieval) BuildUnifiedContext(
 	}
 
 	// 4. CONTEXTO MÉDICO (Neo4j GraphRAG)
-	unified.MedicalContext = u.getMedicalContext(ctx, idosoID)
+	medicalContext, name := u.getMedicalContextAndName(ctx, idosoID)
+	unified.MedicalContext = medicalContext
+	unified.IdosoNome = name
+
+	// 4.1 AGENDAMENTOS (Real)
+	unified.Agendamentos = u.getAgendamentos(ctx, idosoID)
 
 	// 5. MEMÓRIAS RECENTES (Postgres)
 	unified.RecentMemories = u.getRecentMemories(ctx, idosoID, 5)
@@ -146,10 +152,10 @@ func (u *UnifiedRetrieval) BuildUnifiedContext(
 	return unified, nil
 }
 
-// getMedicalContext recupera contexto médico do Neo4j
-func (u *UnifiedRetrieval) getMedicalContext(ctx context.Context, idosoID int64) string {
+// getMedicalContextAndName recupera contexto médico e nome do paciente
+func (u *UnifiedRetrieval) getMedicalContextAndName(ctx context.Context, idosoID int64) (string, string) {
 	if u.neo4j == nil {
-		return ""
+		return "", ""
 	}
 
 	query := `
@@ -170,18 +176,20 @@ func (u *UnifiedRetrieval) getMedicalContext(ctx context.Context, idosoID int64)
 	})
 
 	if err != nil || len(records) == 0 {
-		return ""
+		return "", ""
 	}
 
 	record := records[0]
-	name, _ := record.Get("name")
+	nameInterface, _ := record.Get("name")
+	name, _ := nameInterface.(string)
+
 	conditions, _ := record.Get("conditions")
 	medications, _ := record.Get("medications")
 	symptoms, _ := record.Get("recent_symptoms")
 
 	context := "\n🏥 CONTEXTO MÉDICO (GraphRAG):\n\n"
 
-	if name != nil {
+	if name != "" {
 		context += fmt.Sprintf("Paciente: %s\n", name)
 	}
 
@@ -206,7 +214,7 @@ func (u *UnifiedRetrieval) getMedicalContext(ctx context.Context, idosoID int64)
 		}
 	}
 
-	return context
+	return context, name
 }
 
 // getRecentMemories recupera memórias episódicas recentes
@@ -238,6 +246,50 @@ func (u *UnifiedRetrieval) getRecentMemories(ctx context.Context, idosoID int64,
 	return memories
 }
 
+// getAgendamentos recupera próximos agendamentos (Real/Pragmatico)
+func (u *UnifiedRetrieval) getAgendamentos(ctx context.Context, idosoID int64) string {
+	// Schema auditado:
+	// id, idoso_id, tipo (as 'tipo_atividade'?), data_hora_agendada, status, dados_tarefa (json)
+	query := `
+		SELECT 
+			tipo, 
+			dados_tarefa::text, 
+			to_char(data_hora_agendada, 'DD/MM HH24:MI') as data_fmt
+		FROM agendamentos
+		WHERE idoso_id = $1 
+		  AND data_hora_agendada > NOW()
+		  AND status = 'agendado'
+		ORDER BY data_hora_agendada ASC
+		LIMIT 3
+	`
+
+	rows, err := u.db.QueryContext(ctx, query, idosoID)
+	if err != nil {
+		return ""
+	}
+	defer rows.Close()
+
+	var agendamentos []string
+	for rows.Next() {
+		var tipo, dadosTarefa, dataFmt string
+		if err := rows.Scan(&tipo, &dadosTarefa, &dataFmt); err == nil {
+			// Tenta limpar o JSON de dados_tarefa se possível ou usar bruto
+			desc := dadosTarefa
+			if len(desc) > 50 {
+				desc = desc[:50] + "..."
+			}
+			line := fmt.Sprintf("[%s] %s - %s", dataFmt, tipo, desc)
+			agendamentos = append(agendamentos, line)
+		}
+	}
+
+	if len(agendamentos) == 0 {
+		return ""
+	}
+
+	return "\n📅 PRÓXIMOS AGENDAMENTOS (Lembretes):\n" + strings.Join(agendamentos, "\n") + "\n"
+}
+
 // buildIntegratedPrompt constrói o prompt final integrando tudo
 func (u *UnifiedRetrieval) buildIntegratedPrompt(unified *UnifiedContext) string {
 	var builder strings.Builder
@@ -259,6 +311,12 @@ func (u *UnifiedRetrieval) buildIntegratedPrompt(unified *UnifiedContext) string
 
 	if unified.LacanianAnalysis != nil {
 		builder.WriteString(unified.LacanianAnalysis.ClinicalGuidance)
+		builder.WriteString("\n")
+	}
+
+	// Injetar Agendamentos no Contexto Real/Simbólico
+	if unified.Agendamentos != "" {
+		builder.WriteString(unified.Agendamentos)
 		builder.WriteString("\n")
 	}
 
@@ -300,6 +358,14 @@ func (u *UnifiedRetrieval) buildIntegratedPrompt(unified *UnifiedContext) string
 	}
 	builder.WriteString(fmt.Sprintf("🎯 %s\n\n", typeDirective))
 
+	// Instrução de Saudação Explicita (Garantia de Nome)
+	if unified.IdosoNome != "" {
+		builder.WriteString("🚨 REGRA DE OURO (INÍCIO): Você DEVE iniciar SEMPRE chamando pelo nome.\n")
+		builder.WriteString(fmt.Sprintf("Exemplo obrigatório: 'Oi %s, como você está?'\n\n", unified.IdosoNome))
+	} else {
+		builder.WriteString("🚨 REGRA DE OURO (INÍCIO): Inicie com 'Oi, como você está?' (Nome desconhecido)\n\n")
+	}
+
 	// Rodapé
 	builder.WriteString("═══════════════════════════════════════════════════════════\n")
 	builder.WriteString("⚠️ LEMBRE-SE: Você é EVA, não um modelo genérico.\n")
@@ -339,4 +405,17 @@ func (u *UnifiedRetrieval) SaveConversationContext(ctx context.Context, idosoID 
 	_, err := u.db.ExecContext(ctx, query, idosoID, contextJSON)
 
 	return err
+}
+
+// Prime realiza pré-aquecimento do grafo (FDPN) após fala do usuário
+func (u *UnifiedRetrieval) Prime(ctx context.Context, idosoID int64, text string) {
+	if u.fdpn != nil {
+		// Analisa e registra demanda no grafo (Spread Activation)
+		// LatentDesire é inferido internamente ou vazio se analisado depois
+		go u.fdpn.AnalyzeDemandAddressee(ctx, idosoID, text, "")
+	}
+	if u.embedding != nil {
+		// Rastreia significantes para próxima recuperação
+		go u.embedding.TrackSignifierChain(ctx, idosoID, text, 0.5)
+	}
 }

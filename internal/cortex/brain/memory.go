@@ -23,6 +23,11 @@ func (s *Service) ProcessUserSpeech(ctx context.Context, idosoID int64, text str
 	// Output log to track flow
 	log.Printf("🗣️ [User Speech] Processing for user %s: %s", userID, text)
 
+	// 🚀 ACTIVATE UNIFIED RETRIEVAL PRIMING (RSI + FDPN)
+	if s.unifiedRetrieval != nil {
+		go s.unifiedRetrieval.Prime(ctx, idosoID, text)
+	}
+
 	// Save memory (Fire and forget)
 	go s.SaveEpisodicMemory(idosoID, "user", text)
 }
