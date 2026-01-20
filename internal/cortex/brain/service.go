@@ -1,6 +1,7 @@
 package brain
 
 import (
+	"context"
 	"database/sql"
 	"eva-mind/internal/brainstem/infrastructure/vector"
 	"eva-mind/internal/brainstem/push"
@@ -8,6 +9,7 @@ import (
 	ps "eva-mind/internal/cortex/personality"
 	"eva-mind/internal/hippocampus/knowledge"
 	"eva-mind/internal/hippocampus/memory"
+	"fmt"
 )
 
 // Service encapsulates the cognitive functions of EVA
@@ -52,3 +54,13 @@ func NewService(
 		unifiedRetrieval:   unified,
 	}
 }
+
+// GetSystemPrompt gera o prompt inicial unificado (RSI)
+func (s *Service) GetSystemPrompt(ctx context.Context, idosoID int64) (string, error) {
+	if s.unifiedRetrieval == nil {
+		return "", fmt.Errorf("unified retrieval not initialized")
+	}
+	return s.unifiedRetrieval.GetPromptForGemini(ctx, idosoID, "", "")
+}
+
+// ProcessUserSpeech handles user transcription in real-time (FDPN Hook)

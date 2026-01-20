@@ -134,7 +134,7 @@ func (u *UnifiedRetrieval) BuildUnifiedContext(
 	unified.IdosoNome = name
 
 	// 4.1 AGENDAMENTOS (Real)
-	unified.Agendamentos = u.getAgendamentos(ctx, idosoID)
+	unified.Agendamentos = u.retrieveAgendamentos(ctx, idosoID)
 
 	// 5. MEMÓRIAS RECENTES (Postgres)
 	unified.RecentMemories = u.getRecentMemories(ctx, idosoID, 5)
@@ -246,8 +246,8 @@ func (u *UnifiedRetrieval) getRecentMemories(ctx context.Context, idosoID int64,
 	return memories
 }
 
-// getAgendamentos recupera próximos agendamentos (Real/Pragmatico)
-func (u *UnifiedRetrieval) getAgendamentos(ctx context.Context, idosoID int64) string {
+// retrieveAgendamentos recupera próximos agendamentos (Real/Pragmatico)
+func (u *UnifiedRetrieval) retrieveAgendamentos(ctx context.Context, idosoID int64) string {
 	// Schema auditado:
 	// id, idoso_id, tipo (as 'tipo_atividade'?), data_hora_agendada, status, dados_tarefa (json)
 	query := `

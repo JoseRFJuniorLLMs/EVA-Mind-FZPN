@@ -14,18 +14,18 @@ import (
 	"sync"
 	"time"
 
-	"eva-mind/internal/motor/actions"
 	"eva-mind/internal/brainstem/config"
 	"eva-mind/internal/brainstem/database"
-	"eva-mind/internal/motor/email"
-	"eva-mind/internal/cortex/gemini"
 	"eva-mind/internal/brainstem/infrastructure/graph"
 	"eva-mind/internal/brainstem/infrastructure/redis"
 	"eva-mind/internal/brainstem/infrastructure/vector"
+	"eva-mind/internal/cortex/gemini"
+	"eva-mind/internal/cortex/personality"
 	"eva-mind/internal/hippocampus/knowledge"
 	"eva-mind/internal/hippocampus/memory"
-	"eva-mind/internal/cortex/personality"
 	"eva-mind/internal/hippocampus/stories"
+	"eva-mind/internal/motor/actions"
+	"eva-mind/internal/motor/email"
 	"eva-mind/internal/tools"
 	"eva-mind/pkg/types"
 
@@ -796,21 +796,14 @@ func (s *SignalingServer) createSession(sessionID, cpf string, idosoID int64, no
 		return nil, err
 	}
 
-	// 🧠 MEMÓRIA: Recuperar últimas 5 conversas para contexto (Narrativa Completa)
-	memories := s.GetRecentMemories(idosoID)
-	log.Printf("🧠 Carregando %d memórias episódicas para o contexto", len(memories))
-
-	instructions := s.BuildInstructions(idosoID)
-
-	// ✅ FASE 3: Injetar Memória Factual (Contexto de Análises Passadas)
-	if s.context != nil {
-		factualContext, err := s.context.GetContextSummary(ctx, idosoID)
-		if err != nil {
-			log.Printf("⚠️ Erro ao recuperar contexto factual: %v", err)
-		} else if factualContext != "" {
-			instructions += "\n" + factualContext
-			log.Printf("📚 Contexto factual injetado (%d chars)", len(factualContext))
-		}
+	// 🧠 MEMÓRIA & CONTEXTO INTEGRADO (CÉREBRO DIGITAL)
+	// Substitui antiga lógica fragmentada pelo UnifiedRetrieval
+	instructions, err := s.brain.GetSystemPrompt(ctx, idosoID)
+	if err != nil {
+		log.Printf("⚠️ Erro ao gerar prompt unificado: %v. Usando fallback.", err)
+		instructions = s.BuildInstructions(idosoID) // Fallback APENAS se o cérebro falhar
+	} else {
+		log.Printf("🧠 Contexto Unificado (RSI) gerado com sucesso (%d chars)", len(instructions))
 	}
 
 	// ✅ FASE 4.2: Configurar Tools
@@ -820,7 +813,7 @@ func (s *SignalingServer) createSession(sessionID, cpf string, idosoID int64, no
 		"voiceName": voiceName,
 	}
 
-	if err := geminiClient.SendSetup(instructions, voiceSettings, memories, "", toolDefs); err != nil {
+	if err := geminiClient.SendSetup(instructions, voiceSettings, []string{}, "", toolDefs); err != nil {
 		cancel()
 		geminiClient.Close()
 		return nil, err
