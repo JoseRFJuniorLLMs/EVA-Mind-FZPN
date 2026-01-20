@@ -84,5 +84,11 @@ func (c *Neo4jClient) ExecuteRead(ctx context.Context, cypher string, params map
 		return nil, err
 	}
 
-	return result.([]*neo4j.Record), nil
+	records := result.([]*neo4j.Record)
+	preview := cypher
+	if len(preview) > 100 {
+		preview = preview[:100] + "..."
+	}
+	log.Printf("🔍 [NEO4J] Leitura concluída: Query=\"%s\", Records=%d", preview, len(records))
+	return records, nil
 }

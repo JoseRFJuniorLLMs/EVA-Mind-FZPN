@@ -14,14 +14,20 @@ import (
 	"sync"
 	"time"
 
+	"eva-mind/internal/actions"
 	"eva-mind/internal/config"
 	"eva-mind/internal/database"
 	"eva-mind/internal/email"
 	"eva-mind/internal/gemini"
 	"eva-mind/internal/infrastructure/graph"
 	"eva-mind/internal/infrastructure/redis"
+	"eva-mind/internal/infrastructure/vector"
 	"eva-mind/internal/knowledge"
+	"eva-mind/internal/memory"
+	"eva-mind/internal/personality"
+	"eva-mind/internal/stories"
 	"eva-mind/internal/tools"
+	"eva-mind/pkg/types"
 
 	"eva-mind/internal/push"
 
@@ -96,17 +102,35 @@ type SignalingServer struct {
 	context       *knowledge.ContextService       // ✅ NOVO: Factual Memory
 	tools         *tools.ToolsHandler             // ✅ NOVO: Read-Only Tools
 	emailService  *email.EmailService             // ✅ NOVO: Phase 9 Fallback
-	cortex        *gemini.ToolsClient             // ✅ NOVO: Phase 10 Cortex
-	redis         *redis.Client
-	sessions      sync.Map
-	clients       sync.Map
+
+	// Zeta / Gap 2 components
+	zetaRouter         *personality.ZetaRouter
+	storiesRepo        *stories.Repository
+	personalityService *personality.PersonalityService
+	cortex             *gemini.ToolsClient // ✅ NOVO: Phase 10 Cortex
+
+	// Services for Memory Saver
+	qdrantClient     *vector.QdrantClient
+	embeddingService *memory.EmbeddingService
+	graphStore       *memory.GraphStore
+	redis            *redis.Client
+	sessions         sync.Map
+	clients          sync.Map
 }
 
-func NewSignalingServer(cfg *config.Config, db *sql.DB, pushService *push.FirebaseService) *SignalingServer {
+func NewSignalingServer(
+	cfg *config.Config,
+	db *sql.DB,
+	pushService *push.FirebaseService,
+	qdrant *vector.QdrantClient,
+	embedder *memory.EmbeddingService,
+) *SignalingServer {
 	server := &SignalingServer{
-		cfg:         cfg,
-		db:          db,
-		pushService: pushService,
+		cfg:              cfg,
+		db:               db,
+		pushService:      pushService,
+		qdrantClient:     qdrant,
+		embeddingService: embedder,
 	}
 
 	log.Printf("🚀 Signaling Server em modo VOZ PURA (Tools desabilitadas)")
@@ -776,7 +800,7 @@ func (s *SignalingServer) createSession(sessionID, cpf string, idosoID int64, no
 	memories := s.GetRecentMemories(idosoID)
 	log.Printf("🧠 Carregando %d memórias episódicas para o contexto", len(memories))
 
-	instructions := BuildInstructions(idosoID, s.db)
+	instructions := s.BuildInstructions(idosoID)
 
 	// ✅ FASE 3: Injetar Memória Factual (Contexto de Análises Passadas)
 	if s.context != nil {
@@ -949,7 +973,7 @@ func (s *SignalingServer) analyzeAndSaveConversation(idosoID int64) {
 			analysis.RecommendedAction,
 		)
 
-		err := gemini.AlertFamily(s.db, s.pushService, s.emailService, idosoID, alertMsg)
+		err := actions.AlertFamily(s.db, s.pushService, s.emailService, idosoID, alertMsg)
 		if err != nil {
 			log.Printf("❌ [ANÁLISE] Erro ao alertar família: %v", err)
 		} else {
@@ -1076,7 +1100,8 @@ func (s *SignalingServer) sendError(conn *websocket.Conn, errMsg string) {
 	})
 }
 
-func BuildInstructions(idosoID int64, db *sql.DB) string {
+func (s *SignalingServer) BuildInstructions(idosoID int64) string {
+	db := s.db
 	nomeDefault := "Paciente"
 	// 1. QUERY RESILIENTE: Buscar apenas o essencial primeiro
 	query := `
@@ -1101,7 +1126,7 @@ func BuildInstructions(idosoID int64, db *sql.DB) string {
 
 	// ✅ Campos fixos para evitar crash/missing
 	var mobilidade string = "Não informada"
-	var limitacoesVisuais, familiarPrincipal, contatoEmergencia, medicoResponsavel, sentimento, notasGerais sql.NullString
+	var limitacoesVisuais, familiarPrincipal, contatoEmergencia, medicoResponsavel, notasGerais sql.NullString
 	var limitacoesAuditivas, usaAparelhoAuditivo, ambienteRuidoso sql.NullBool
 
 	err := db.QueryRow(query, idosoID).Scan(
@@ -1334,8 +1359,27 @@ func BuildInstructions(idosoID int64, db *sql.DB) string {
 	3. Recomende que ele NÃO tome nada sem falar com o médico responsável: %s.
 	`, getString(medicoResponsavel, "médico cadastrado"))
 
-	// 6. ANEXAR DOSSIÊ AO FINAL
-	finalInstructions := instructions + agentProtocol + safetyProtocol + dossier
+	// 6. Zeta Story Engine (Gap 2)
+	var storySection string
+	// Fetch personality state for emotion
+	if state, err := s.personalityService.GetState(context.Background(), idosoID); err == nil {
+		// Mock profile for now (or fetch from DB if needed)
+		profile := &types.IdosoProfile{ID: idosoID, Name: nome}
+
+		if story, directive, err := s.zetaRouter.SelectIntervention(context.Background(), idosoID, state.DominantEmotion, profile); err == nil && story != nil {
+			storySection = fmt.Sprintf(`
+📚 INTERVENÇÃO NARRATIVA (ZETA ENGINE):
+%s
+TÍTULO: %s
+CONTEÚDO: "%s"
+MORAL: %s
+INSTRUÇÃO: %s
+`, directive, story.Title, story.Content, story.Moral, directive)
+		}
+	}
+
+	// 7. ANEXAR DOSSIÊ E HISTÓRIA AO FINAL
+	finalInstructions := instructions + agentProtocol + safetyProtocol + dossier + storySection
 
 	log.Printf("✅ [BuildInstructions] Instruções finais geradas (%d chars)", len(finalInstructions))
 	return finalInstructions

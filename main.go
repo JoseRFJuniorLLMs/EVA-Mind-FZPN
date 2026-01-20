@@ -36,8 +36,10 @@ import (
 	"eva-mind/internal/scheduler"
 	"eva-mind/internal/sheets"
 	"eva-mind/internal/signaling"
+	"eva-mind/internal/stories"
 	"eva-mind/internal/transnar"
 	"eva-mind/internal/youtube"
+	"eva-mind/pkg/types"
 
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
@@ -65,6 +67,11 @@ type SignalingServer struct {
 	signifierService  *lacan.SignifierService
 	transnarEngine    *transnar.Engine // NEW: TransNAR
 	personalityRouter *personality.PersonalityRouter
+	storiesRepo       *stories.Repository
+	zetaRouter        *personality.ZetaRouter
+
+	// Fix 2: Qdrant Client
+	qdrantClient *vector.QdrantClient
 }
 
 type PCMClient struct {
@@ -80,7 +87,9 @@ type PCMClient struct {
 	cancel       context.CancelFunc
 	lastActivity time.Time
 	audioCount   int64
+	audioCount   int64
 	LatentDesire *transnar.DesireInference // NEW: TransNAR desire context
+	CurrentStory *types.TherapeuticStory   // 📖 Zeta Engine Story
 }
 
 var (
@@ -96,11 +105,17 @@ var (
 	}
 )
 
-func NewSignalingServer(cfg *config.Config, db *database.DB, neo4jClient *graph.Neo4jClient, pushService *push.FirebaseService, cal *calendar.Service) *SignalingServer {
+func NewSignalingServer(
+	cfg *config.Config,
+	db *database.DB,
+	neo4jClient *graph.Neo4jClient,
+	pushService *push.FirebaseService,
+	cal *calendar.Service,
+	qdrant *vector.QdrantClient,
+) *SignalingServer {
 	// Inicializar serviços de memória
 	embeddingService := memory.NewEmbeddingService(cfg.GoogleAPIKey)
 	memoryStore := memory.NewMemoryStore(db.GetConnection())
-	retrievalService := memory.NewRetrievalService(db.GetConnection(), embeddingService)
 	metadataAnalyzer := memory.NewMetadataAnalyzer(cfg.GoogleAPIKey)
 
 	// Inicializar serviço de personalidade
@@ -125,17 +140,26 @@ func NewSignalingServer(cfg *config.Config, db *database.DB, neo4jClient *graph.
 		log.Println("✅ Qdrant Vector DB connected")
 	}
 
+	retrievalService := memory.NewRetrievalService(db.GetConnection(), embeddingService, qdrantClient)
+
 	// Initialize FDPN Engine (Fractal Dynamic Priming Network)
 	fdpnEngine := memory.NewFDPNEngine(neo4jClient, redisClient, qdrantClient)
 
 	signifierService := lacan.NewSignifierService(neo4jClient)
 
 	// Initialize TransNAR Engine (Transference Narrative Reasoning)
+	// Initialize TransNAR Engine (Transference Narrative Reasoning)
 	transnarEngine := transnar.NewEngine(signifierService, personalityRouter, fdpnEngine)
+
+	// ✅ Zeta Story Engine (Gap 2)
+	storiesRepo := stories.NewRepository(qdrantClient, embeddingService)
+	zetaRouter := personality.NewZetaRouter(storiesRepo, personalityRouter)
+
 	log.Println("✅ TransNAR Engine initialized")
 	log.Printf("✅ Serviços de Memória Episódica inicializados")
 	log.Printf("✅ Serviço de Personalidade Afetiva inicializado")
 	log.Printf("✅ FZPN Engine (Phase 2) initialized")
+	log.Printf("✅ Zeta Story Engine initialized")
 
 	// 📊 STARTUP SUMMARY
 	log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -197,7 +221,7 @@ func NewSignalingServer(cfg *config.Config, db *database.DB, neo4jClient *graph.
 	}
 	log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	return &SignalingServer{
+	server := &SignalingServer{
 		upgrader: websocket.Upgrader{
 			CheckOrigin:     func(r *http.Request) bool { return true },
 			ReadBufferSize:  8192,
@@ -221,7 +245,80 @@ func NewSignalingServer(cfg *config.Config, db *database.DB, neo4jClient *graph.
 		signifierService:  signifierService,
 		transnarEngine:    transnarEngine,
 		personalityRouter: personalityRouter,
+		storiesRepo:       storiesRepo,
+		zetaRouter:        zetaRouter,
+		// Fix 2
+		qdrantClient: qdrant,
 	}
+
+	// 🧠 Iniciar Scheduler de Pattern Mining (Gap 1)
+	go server.startPatternMiningScheduler()
+
+	return server
+}
+
+func (s *SignalingServer) startPatternMiningScheduler() {
+	// Aguardar inicialização do sistema
+	time.Sleep(1 * time.Minute)
+
+	log.Printf("⛏️ [PATTERN_MINING] Scheduler iniciado (Intervalo: 1h)")
+	ticker := time.NewTicker(1 * time.Hour)
+
+	// Rodar imediatamente na startup
+	go s.runPatternMining()
+
+	for range ticker.C {
+		s.runPatternMining()
+	}
+}
+
+func (s *SignalingServer) runPatternMining() {
+	if s.neo4jClient == nil || s.db == nil {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	// Buscar todos os idosos ativos nos últimos 7 dias
+	query := `
+        SELECT DISTINCT idoso_id 
+        FROM episodic_memories 
+        WHERE timestamp > NOW() - INTERVAL '7 days'
+    `
+
+	rows, err := s.db.GetConnection().QueryContext(ctx, query)
+	if err != nil {
+		log.Printf("❌ [PATTERN_MINING] Query error: %v", err)
+		return
+	}
+	defer rows.Close()
+
+	miner := memory.NewPatternMiner(s.neo4jClient)
+
+	for rows.Next() {
+		var idosoID int64
+		if err := rows.Scan(&idosoID); err != nil {
+			continue
+		}
+
+		// Minerar padrões
+		patterns, err := miner.MineRecurrentPatterns(ctx, idosoID, 3) // min 3 ocorrências
+		if err != nil {
+			log.Printf("⚠️ [PATTERN_MINING] Error for idoso %d: %v", idosoID, err)
+			continue
+		}
+
+		if len(patterns) > 0 {
+			log.Printf("🔍 [PATTERN_MINING] Idoso %d: Found %d patterns", idosoID, len(patterns))
+
+			// Materializar como nós no grafo
+			if err := miner.CreatePatternNodes(ctx, idosoID); err != nil {
+				log.Printf("⚠️ [PATTERN_MINING] Failed to create nodes: %v", err)
+			}
+		}
+	}
+
 }
 
 func main() {
@@ -302,7 +399,7 @@ func main() {
 		log.Printf("✅ Neo4j initialized")
 	}
 
-	signalingServer = NewSignalingServer(cfg, db, neo4jClient, pushService, calService)
+	signalingServer = NewSignalingServer(cfg, db, neo4jClient, pushService, calService, qdrantClient)
 
 	sch, err := scheduler.NewScheduler(cfg, db.GetConnection())
 	if err != nil {
@@ -735,8 +832,18 @@ func (s *SignalingServer) setupGeminiSession(client *PCMClient, voiceName string
 	relationshipContext := signaling.BuildInstructions(client.IdosoID, s.db.GetConnection())
 	lacanState += "\n" + relationshipContext
 
+	// 🧠 Pattern Mining (Gap 1)
+	miner := memory.NewPatternMiner(s.neo4jClient)
+	patterns, err := miner.MineRecurrentPatterns(client.ctx, client.IdosoID, 3)
+	if err != nil {
+		log.Printf("⚠️ Pattern Mining error: %v", err)
+		patterns = nil
+	} else if len(patterns) > 0 {
+		log.Printf("🔍 [Patterns] Detected %d patterns for user %d", len(patterns), client.IdosoID)
+	}
+
 	// ⚡ BUILD FINAL PROMPT (Co-Intelligence)
-	instructions := gemini.BuildSystemPrompt(currentType, lacanState, medicalContext)
+	instructions := gemini.BuildSystemPrompt(currentType, lacanState, medicalContext, patterns, nil)
 
 	log.Printf("🚀 Iniciando sessão Gemini (Co-Intelligence Mode)...")
 	// Passamos nil em memories e instructions antiga porque tudo agora está no System Prompt unificado

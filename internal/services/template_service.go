@@ -215,7 +215,7 @@ Preocupações recentes:
 {{end}}
 {{end}}
 
-Taxa de adesão à medicação: {{printf "%.0f" .TaxaAdesao}}%%
+Taxa de adesão à medicação: {{printf "%%.0f" .TaxaAdesao}}%%
 `, data.NomeIdoso, data.Idade, data.NivelCognitivo, data.TomVoz)
 }
 

@@ -3,6 +3,7 @@ package vector
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/qdrant/go-client/qdrant"
 	"google.golang.org/grpc"
@@ -80,6 +81,7 @@ func (q *QdrantClient) Upsert(
 		return fmt.Errorf("failed to upsert points: %w", err)
 	}
 
+	log.Printf("📥 [QDRANT] Upsert concluído: Coleção=%s, Pontos=%d", collectionName, len(points))
 	return nil
 }
 
@@ -107,6 +109,7 @@ func (q *QdrantClient) Search(
 		return nil, fmt.Errorf("failed to search: %w", err)
 	}
 
+	log.Printf("🔍 [QDRANT] Busca concluída: Coleção=%s, Resultados=%d", collectionName, len(result.Result))
 	return result.Result, nil
 }
 

@@ -12,6 +12,7 @@ import (
 
 const (
 	geminiEmbeddingEndpoint = "https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent"
+	expectedDimension       = 768 // ✅ CONSTANTE CRÍTICA
 )
 
 // EmbeddingService gera embeddings usando Gemini API
@@ -94,6 +95,20 @@ func (e *EmbeddingService) GenerateEmbedding(ctx context.Context, text string) (
 
 	if len(result.Embedding.Values) == 0 {
 		return nil, fmt.Errorf("embedding vazio retornado pela API")
+	}
+
+	// ✅ VALIDAÇÃO CRÍTICA DE DIMENSÃO
+	actualDim := len(result.Embedding.Values)
+	if actualDim != expectedDimension {
+		return nil, fmt.Errorf(
+			"❌ DIMENSION MISMATCH DETECTED!\n"+
+				"   Expected: %d (Postgres schema)\n"+
+				"   Got: %d (Gemini API)\n"+
+				"   This will cause ALL searches to fail!\n"+
+				"   Run migration: migrations/004_fix_embedding_dimension.sql",
+			expectedDimension,
+			actualDim,
+		)
 	}
 
 	return result.Embedding.Values, nil

@@ -50,6 +50,8 @@ func (db *DB) GetRecentAnalyses(idosoID int64, limit int) ([]GeminiAnalysis, err
 	}
 	defer rows.Close()
 
+	log.Printf("🔍 [POSTGRES] Buscando análises recentes: Idoso=%d, Limit=%d", idosoID, limit)
+
 	var analyses []GeminiAnalysis
 	for rows.Next() {
 		var a GeminiAnalysis

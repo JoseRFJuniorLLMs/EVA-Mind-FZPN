@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"eva-mind/internal/actions" // ✅ NEW IMPORT
 	"eva-mind/internal/config"
 	"eva-mind/internal/gemini"
 	"eva-mind/internal/logger"
@@ -153,7 +154,7 @@ func (s *AnalysisService) handleUrgentAlert(idosoID int64, analysis *gemini.Conv
 		analysis.RecommendedAction,
 	)
 
-	err := gemini.AlertFamily(s.db, s.pushService, idosoID, alertMsg)
+	err := actions.AlertFamily(s.db, s.pushService, nil, idosoID, alertMsg)
 	if err != nil {
 		s.log.Error().Err(err).Msg("Erro ao alertar família")
 	} else {

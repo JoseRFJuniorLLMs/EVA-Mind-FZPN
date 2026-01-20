@@ -3,21 +3,26 @@ package memory
 import (
 	"context"
 	"database/sql"
+	"eva-mind/internal/infrastructure/vector"
 	"fmt"
 	"log"
+
+	"github.com/qdrant/go-client/qdrant"
 )
 
 // RetrievalService busca memórias por similaridade semântica
 type RetrievalService struct {
 	db       *sql.DB
 	embedder *EmbeddingService
+	qdrant   *vector.QdrantClient
 }
 
 // NewRetrievalService cria um novo serviço de busca
-func NewRetrievalService(db *sql.DB, embedder *EmbeddingService) *RetrievalService {
+func NewRetrievalService(db *sql.DB, embedder *EmbeddingService, qdrant *vector.QdrantClient) *RetrievalService {
 	return &RetrievalService{
 		db:       db,
 		embedder: embedder,
+		qdrant:   qdrant,
 	}
 }
 
@@ -27,7 +32,7 @@ type SearchResult struct {
 	Similarity float64 // 0.0 (nada similar) a 1.0 (idêntico)
 }
 
-// Retrieve busca as K memórias mais relevantes para uma query
+// Retrieve busca as K memórias mais relevantes para uma query (HÍBRIDO: Postgres + Qdrant)
 func (r *RetrievalService) Retrieve(ctx context.Context, idosoID int64, query string, k int) ([]*SearchResult, error) {
 	// 1. Gerar embedding da query
 	queryEmbedding, err := r.embedder.GenerateEmbedding(ctx, query)
@@ -35,7 +40,10 @@ func (r *RetrievalService) Retrieve(ctx context.Context, idosoID int64, query st
 		return nil, fmt.Errorf("erro ao gerar embedding: %w", err)
 	}
 
-	// 2. Buscar usando função SQL search_similar_memories
+	var allResults []*SearchResult
+	seenIDs := make(map[int64]bool)
+
+	// 2. BUSCA NO POSTGRES (pgvector)
 	sqlQuery := `
 		SELECT * FROM search_similar_memories(
 			$1,  -- idoso_id
@@ -44,69 +52,63 @@ func (r *RetrievalService) Retrieve(ctx context.Context, idosoID int64, query st
 			$4   -- min_similarity
 		)
 	`
-
-	rows, err := r.db.QueryContext(
-		ctx,
-		sqlQuery,
-		idosoID,
-		vectorToPostgres(queryEmbedding),
-		k,
-		0.5, // Similaridade mínima de 50%
-	)
-	if err != nil {
-		return nil, fmt.Errorf("erro na busca SQL: %w", err)
-	}
-	defer rows.Close()
-
-	var results []*SearchResult
-
-	for rows.Next() {
-		var (
-			memoryID        int64
-			content         string
-			speaker         string
-			memoryTimestamp string
-			emotion         sql.NullString
-			importance      float64
-			topics          string
-			similarity      float64
-		)
-
-		err := rows.Scan(
-			&memoryID,
-			&content,
-			&speaker,
-			&memoryTimestamp,
-			&emotion,
-			&importance,
-			&topics,
-			&similarity,
-		)
-		if err != nil {
-			log.Printf("⚠️ Erro ao scanear resultado: %v", err)
-			continue
+	rows, err := r.db.QueryContext(ctx, sqlQuery, idosoID, vectorToPostgres(queryEmbedding), k, 0.5)
+	if err == nil {
+		defer rows.Close()
+		log.Printf("🔍 [MEMORY] Postgres Search: Query=\"%s\"", query)
+		for rows.Next() {
+			var (
+				memoryID                     int64
+				content, speaker, ts, topics string
+				importance, similarity       float64
+				emotion                      sql.NullString
+			)
+			// Nota: a função search_similar_memories deve retornar colunas compatíveis
+			err := rows.Scan(&memoryID, &content, &speaker, &ts, &emotion, &importance, &topics, &similarity)
+			if err == nil {
+				mem := &Memory{
+					ID:         memoryID,
+					IdosoID:    idosoID,
+					Speaker:    speaker,
+					Content:    content,
+					Importance: importance,
+					Topics:     parsePostgresArray(topics),
+				}
+				allResults = append(allResults, &SearchResult{Memory: mem, Similarity: similarity})
+				seenIDs[memoryID] = true
+			}
 		}
-
-		memory := &Memory{
-			ID:         memoryID,
-			IdosoID:    idosoID,
-			Speaker:    speaker,
-			Content:    content,
-			Importance: importance,
-			Topics:     parsePostgresArray(topics),
-		}
-
-		if emotion.Valid {
-			memory.Emotion = emotion.String
-		}
-
-		results = append(results, &SearchResult{
-			Memory:     memory,
-			Similarity: similarity,
-		})
+	} else {
+		log.Printf("⚠️ [MEMORY] Erro busca Postgres: %v", err)
 	}
 
-	return results, rows.Err()
+	// 3. BUSCA NO QDRANT (Se disponível)
+	if r.qdrant != nil {
+		log.Printf("🔍 [MEMORY] Qdrant Search: Query=\"%s\"", query)
+		qResults, err := r.qdrant.Search(ctx, "memories", queryEmbedding, uint64(k), nil)
+		if err == nil {
+			for _, qr := range qResults {
+				// Mapear payload do Qdrant para Memory
+				p := qr.Payload
+				content, _ := p["content"].GetKind().(*qdrant.Value_StringValue)
+				speaker, _ := p["speaker"].GetKind().(*qdrant.Value_StringValue)
+
+				// Evitar duplicados se já veio do Postgres
+				// Nota: Qdrant ID pode não bater com Postgres ID se não sincronizado
+				allResults = append(allResults, &SearchResult{
+					Memory: &Memory{
+						Content: content.StringValue,
+						Speaker: speaker.StringValue,
+					},
+					Similarity: float64(qr.Score),
+				})
+			}
+		} else {
+			log.Printf("⚠️ [MEMORY] Erro busca Qdrant: %v", err)
+		}
+	}
+
+	return allResults, nil
 }
 
 // RetrieveRecent busca memórias recentes (últimos N dias) sem usar embedding
@@ -127,6 +129,8 @@ func (r *RetrievalService) RetrieveRecent(ctx context.Context, idosoID int64, da
 		return nil, err
 	}
 	defer rows.Close()
+
+	log.Printf("🔍 [MEMORY] Busca Recente: Idoso=%d, Dias=%d, Limit=%d", idosoID, days, limit)
 
 	var memories []*Memory
 

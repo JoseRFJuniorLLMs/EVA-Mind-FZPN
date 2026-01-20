@@ -1,9 +1,11 @@
 package tools
 
 import (
+	"eva-mind/internal/actions" // ✅ NEW IMPORT
 	"eva-mind/internal/database"
 	"eva-mind/internal/email"
-	"eva-mind/internal/gemini"
+
+	// "eva-mind/internal/gemini" // ❌ REMOVED IMPORTS to break cycle
 	"eva-mind/internal/push"
 	"fmt"
 	"log"
@@ -35,7 +37,7 @@ func (h *ToolsHandler) ExecuteTool(name string, args map[string]interface{}, ido
 		if severity == "" {
 			severity = "alta"
 		}
-		err := gemini.AlertFamilyWithSeverity(h.db.Conn, h.pushService, h.emailService, idosoID, reason, severity)
+		err := actions.AlertFamilyWithSeverity(h.db.Conn, h.pushService, h.emailService, idosoID, reason, severity)
 		if err != nil {
 			return map[string]interface{}{"error": err.Error()}, nil
 		}
@@ -43,7 +45,7 @@ func (h *ToolsHandler) ExecuteTool(name string, args map[string]interface{}, ido
 
 	case "confirm_medication":
 		medicationName, _ := args["medication_name"].(string)
-		err := gemini.ConfirmMedication(h.db.Conn, h.pushService, idosoID, medicationName)
+		err := actions.ConfirmMedication(h.db.Conn, h.pushService, idosoID, medicationName)
 		if err != nil {
 			return map[string]interface{}{"error": err.Error()}, nil
 		}
@@ -53,7 +55,7 @@ func (h *ToolsHandler) ExecuteTool(name string, args map[string]interface{}, ido
 		timestamp, _ := args["timestamp"].(string)
 		tipo, _ := args["type"].(string)
 		description, _ := args["description"].(string)
-		err := gemini.ScheduleAppointment(h.db.Conn, idosoID, timestamp, tipo, description)
+		err := actions.ScheduleAppointment(h.db.Conn, idosoID, timestamp, tipo, description)
 		if err != nil {
 			return map[string]interface{}{"error": err.Error()}, nil
 		}

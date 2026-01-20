@@ -67,21 +67,47 @@ func (g *GraphStore) StoreCausalMemory(ctx context.Context, memory *Memory) erro
 		for _, topic := range memory.Topics {
 			topicQuery := `
 				MATCH (e:Event {id: $eventId})
+				MATCH (p:Person {id: $idosoId})
+				
 				MERGE (t:Topic {name: $topic})
+				ON CREATE SET t.created = datetime()
+				
+				// Conectar Event -> Topic
 				MERGE (e)-[:RELATED_TO]->(t)
+				
+				// ✅ Conectar Person -> Topic COM CONTADOR
+				MERGE (p)-[r:MENTIONED]->(t)
+				ON CREATE SET r.count = 1, r.first_mention = datetime()
+				ON MATCH SET 
+					r.count = r.count + 1,
+					r.last_mention = datetime()
 			`
 			topicParams := map[string]interface{}{
 				"eventId": params["id"],
+				"idosoId": memory.IdosoID,
 				"topic":   topic,
 			}
 			g.client.ExecuteWrite(ctx, topicQuery, topicParams)
 		}
 	}
 
-	// 3. Conectar Sintomas (Se houver na análise de emoção ou conteúdo)
-	// (Exemplo hipotético baseado no manifesto)
-	// Se tivéssemos extraído sintomas, faríamos:
-	// MERGE (s:Symptom {name: "Tontura"}) MERGE (p)-[:FEELS]->(s) MERGE (e)-[:REPORTS]->(s)
+	// 3. Conectar Emoções (Se houver na análise)
+	if memory.Emotion != "" && memory.Emotion != "neutro" {
+		emotionQuery := `
+			MATCH (p:Person {id: $idosoId})
+			MERGE (em:Emotion {name: $emotion})
+			MERGE (p)-[r:FEELS]->(em)
+			ON CREATE SET r.count = 1, r.first_felt = datetime()
+			ON MATCH SET 
+				r.count = r.count + 1,
+				r.last_felt = datetime()
+		`
+		emotionParams := map[string]interface{}{
+			"idosoId": memory.IdosoID,
+			"emotion": memory.Emotion,
+		}
+		g.client.ExecuteWrite(ctx, emotionQuery, emotionParams)
+	}
 
 	return nil
 }
