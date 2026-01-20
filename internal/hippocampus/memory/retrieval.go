@@ -90,15 +90,22 @@ func (r *RetrievalService) Retrieve(ctx context.Context, idosoID int64, query st
 			for _, qr := range qResults {
 				// Mapear payload do Qdrant para Memory
 				p := qr.Payload
-				content, _ := p["content"].GetKind().(*qdrant.Value_StringValue)
-				speaker, _ := p["speaker"].GetKind().(*qdrant.Value_StringValue)
+
+				// Nil checks para evitar panic
+				var contentStr, speakerStr string
+				if contentVal, ok := p["content"].GetKind().(*qdrant.Value_StringValue); ok && contentVal != nil {
+					contentStr = contentVal.StringValue
+				}
+				if speakerVal, ok := p["speaker"].GetKind().(*qdrant.Value_StringValue); ok && speakerVal != nil {
+					speakerStr = speakerVal.StringValue
+				}
 
 				// Evitar duplicados se já veio do Postgres
 				// Nota: Qdrant ID pode não bater com Postgres ID se não sincronizado
 				allResults = append(allResults, &SearchResult{
 					Memory: &Memory{
-						Content: content.StringValue,
-						Speaker: speaker.StringValue,
+						Content: contentStr,
+						Speaker: speakerStr,
 					},
 					Similarity: float64(qr.Score),
 				})

@@ -46,6 +46,13 @@ import (
 	_ "github.com/lib/pq"
 )
 
+// Version info - set at build time
+var (
+	Version   = "dev"
+	GitCommit = "unknown"
+	BuildTime = "unknown"
+)
+
 type SignalingServer struct {
 	upgrader           websocket.Upgrader
 	clients            map[string]*PCMClient
@@ -485,6 +492,12 @@ func main() {
 		port = "8080"
 	}
 
+	log.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	log.Printf("🚀 EVA-Mind FZPN")
+	log.Printf("   Version: %s", Version)
+	log.Printf("   Commit: %s", GitCommit)
+	log.Printf("   Built: %s", BuildTime)
+	log.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	log.Printf("✅ Server ready on port %s", port)
 	log.Fatal(http.ListenAndServe(":"+port, corsMiddleware(router)))
 }
