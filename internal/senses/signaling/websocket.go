@@ -798,13 +798,30 @@ func (s *SignalingServer) createSession(sessionID, cpf string, idosoID int64, no
 
 	// 🧠 MEMÓRIA & CONTEXTO INTEGRADO (CÉREBRO DIGITAL)
 	// Substitui antiga lógica fragmentada pelo UnifiedRetrieval
+	log.Printf("🧠 [DEBUG] Chamando GetSystemPrompt para idoso %d", idosoID)
 	instructions, err := s.brain.GetSystemPrompt(ctx, idosoID)
 	if err != nil {
-		log.Printf("⚠️ Erro ao gerar prompt unificado: %v. Usando fallback.", err)
-		instructions = s.BuildInstructions(idosoID) // Fallback APENAS se o cérebro falhar
-	} else {
-		log.Printf("🧠 Contexto Unificado (RSI) gerado com sucesso (%d chars)", len(instructions))
+		log.Printf("❌ [CRÍTICO] GetSystemPrompt falhou: %v", err)
+		log.Printf("   Idoso ID: %d", idosoID)
+		log.Printf("   Context error: %v", ctx.Err())
+		log.Printf("   Brain service: %v", s.brain != nil)
+
+		// REMOVIDO: Fallback para BuildInstructions (código legado com bug)
+		// O sistema DEVE usar UnifiedRetrieval. Se falhar, a sessão deve abortar.
+		cancel()
+		geminiClient.Close()
+		return nil, fmt.Errorf("falha ao gerar prompt unificado: %w", err)
 	}
+
+	log.Printf("✅ [DEBUG] Contexto Unificado (RSI) gerado com sucesso")
+	log.Printf("   - Tamanho: %d chars", len(instructions))
+
+	// Mostrar primeiras 300 chars para debug
+	preview := instructions
+	if len(preview) > 300 {
+		preview = preview[:300] + "..."
+	}
+	log.Printf("   - Início do prompt: %s", preview)
 
 	// ✅ FASE 4.2: Configurar Tools
 	toolDefs := tools.GetToolDefinitions()
