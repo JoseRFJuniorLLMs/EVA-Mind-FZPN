@@ -157,11 +157,11 @@ func (u *UnifiedRetrieval) BuildUnifiedContext(
 func (u *UnifiedRetrieval) getMedicalContextAndName(ctx context.Context, idosoID int64) (string, string) {
 	var name string
 
-	// 1. BUSCAR NOME DO POSTGRES (tabela agendamentos) - PRIORIDADE
-	nameQuery := `SELECT nome_idoso FROM agendamentos WHERE idoso_id = $1 LIMIT 1`
+	// 1. BUSCAR NOME DA TABELA IDOSOS (usando idoso_id)
+	nameQuery := `SELECT nome FROM idosos WHERE id = $1 LIMIT 1`
 	err := u.db.QueryRowContext(ctx, nameQuery, idosoID).Scan(&name)
 	if err != nil {
-		log.Printf("⚠️ [UnifiedRetrieval] Nome não encontrado no Postgres agendamentos: %v", err)
+		log.Printf("⚠️ [UnifiedRetrieval] Nome não encontrado na tabela idosos: %v", err)
 		name = ""
 	} else {
 		log.Printf("✅ [UnifiedRetrieval] Nome encontrado: '%s'", name)
