@@ -251,46 +251,81 @@ func (u *UnifiedRetrieval) getRecentMemories(ctx context.Context, idosoID int64,
 
 // retrieveAgendamentos recupera próximos agendamentos (Real/Pragmatico)
 func (u *UnifiedRetrieval) retrieveAgendamentos(ctx context.Context, idosoID int64) string {
-	// Schema auditado:
-	// id, idoso_id, tipo (as 'tipo_atividade'?), data_hora_agendada, status, dados_tarefa (json)
+	// Buscar TODOS os agendamentos ativos (incluindo medicamentos recorrentes)
 	query := `
 		SELECT 
 			tipo, 
 			dados_tarefa::text, 
-			to_char(data_hora_agendada, 'DD/MM HH24:MI') as data_fmt
+			to_char(data_hora_agendada, 'DD/MM HH24:MI') as data_fmt,
+			status
 		FROM agendamentos
 		WHERE idoso_id = $1 
-		  AND data_hora_agendada > NOW()
-		  AND status = 'agendado'
-		ORDER BY data_hora_agendada ASC
-		LIMIT 3
+		  AND (
+			  -- Agendamentos futuros
+			  (data_hora_agendada > NOW() AND status = 'agendado')
+			  OR
+			  -- Medicamentos recorrentes (independente da data)
+			  (tipo = 'medicamento' AND status IN ('agendado', 'ativo'))
+		  )
+		ORDER BY 
+			CASE WHEN tipo = 'medicamento' THEN 0 ELSE 1 END,
+			data_hora_agendada ASC
+		LIMIT 10
 	`
 
 	rows, err := u.db.QueryContext(ctx, query, idosoID)
 	if err != nil {
+		log.Printf("⚠️ [UnifiedRetrieval] Erro ao buscar agendamentos: %v", err)
 		return ""
 	}
 	defer rows.Close()
 
-	var agendamentos []string
+	var medicamentos []string
+	var outros []string
+
 	for rows.Next() {
-		var tipo, dadosTarefa, dataFmt string
-		if err := rows.Scan(&tipo, &dadosTarefa, &dataFmt); err == nil {
-			// Tenta limpar o JSON de dados_tarefa se possível ou usar bruto
+		var tipo, dadosTarefa, dataFmt, status string
+
+		if err := rows.Scan(&tipo, &dadosTarefa, &dataFmt, &status); err == nil {
+			// Parse dados_tarefa JSON para extrair informações úteis
 			desc := dadosTarefa
-			if len(desc) > 50 {
-				desc = desc[:50] + "..."
+			if len(desc) > 100 {
+				desc = desc[:100] + "..."
 			}
-			line := fmt.Sprintf("[%s] %s - %s", dataFmt, tipo, desc)
-			agendamentos = append(agendamentos, line)
+
+			if tipo == "medicamento" {
+				line := fmt.Sprintf("💊 %s (Horário: %s)", desc, dataFmt)
+				medicamentos = append(medicamentos, line)
+			} else {
+				line := fmt.Sprintf("📅 [%s] %s - %s", dataFmt, tipo, desc)
+				outros = append(outros, line)
+			}
 		}
 	}
 
-	if len(agendamentos) == 0 {
+	if len(medicamentos) == 0 && len(outros) == 0 {
 		return ""
 	}
 
-	return "\n📅 PRÓXIMOS AGENDAMENTOS (Lembretes):\n" + strings.Join(agendamentos, "\n") + "\n"
+	var builder strings.Builder
+	builder.WriteString("\n📋 AGENDAMENTOS E MEDICAMENTOS:\n\n")
+
+	if len(medicamentos) > 0 {
+		builder.WriteString("💊 MEDICAMENTOS:\n")
+		for _, med := range medicamentos {
+			builder.WriteString(med + "\n")
+		}
+		builder.WriteString("\n")
+	}
+
+	if len(outros) > 0 {
+		builder.WriteString("📅 PRÓXIMOS COMPROMISSOS:\n")
+		for _, ag := range outros {
+			builder.WriteString(ag + "\n")
+		}
+	}
+
+	return builder.String()
 }
 
 // buildIntegratedPrompt constrói o prompt final integrando tudo
