@@ -127,7 +127,7 @@ func (e *EmbeddingService) GenerateBatch(ctx context.Context, texts []string) ([
 			return nil, fmt.Errorf("erro no texto %d: %w", i, err)
 		}
 		embeddings[i] = emb
-
+		
 		// Rate limiting: 10 requests/second
 		if i < len(texts)-1 {
 			time.Sleep(100 * time.Millisecond)

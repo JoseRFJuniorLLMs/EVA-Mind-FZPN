@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"eva-mind/internal/auth"
+	"eva-mind/internal/brain" // ✅ Brain Package
 	"eva-mind/internal/calendar"
 	"eva-mind/internal/config"
 	"eva-mind/internal/database"
@@ -35,7 +36,6 @@ import (
 	"eva-mind/internal/push"
 	"eva-mind/internal/scheduler"
 	"eva-mind/internal/sheets"
-	"eva-mind/internal/signaling"
 	"eva-mind/internal/stories"
 	"eva-mind/internal/transnar"
 	"eva-mind/internal/youtube"
@@ -72,6 +72,9 @@ type SignalingServer struct {
 
 	// Fix 2: Qdrant Client
 	qdrantClient *vector.QdrantClient
+
+	// 🧠 Brain (Core Logic)
+	brain *brain.Service
 }
 
 type PCMClient struct {
@@ -86,7 +89,6 @@ type PCMClient struct {
 	ctx          context.Context
 	cancel       context.CancelFunc
 	lastActivity time.Time
-	audioCount   int64
 	audioCount   int64
 	LatentDesire *transnar.DesireInference // NEW: TransNAR desire context
 	CurrentStory *types.TherapeuticStory   // 📖 Zeta Engine Story
@@ -131,19 +133,13 @@ func NewSignalingServer(
 		log.Printf("⚠️ Redis error: %v. FDPN will run in degraded mode (no L2 cache).", err)
 	}
 
-	// Qdrant Vector Database
-	qdrantClient, err := vector.NewQdrantClient(cfg.QdrantHost, cfg.QdrantPort)
-	if err != nil {
-		log.Printf("⚠️ Qdrant error: %v. FDPN will run without vector search.", err)
-		qdrantClient = nil // Allow graceful degradation
-	} else {
-		log.Println("✅ Qdrant Vector DB connected")
-	}
+	// Qdrant Vector Database (Injected)
+	qdrantClient := qdrant // Alias for local usage if needed, or use directly
 
-	retrievalService := memory.NewRetrievalService(db.GetConnection(), embeddingService, qdrantClient)
+	retrievalService := memory.NewRetrievalService(db.GetConnection(), embeddingService, qdrant)
 
 	// Initialize FDPN Engine (Fractal Dynamic Priming Network)
-	fdpnEngine := memory.NewFDPNEngine(neo4jClient, redisClient, qdrantClient)
+	fdpnEngine := memory.NewFDPNEngine(neo4jClient, redisClient, qdrant)
 
 	signifierService := lacan.NewSignifierService(neo4jClient)
 
@@ -250,6 +246,17 @@ func NewSignalingServer(
 		// Fix 2
 		qdrantClient: qdrant,
 	}
+
+	// 🧠 Initialize Brain
+	server.brain = brain.NewService(
+		db.GetConnection(),
+		qdrant,
+		fdpnEngine,
+		personalityService,
+		zetaRouter,
+		pushService,
+		embeddingService,
+	)
 
 	// 🧠 Iniciar Scheduler de Pattern Mining (Gap 1)
 	go server.startPatternMiningScheduler()
@@ -397,6 +404,15 @@ func main() {
 	} else {
 		defer neo4jClient.Close(context.Background())
 		log.Printf("✅ Neo4j initialized")
+	}
+
+	// Qdrant Vector Database (Fix 2: Init in main)
+	qdrantClient, err := vector.NewQdrantClient(cfg.QdrantHost, cfg.QdrantPort)
+	if err != nil {
+		log.Printf("⚠️ Qdrant error: %v. FDPN will run without vector search.", err)
+		qdrantClient = nil // Allow graceful degradation
+	} else {
+		log.Println("✅ Qdrant Vector DB connected")
 	}
 
 	signalingServer = NewSignalingServer(cfg, db, neo4jClient, pushService, calService, qdrantClient)
@@ -717,46 +733,29 @@ func (s *SignalingServer) setupGeminiSession(client *PCMClient, voiceName string
 			log.Printf("🔧 Tool call nativa: %s", name)
 			return s.handleToolCall(client, name, args)
 		},
-		// 📝 3. Callback de Transcrição (Dual-Model + AUTO-SAVE)
+		// 📝 3. Callback de Transcrição (Refactored to Brain)
 		func(role, text string) {
 			if role == "user" {
+				// Process User Speech (FDPN + Memory + TransNAR Hooks)
+				// Note: TransNAR and Lacan hooks still live here separately for now,
+				// or should be moved to Brain too?
+				// For now, let's keep specialized hooks here but move the core FDPN/Save to Brain.
+
 				go s.analyzeForTools(client, text)
 
-				// FZPN: Priming (FDPN Streaming)
-				if s.fdpnEngine != nil {
-					go func() {
-						// ⚡ FDPN Streaming Prime
-						err := s.fdpnEngine.StreamingPrime(client.ctx, strconv.FormatInt(client.IdosoID, 10), text)
-						if err != nil {
-							log.Printf("⚠️ FDPN Error: %v", err)
-						}
-					}()
-				}
+				// Brain: FDPN + Save User Memory
+				go s.brain.ProcessUserSpeech(client.ctx, client.IdosoID, text)
 
 				// TransNAR: Desire Inference (NEW)
 				if s.transnarEngine != nil {
 					go func() {
-						// Get current personality
-						currentType := personality.Type9 // Default
+						currentType := personality.Type9
 						if s.personalityRouter != nil {
-							// TODO: Get from personality state
 							currentType = personality.Type9
 						}
-
-						// Infer latent desire
-						desire := s.transnarEngine.InferDesire(
-							client.ctx,
-							client.IdosoID,
-							text,
-							currentType,
-						)
-
-						// If high confidence, inject into context
+						desire := s.transnarEngine.InferDesire(client.ctx, client.IdosoID, text, currentType)
 						if s.transnarEngine.ShouldInterpellate(desire) {
-							log.Printf("🧠 [TransNAR] Desejo latente: %s (%.0f%%) - %s",
-								desire.Desire, desire.Confidence*100, desire.Reasoning)
-
-							// Store in client context for next LLM call
+							log.Printf("🧠 [TransNAR] Desejo latente: %s", desire.Desire)
 							client.LatentDesire = desire
 						}
 					}()
@@ -765,16 +764,13 @@ func (s *SignalingServer) setupGeminiSession(client *PCMClient, voiceName string
 				// Lacan: Track Signifiers
 				if s.signifierService != nil {
 					go func() {
-						err := s.signifierService.TrackSignifiers(client.ctx, client.IdosoID, text)
-						if err != nil {
-							log.Printf("⚠️ Lacan Error: %v", err)
-						}
+						s.signifierService.TrackSignifiers(client.ctx, client.IdosoID, text)
 					}()
 				}
+			} else {
+				// Save Assistant Memory
+				go s.brain.SaveEpisodicMemory(client.IdosoID, role, text)
 			}
-
-			// AUTO-SAVE (ambos roles)
-			go s.saveAsMemory(client.IdosoID, role, text)
 		},
 	)
 
@@ -829,7 +825,7 @@ func (s *SignalingServer) setupGeminiSession(client *PCMClient, voiceName string
 	}
 
 	// Adicionar contexto de relacionamento ao Lacan State (já que é psíquico)
-	relationshipContext := signaling.BuildInstructions(client.IdosoID, s.db.GetConnection())
+	relationshipContext := s.brain.BuildSystemPrompt(client.IdosoID)
 	lacanState += "\n" + relationshipContext
 
 	// 🧠 Pattern Mining (Gap 1)
