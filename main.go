@@ -14,31 +14,31 @@ import (
 	"sync"
 	"time"
 
-	"eva-mind/internal/auth"
-	"eva-mind/internal/brain" // ✅ Brain Package
-	"eva-mind/internal/calendar"
-	"eva-mind/internal/config"
-	"eva-mind/internal/database"
-	"eva-mind/internal/docs"
-	"eva-mind/internal/drive"
-	"eva-mind/internal/gemini"
-	"eva-mind/internal/gmail"
-	"eva-mind/internal/googlefit"
-	"eva-mind/internal/infrastructure/cache"
-	"eva-mind/internal/infrastructure/graph"
-	"eva-mind/internal/infrastructure/vector"
-	"eva-mind/internal/lacan"
-	"eva-mind/internal/logger"
-	"eva-mind/internal/maps"
-	"eva-mind/internal/memory"
-	"eva-mind/internal/oauth"
-	"eva-mind/internal/personality"
-	"eva-mind/internal/push"
-	"eva-mind/internal/scheduler"
-	"eva-mind/internal/sheets"
-	"eva-mind/internal/stories"
-	"eva-mind/internal/transnar"
-	"eva-mind/internal/youtube"
+	"eva-mind/internal/brainstem/auth"
+	"eva-mind/internal/brainstem/config"
+	"eva-mind/internal/brainstem/database"
+	"eva-mind/internal/brainstem/infrastructure/cache"
+	"eva-mind/internal/brainstem/infrastructure/graph"
+	"eva-mind/internal/brainstem/infrastructure/vector"
+	"eva-mind/internal/brainstem/logger"
+	"eva-mind/internal/brainstem/oauth"
+	"eva-mind/internal/brainstem/push"
+	"eva-mind/internal/cortex/brain" // ✅ Brain Package
+	"eva-mind/internal/cortex/gemini"
+	"eva-mind/internal/cortex/lacan"
+	"eva-mind/internal/cortex/personality"
+	"eva-mind/internal/cortex/transnar"
+	"eva-mind/internal/hippocampus/memory"
+	"eva-mind/internal/hippocampus/stories"
+	"eva-mind/internal/motor/calendar"
+	"eva-mind/internal/motor/docs"
+	"eva-mind/internal/motor/drive"
+	"eva-mind/internal/motor/gmail"
+	"eva-mind/internal/motor/googlefit"
+	"eva-mind/internal/motor/maps"
+	"eva-mind/internal/motor/scheduler"
+	"eva-mind/internal/motor/sheets"
+	"eva-mind/internal/motor/youtube"
 	"eva-mind/pkg/types"
 
 	"github.com/gorilla/mux"
@@ -247,15 +247,17 @@ func NewSignalingServer(
 		qdrantClient: qdrant,
 	}
 
+	// Initialize Unified Retrieval (Lacanian RSI Engine)
+	unifiedRetrieval := lacan.NewUnifiedRetrieval(db.GetConnection(), neo4jClient, qdrantClient, cfg)
+
 	// 🧠 Initialize Brain
 	server.brain = brain.NewService(
 		db.GetConnection(),
 		qdrant,
-		fdpnEngine,
+		unifiedRetrieval,
 		personalityService,
 		zetaRouter,
 		pushService,
-		embeddingService,
 	)
 
 	// 🧠 Iniciar Scheduler de Pattern Mining (Gap 1)

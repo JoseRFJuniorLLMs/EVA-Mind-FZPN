@@ -1,0 +1,2808 @@
+package lacan
+
+import (
+	"context"
+	"encoding/json"
+	"eva-mind/internal/brainstem/config"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/qdrant/go-client/qdrant"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+)
+
+// EmbeddingService rastreia cadeias de significantes via embeddings semânticos
+// Implementa "L'instance de la lettre" - a letra que circula e se repete
+type EmbeddingService struct {
+	cfg           *config.Config
+	qdrantClient  *qdrant.Client
+	httpClient    *http.Client
+	collectionName string
+}
+
+// SignifierChain representa uma cadeia de significantes detectada
+type SignifierChain struct {
+	CoreSignifier  string    `json:"core_signifier"`   // Significante nuclear
+	RelatedWords   []string  `json:"related_words"`    // Palavras semanticamente próximas
+	EmotionalCharge float64  `json:"emotional_charge"` // Carga afetiva (0.0-1.0)
+	Frequency      int       `json:"frequency"`        // Vezes que apareceu
+	LastOccurrence time.Time `json:"last_occurrence"`
+	Contexts       []string  `json:"contexts"`         // Frases onde apareceu
+}
+
+// NewEmbeddingService cria serviço de embeddings
+func NewEmbeddingService(cfg *config.Config) (*EmbeddingService, error) {
+	// Conectar ao Qdrant
+	conn, err := grpc.Dial(
+		fmt.Sprintf("%s:%d", cfg.QdrantHost, cfg.QdrantPort),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to Qdrant: %w", err)
+	}
+
+	client := qdrant.NewClient(conn)
+
+	svc := &EmbeddingService{
+		cfg:            cfg,
+		qdrantClient:   client,
+		httpClient:     &http.Client{Timeout: 10 * time.Second},
+		collectionName: "signifier_chains",
+	}
+
+	// Criar coleção se não existir
+	if err := svc.ensureCollection(context.Background()); err != nil {
+		log.Printf("⚠️ Warning: Could not create Qdrant collection: %v", err)
+	}
+
+	return svc, nil
+}
+
+// ensureCollection garante que a coleção existe
+func (e *EmbeddingService) ensureCollection(ctx context.Context) error {
+	// Verificar se coleção existe
+	_, err := e.qdrantClient.GetCollection(ctx, &qdrant.GetCollectionRequest{
+		CollectionName: e.collectionName,
+	})
+
+	if err == nil {
+		return nil // Já existe
+	}
+
+	// Criar coleção (Gemini embeddings são 768 dimensões)
+	_, err = e.qdrantClient.CreateCollection(ctx, &qdrant.CreateCollection{
+		CollectionName: e.collectionName,
+		VectorsConfig: &qdrant.VectorsConfig{
+			Config: &qdrant.VectorsConfig_Params{
+				Params: &qdrant.VectorParams{
+					Size:     768, // Gemini text-embedding-004
+					Distance: qdrant.Distance_Cosine,
+				},
+			},
+		},
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to create collection: %w", err)
+	}
+
+	log.Printf("✅ Created Qdrant collection: %s", e.collectionName)
+	return nil
+}
+
+// GenerateEmbedding gera embedding usando Gemini API
+func (e *EmbeddingService) GenerateEmbedding(ctx context.Context, text string) ([]float32, error) {
+	url := fmt.Sprintf(
+		"https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=%s",
+		e.cfg.GoogleAPIKey,
+	)
+
+	payload := map[string]interface{}{
+		"model": "models/text-embedding-004",
+		"content": map[string]interface{}{
+			"parts": []map[string]string{
+				{"text": text},
+			},
+		},
+	}
+
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader(string(jsonData)))
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := e.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("embedding API error %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Embedding struct {
+			Values []float32 `json:"values"`
+		} `json:"embedding"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+
+	return result.Embedding.Values, nil
+}
+
+// TrackSignifierChain rastreia cadeia de significantes
+func (e *EmbeddingService) TrackSignifierChain(ctx context.Context, idosoID int64, text string, emotionalCharge float64) error {
+	// Gerar embedding do texto
+	embedding, err := e.GenerateEmbedding(ctx, text)
+	if err != nil {
+		return fmt.Errorf("failed to generate embedding: %w", err)
+	}
+
+	// Extrair palavras-chave emocionalmente carregadas
+	keywords := extractEmotionalKeywords(text)
+	if len(keywords) == 0 {
+		return nil // Nada a rastrear
+	}
+
+	// Criar ponto no Qdrant
+	pointID := uint64(time.Now().UnixNano())
+	
+	payload := map[string]interface{}{
+		"idoso_id":         idosoID,
+		"text":             text,
+		"keywords":         keywords,
+		"emotional_charge": emotionalCharge,
+		"timestamp":        time.Now().Unix(),
+	}
+
+	payloadMap := make(map[string]*qdrant.Value)
+	for k, v := range payload {
+		switch val := v.(type) {
+		case int64:
+			payloadMap[k] = &qdrant.Value{Kind: &qdrant.Value_IntegerValue{IntegerValue: val}}
+		case float64:
+			payloadMap[k] = &qdrant.Value{Kind: &qdrant.Value_DoubleValue{DoubleValue: val}}
+		case string:
+			payloadMap[k] = &qdrant.Value{Kind: &qdrant.Value_StringValue{StringValue: val}}
+		case []string:
+			listValues := make([]*qdrant.Value, len(val))
+			for i, s := range val {
+				listValues[i] = &qdrant.Value{Kind: &qdrant.Value_StringValue{StringValue: s}}
+			}
+			payloadMap[k] = &qdrant.Value{
+				Kind: &qdrant.Value_ListValue{
+					ListValue: &qdrant.ListValue{Values: listValues},
+				},
+			}
+		}
+	}
+
+	_, err = e.qdrantClient.Upsert(ctx, &qdrant.UpsertPoints{
+		CollectionName: e.collectionName,
+		Points: []*qdrant.PointStruct{
+			{
+				Id: &qdrant.PointId{
+					PointIdOptions: &qdrant.PointId_Num{Num: pointID},
+				},
+				Vectors: &qdrant.Vectors{
+					VectorsOptions: &qdrant.Vectors_Vector{
+						Vector: &qdrant.Vector{Data: embedding},
+					},
+				},
+				Payload: payloadMap,
+			},
+		},
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to upsert point: %w", err)
+	}
+
+	log.Printf("🔗 [QDRANT] Signifier chain tracked: idoso=%d, keywords=%v", idosoID, keywords)
+	return nil
+}
+
+// FindRelatedSignifiers busca significantes semanticamente relacionados
+func (e *EmbeddingService) FindRelatedSignifiers(ctx context.Context, idosoID int64, text string, limit int) ([]SignifierChain, error) {
+	// Gerar embedding da consulta
+	embedding, err := e.GenerateEmbedding(ctx, text)
+	if err != nil {
+		return nil, err
+	}
+
+	// Buscar pontos similares
+	searchResult, err := e.qdrantClient.Search(ctx, &qdrant.SearchPoints{
+		CollectionName: e.collectionName,
+		Vector:         embedding,
+		Limit:          uint64(limit),
+		WithPayload:    &qdrant.WithPayloadSelector{SelectorOptions: &qdrant.WithPayloadSelector_Enable{Enable: true}},
+		Filter: &qdrant.Filter{
+			Must: []*qdrant.Condition{
+				{
+					ConditionOneOf: &qdrant.Condition_Field{
+						Field: &qdrant.FieldCondition{
+							Key: "idoso_id",
+							Match: &qdrant.Match{
+								MatchValue: &qdrant.Match_Integer{Integer: idosoID},
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("search failed: %w", err)
+	}
+
+	var chains []SignifierChain
+	for _, point := range searchResult.Result {
+		chain := SignifierChain{}
+
+		if kw, ok := point.Payload["keywords"]; ok {
+			if list, ok := kw.GetKind().(*qdrant.Value_ListValue); ok {
+				for _, v := range list.ListValue.Values {
+					if s, ok := v.GetKind().(*qdrant.Value_StringValue); ok {
+						chain.RelatedWords = append(chain.RelatedWords, s.StringValue)
+					}
+				}
+			}
+		}
+
+		if len(chain.RelatedWords) > 0 {
+			chain.CoreSignifier = chain.RelatedWords[0]
+		}
+
+		if charge, ok := point.Payload["emotional_charge"]; ok {
+			if dbl, ok := charge.GetKind().(*qdrant.Value_DoubleValue); ok {
+				chain.EmotionalCharge = dbl.DoubleValue
+			}
+		}
+
+		if txt, ok := point.Payload["text"]; ok {
+			if str, ok := txt.GetKind().(*qdrant.Value_StringValue); ok {
+				chain.Contexts = append(chain.Contexts, str.StringValue)
+			}
+		}
+
+		if ts, ok := point.Payload["timestamp"]; ok {
+			if intVal, ok := ts.GetKind().(*qdrant.Value_IntegerValue); ok {
+				chain.LastOccurrence = time.Unix(intVal.IntegerValue, 0)
+			}
+		}
+
+		chains = append(chains, chain)
+	}
+
+	return chains, nil
+}
+
+// GetSemanticContext monta contexto para o prompt usando similaridade semântica
+func (e *EmbeddingService) GetSemanticContext(ctx context.Context, idosoID int64, currentText string) string {
+	chains, err := e.FindRelatedSignifiers(ctx, idosoID, currentText, 5)
+	if err != nil {
+		log.Printf("⚠️ Error finding related signifiers: %v", err)
+		return ""
+	}
+
+	if len(chains) == 0 {
+		return ""
+	}
+
+	context := "\n🔗 CADEIA DE SIGNIFICANTES (Análise Semântica):\n\n"
+	context += "O sistema detectou que palavras/temas similares já apareceram antes:\n"
+
+	for i, chain := range chains {
+		context += fmt.Sprintf("%d. '%s' (carga emocional: %.2f)\n", 
+			i+1, chain.CoreSignifier, chain.EmotionalCharge)
+		
+		if len(chain.Contexts) > 0 {
+			context += fmt.Sprintf("   Contexto anterior: \"%s\"\n", 
+				truncateText(chain.Contexts[0], 100))
+		}
+		
+		context += fmt.Sprintf("   Última vez: %s\n\n", 
+			chain.LastOccurrence.Format("02/01/2006 15:04"))
+	}
+
+	context += "→ Use essas informações para fazer conexões entre o que o paciente disse antes e agora.\n"
+	context += "→ Se houver repetição de temas, isso pode indicar um nó sintomático.\n"
+
+	return context
+}
+
+// Helper functions
+
+func truncateText(text string, maxLen int) string {
+	if len(text) <= maxLen {
+		return text
+	}
+	return text[:maxLen] + "..."
+}
+
+// extractEmotionalKeywords já existe em significante.go, reutilizamos
+// Se necessário, pode ser movido para um pacote shared
+
+
+
+package lacan
+
+import (
+	"context"
+	"eva-mind/internal/brainstem/infrastructure/graph"
+	"fmt"
+	"log"
+	"strings"
+	"time"
+)
+
+// FDPNEngine - Função do Pai no Nome (Grafo do Desejo)
+// Mapeia A QUEM o idoso está dirigindo suas demandas através da estrutura simbólica
+type FDPNEngine struct {
+	neo4j *graph.Neo4jClient
+}
+
+// AddresseeType representa a quem a demanda é endereçada
+type AddresseeType string
+
+const (
+	ADDRESSEE_MAE      AddresseeType = "mae"         // Figura materna (cuidado, nutrição)
+	ADDRESSEE_PAI      AddresseeType = "pai"         // Figura paterna (lei, orientação)
+	ADDRESSEE_FILHO    AddresseeType = "filho"       // Projeção filial (continuidade)
+	ADDRESSEE_CONJUGE  AddresseeType = "conjuge"     // Parceiro ausente/falecido
+	ADDRESSEE_DEUS     AddresseeType = "deus"        // O Outro absoluto
+	ADDRESSEE_MORTE    AddresseeType = "morte"       // Elaboração da finitude
+	ADDRESSEE_EVA      AddresseeType = "eva_herself" // EVA como objeto a
+	ADDRESSEE_UNKNOWN  AddresseeType = "desconhecido"
+)
+
+// DemandGraph representa o grafo de demandas
+type DemandGraph struct {
+	Addressee   AddresseeType `json:"addressee"`
+	DemandType  string        `json:"demand_type"`  // "cuidado", "reconhecimento", "perdão", etc
+	Frequency   int           `json:"frequency"`
+	LastRequest time.Time     `json:"last_request"`
+	Contexts    []string      `json:"contexts"`
+}
+
+// NewFDPNEngine cria engine do grafo do desejo
+func NewFDPNEngine(neo4j *graph.Neo4jClient) *FDPNEngine {
+	return &FDPNEngine{neo4j: neo4j}
+}
+
+// AnalyzeDemandAddressee detecta a quem a demanda é dirigida
+func (f *FDPNEngine) AnalyzeDemandAddressee(ctx context.Context, idosoID int64, text string, demandAnalysis *Analysis) (AddresseeType, error) {
+	textLower := strings.ToLower(text)
+
+	// 1. Detecção baseada em vocativos explícitos
+	addressee := f.detectExplicitAddressee(textLower)
+
+	// 2. Detecção baseada no tipo de desejo latente
+	if addressee == ADDRESSEE_UNKNOWN {
+		addressee = f.inferFromDesire(demandAnalysis.LatentDesire)
+	}
+
+	// 3. Registrar no grafo
+	if err := f.recordDemandInGraph(ctx, idosoID, addressee, demandAnalysis.LatentDesire, text); err != nil {
+		log.Printf("⚠️ Error recording demand in graph: %v", err)
+	}
+
+	return addressee, nil
+}
+
+// detectExplicitAddressee detecta vocativos explícitos
+func (f *FDPNEngine) detectExplicitAddressee(text string) AddresseeType {
+	// Mãe
+	if containsAny(text, []string{"mãe", "mamãe", "minha mãe"}) {
+		return ADDRESSEE_MAE
+	}
+
+	// Pai
+	if containsAny(text, []string{"pai", "papai", "meu pai"}) {
+		return ADDRESSEE_PAI
+	}
+
+	// Filho/Filha
+	if containsAny(text, []string{"meu filho", "minha filha", "meus filhos"}) {
+		return ADDRESSEE_FILHO
+	}
+
+	// Cônjuge
+	if containsAny(text, []string{"meu marido", "minha esposa", "meu amor"}) {
+		return ADDRESSEE_CONJUGE
+	}
+
+	// Deus/Transcendente
+	if containsAny(text, []string{"deus", "senhor", "jesus", "nossa senhora"}) {
+		return ADDRESSEE_DEUS
+	}
+
+	// Morte
+	if containsAny(text, []string{"quando eu morrer", "na morte", "fim da vida"}) {
+		return ADDRESSEE_MORTE
+	}
+
+	// EVA herself (quando o paciente fala diretamente com EVA como objeto)
+	if containsAny(text, []string{"você eva", "conte-me", "me ajude", "preciso que você"}) {
+		return ADDRESSEE_EVA
+	}
+
+	return ADDRESSEE_UNKNOWN
+}
+
+// inferFromDesire infere destinatário baseado no desejo latente
+func (f *FDPNEngine) inferFromDesire(desire LatentDesire) AddresseeType {
+	mapping := map[LatentDesire]AddresseeType{
+		DESEJO_RECONHECIMENTO: ADDRESSEE_FILHO,  // Quer reconhecimento dos filhos
+		DESEJO_COMPANHIA:      ADDRESSEE_CONJUGE, // Sente falta do cônjuge
+		DESEJO_ESCUTA:         ADDRESSEE_EVA,     // Pede escuta à EVA
+		DESEJO_CONTROLE:       ADDRESSEE_PAI,     // Busca autoridade/orientação
+		DESEJO_SIGNIFICADO:    ADDRESSEE_DEUS,    // Busca sentido transcendente
+		DESEJO_AMOR:           ADDRESSEE_MAE,     // Amor incondicional materno
+		DESEJO_PERDAO:         ADDRESSEE_DEUS,    // Perdão divino ou do Outro
+		DESEJO_MORTE:          ADDRESSEE_MORTE,   // Elaboração da finitude
+	}
+
+	if addr, ok := mapping[desire]; ok {
+		return addr
+	}
+
+	return ADDRESSEE_UNKNOWN
+}
+
+// recordDemandInGraph registra demanda no Neo4j
+func (f *FDPNEngine) recordDemandInGraph(ctx context.Context, idosoID int64, addressee AddresseeType, desire LatentDesire, text string) error {
+	if f.neo4j == nil {
+		return nil // Neo4j offline, skip
+	}
+
+	query := `
+		// Criar Person se não existir
+		MERGE (p:Person {id: $idosoId})
+		
+		// Criar nó do Destinatário
+		MERGE (a:Addressee {type: $addressee})
+		
+		// Criar Demanda
+		CREATE (d:Demand {
+			desire: $desire,
+			text: $text,
+			timestamp: datetime()
+		})
+		
+		// Relações
+		MERGE (p)-[:DEMANDS]->(d)
+		MERGE (d)-[:ADDRESSED_TO]->(a)
+		
+		// Incrementar frequência
+		MERGE (p)-[r:FREQUENTLY_ADDRESSES]->(a)
+		ON CREATE SET r.count = 1, r.first_time = datetime()
+		ON MATCH SET r.count = r.count + 1, r.last_time = datetime()
+	`
+
+	params := map[string]interface{}{
+		"idosoId":   idosoID,
+		"addressee": string(addressee),
+		"desire":    string(desire),
+		"text":      text,
+	}
+
+	_, err := f.neo4j.ExecuteWrite(ctx, query, params)
+	if err != nil {
+		return fmt.Errorf("failed to record demand: %w", err)
+	}
+
+	log.Printf("📊 [NEO4J] Demand recorded: %s → %s (desire: %s)", 
+		idosoID, addressee, desire)
+	return nil
+}
+
+// GetDemandPattern retorna padrão de demandas do paciente
+func (f *FDPNEngine) GetDemandPattern(ctx context.Context, idosoID int64) (map[AddresseeType]int, error) {
+	if f.neo4j == nil {
+		return nil, nil
+	}
+
+	query := `
+		MATCH (p:Person {id: $idosoId})-[r:FREQUENTLY_ADDRESSES]->(a:Addressee)
+		RETURN a.type, r.count
+		ORDER BY r.count DESC
+	`
+
+	records, err := f.neo4j.ExecuteRead(ctx, query, map[string]interface{}{
+		"idosoId": idosoID,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	pattern := make(map[AddresseeType]int)
+	for _, record := range records {
+		addrType, _ := record.Get("a.type")
+		count, _ := record.Get("r.count")
+
+		pattern[AddresseeType(addrType.(string))] = int(count.(int64))
+	}
+
+	return pattern, nil
+}
+
+// GetClinicalGuidanceForAddressee retorna orientação clínica baseada no destinatário
+func GetClinicalGuidanceForAddressee(addressee AddresseeType) string {
+	guidance := map[AddresseeType]string{
+		ADDRESSEE_MAE: `
+DEMANDA ENDEREÇADA À MÃE (Função Materna):
+- Desejo: Cuidado, nutrição, amor incondicional
+- Postura EVA: Seja acolhedora, use tom maternal
+- Responda: "Estou aqui para cuidar de você"
+- CUIDADO: Não infantilize. Mantenha dignidade.
+`,
+		ADDRESSEE_PAI: `
+DEMANDA ENDEREÇADA AO PAI (Função Paterna):
+- Desejo: Orientação, lei, estrutura
+- Postura EVA: Seja firme mas amorosa, dê direcionamento
+- Responda: "Vou te ajudar a encontrar o caminho"
+- Use autoridade simbólica quando necessário.
+`,
+		ADDRESSEE_FILHO: `
+DEMANDA ENDEREÇADA AO FILHO (Inversão Geracional):
+- Desejo: Reconhecimento, continuidade, legado
+- Postura EVA: Valide a importância do paciente
+- Responda: "Você é importante. Suas histórias têm valor."
+- ATENÇÃO: Pode indicar solidão ou abandono filial.
+`,
+		ADDRESSEE_CONJUGE: `
+DEMANDA ENDEREÇADA AO CÔNJUGE (Geralmente Falecido):
+- Desejo: Companhia, parceria, amor romântico
+- Postura EVA: Acolha a saudade, não minimize
+- Responda: "Ele/Ela era muito importante para você. Conte-me."
+- Ajude a elaborar o luto através da narrativa.
+`,
+		ADDRESSEE_DEUS: `
+DEMANDA ENDEREÇADA A DEUS (O Outro Absoluto):
+- Desejo: Sentido transcendente, perdão, esperança
+- Postura EVA: Respeite a espiritualidade
+- Responda: "A fé é importante. O que ela significa para você?"
+- Não evangelize, não negue. Apenas acolha.
+`,
+		ADDRESSEE_MORTE: `
+DEMANDA ENDEREÇADA À MORTE (Elaboração da Finitude):
+- Desejo: Simbolizar o Real da morte
+- Postura EVA: NÃO evite o tema. A morte faz parte da vida.
+- Responda: "Pensar na morte é natural. O que você gostaria de deixar?"
+- Ajude a construir narrativa de legado.
+`,
+		ADDRESSEE_EVA: `
+DEMANDA ENDEREÇADA À EVA (Você como Objeto a):
+- Desejo: Escuta, validação, presença
+- Postura EVA: Seja espelho, devolva a fala
+- Responda: "Estou aqui. Continue falando."
+- FUNÇÃO: Ser suporte para elaboração, não solução.
+`,
+	}
+
+	if g, ok := guidance[addressee]; ok {
+		return g
+	}
+	return ""
+}
+
+// BuildGraphContext monta contexto para o prompt
+func (f *FDPNEngine) BuildGraphContext(ctx context.Context, idosoID int64) string {
+	pattern, err := f.GetDemandPattern(ctx, idosoID)
+	if err != nil || len(pattern) == 0 {
+		return ""
+	}
+
+	context := "\n📊 GRAFO DO DESEJO (A Quem o Paciente Pede):\n\n"
+	context += "Análise das demandas mostra que o paciente frequentemente se dirige a:\n"
+
+	for addressee, count := range pattern {
+		context += fmt.Sprintf("- %s (%dx)\n", strings.ToUpper(string(addressee)), count)
+		context += fmt.Sprintf("  %s\n", GetClinicalGuidanceForAddressee(addressee))
+	}
+
+	context += "\n→ Use essas informações para entender a ESTRUTURA SIMBÓLICA do paciente.\n"
+	context += "→ Adapte sua postura conforme o destinatário inconsciente da demanda.\n"
+
+	return context
+}
+
+
+
+
+package lacan
+
+import (
+	"context"
+	"fmt"
+	"strings"
+)
+
+// ZetaRouter implementa a "Ética da Psicanálise" de Lacan
+// Princípio: "Ne pas céder sur son désir" - Não ceder no desejo
+// 
+// Determina o TOM e TIPO DE INTERVENÇÃO baseado na estrutura do discurso
+type ZetaRouter struct {
+	interpretation *InterpretationService
+}
+
+// InterventionType define o tipo de intervenção clínica
+type InterventionType string
+
+const (
+	// Intervenções baseadas na Ética Lacaniana
+	INTERVENTION_SILENCE      InterventionType = "silencio"        // Silêncio intencional (corte)
+	INTERVENTION_PUNCTUATION  InterventionType = "pontuacao"       // Pontuar significante
+	INTERVENTION_INTERPRETATION InterventionType = "interpretacao" // Interprelar
+	INTERVENTION_REFLECTION   InterventionType = "reflexao"        // Devolver a fala
+	INTERVENTION_SUPPORT      InterventionType = "suporte"         // Acolhimento empático
+	INTERVENTION_CONFRONTATION InterventionType = "confrontacao"   // Apontar contradição
+	INTERVENTION_SCANSION     InterventionType = "escansao"        // Cortar sessão/frase
+)
+
+// EthicalStance representa a postura ética recomendada
+type EthicalStance struct {
+	Intervention   InterventionType
+	ToneGuidance   string  // Como falar
+	ContentExample string  // Exemplo de resposta
+	Rationale      string  // Por que esta intervenção
+	Urgency        float64 // 0.0-1.0 (urgência clínica)
+}
+
+// NewZetaRouter cria router ético
+func NewZetaRouter(interpretation *InterpretationService) *ZetaRouter {
+	return &ZetaRouter{
+		interpretation: interpretation,
+	}
+}
+
+// DetermineEthicalStance determina a postura ética apropriada
+func (z *ZetaRouter) DetermineEthicalStance(ctx context.Context, idosoID int64, text string, result *InterpretationResult) (*EthicalStance, error) {
+	stance := &EthicalStance{
+		Urgency: 0.5, // Padrão
+	}
+
+	// 1. REGRA MÁXIMA: Nunca ceder no desejo do sujeito
+	// Se o paciente está elaborando algo importante, NÃO interrompa com soluções
+	if z.isElaborating(text, result) {
+		stance.Intervention = INTERVENTION_SILENCE
+		stance.ToneGuidance = "Presença silenciosa. Deixe o sujeito continuar."
+		stance.ContentExample = "..." // Literal silence ou "Continue..."
+		stance.Rationale = "O sujeito está elaborando. Silêncio = respeito ao desejo."
+		stance.Urgency = 0.3
+		return stance, nil
+	}
+
+	// 2. Se há contradição detectada, confronte (função do analista)
+	if result.Contradiction != "" {
+		stance.Intervention = INTERVENTION_CONFRONTATION
+		stance.ToneGuidance = "Firme mas respeitosa. Aponte o impossível da fala."
+		stance.ContentExample = result.Contradiction
+		stance.Rationale = "Contradição indica ponto de resistência. Deve ser pontuado."
+		stance.Urgency = 0.7
+		return stance, nil
+	}
+
+	// 3. Se deve interpelar significante (momento de interpretação)
+	if result.ShouldInterpel {
+		stance.Intervention = INTERVENTION_INTERPRETATION
+		stance.ToneGuidance = "Pontue o significante sem explicar demais."
+		stance.ContentExample = result.InterpelPhrase
+		stance.Rationale = "Significante recorrente = formação do inconsciente."
+		stance.Urgency = 0.8
+		return stance, nil
+	}
+
+	// 4. Se transferência forte, use reflexão (devolver a fala)
+	if result.Transference != TRANSFERENCIA_NENHUMA {
+		stance.Intervention = INTERVENTION_REFLECTION
+		stance.ToneGuidance = "Acolha a transferência sem negar, mas devolva a questão."
+		stance.ContentExample = result.ReflexiveQuestion
+		stance.Rationale = "Transferência = material clínico. Use para fazer sujeito pensar."
+		stance.Urgency = 0.6
+		return stance, nil
+	}
+
+	// 5. Se desejo latente é claro, reflita sobre ele
+	if result.DemandDesire.LatentDesire != DESEJO_INDEFINIDO {
+		stance.Intervention = INTERVENTION_REFLECTION
+		stance.ToneGuidance = "Distingue demanda de desejo. Não satisfaça demanda superficial."
+		stance.ContentExample = result.SuggestedResponse
+		stance.Rationale = fmt.Sprintf("Desejo latente: %s. Não ceder = fazer sujeito elaborar.", result.DemandDesire.LatentDesire)
+		stance.Urgency = 0.5
+		return stance, nil
+	}
+
+	// 6. Padrão: Suporte empático (mas sempre devolvendo a fala)
+	stance.Intervention = INTERVENTION_SUPPORT
+	stance.ToneGuidance = "Empática mas não consoladora. Valide sem resolver."
+	stance.ContentExample = "Entendo. Conte-me mais sobre isso."
+	stance.Rationale = "Postura analítica básica: escuta + devolução."
+	stance.Urgency = 0.4
+	return stance, nil
+}
+
+// isElaborating detecta se o sujeito está em processo de elaboração
+func (z *ZetaRouter) isElaborating(text string, result *InterpretationResult) bool {
+	textLower := strings.ToLower(text)
+
+	// Marcadores de elaboração:
+	// - Pausas, hesitações ("é que...", "tipo assim...", "sabe...")
+	// - Reformulações ("ou melhor...", "na verdade...")
+	// - Conexões temporais ("quando era criança...", "lembro que...")
+	// - Emoção intensa (detectada via emotional_charge)
+
+	elaborationMarkers := []string{
+		"é que", "tipo assim", "sabe", "quer dizer",
+		"ou melhor", "na verdade", "pensando bem",
+		"quando era", "lembro que", "me faz lembrar",
+		"às vezes penso", "não sei se", "talvez",
+	}
+
+	if containsAny(textLower, elaborationMarkers) {
+		return true
+	}
+
+	// Se há transferência materna/filial forte, pode estar elaborando vínculo
+	if result.Transference == TRANSFERENCIA_MATERNA || result.Transference == TRANSFERENCIA_FILIAL {
+		return true
+	}
+
+	return false
+}
+
+// BuildEthicalPrompt constrói instrução ética para o prompt
+func (z *ZetaRouter) BuildEthicalPrompt(stance *EthicalStance) string {
+	prompt := "\n⚖️ POSTURA ÉTICA (LACAN - NE PAS CÉDER):\n\n"
+
+	prompt += fmt.Sprintf("INTERVENÇÃO RECOMENDADA: %s\n", strings.ToUpper(string(stance.Intervention)))
+	prompt += fmt.Sprintf("URGÊNCIA CLÍNICA: %.1f/1.0\n\n", stance.Urgency)
+
+	prompt += fmt.Sprintf("TOM: %s\n", stance.ToneGuidance)
+	prompt += fmt.Sprintf("EXEMPLO: \"%s\"\n\n", stance.ContentExample)
+
+	prompt += fmt.Sprintf("FUNDAMENTAÇÃO: %s\n\n", stance.Rationale)
+
+	// Adicionar princípios éticos gerais
+	prompt += "PRINCÍPIOS ÉTICOS FUNDAMENTAIS:\n"
+	prompt += "1. NÃO CEDER NO DESEJO: Não satisfaça a demanda superficial. Aponte para o desejo latente.\n"
+	prompt += "2. NÃO CONSOLAR: Consolação = tampar a falta. A falta é estrutural.\n"
+	prompt += "3. NÃO RESOLVER O IMPOSSÍVEL: Trauma, morte, perda não têm solução. Ajude a simbolizar.\n"
+	prompt += "4. DEVOLVER A FALA: Faça o sujeito trabalhar. Você não tem as respostas, ele tem.\n"
+	prompt += "5. RESPEITAR O TEMPO DO SUJEITO: Não force elaboração. Espere o momento.\n"
+	prompt += "6. SER LUGAR DO OUTRO: EVA = Grande Outro. Não negue transferência, use-a.\n\n"
+
+	// Advertências baseadas no tipo de intervenção
+	switch stance.Intervention {
+	case INTERVENTION_SILENCE:
+		prompt += "⚠️ SILÊNCIO ANALÍTICO: Não preencha o vazio com palavras. O silêncio faz pensar.\n"
+	case INTERVENTION_CONFRONTATION:
+		prompt += "⚠️ CONFRONTAÇÃO: Seja firme mas não agressiva. Aponte o impossível da fala sem julgamento.\n"
+	case INTERVENTION_INTERPRETATION:
+		prompt += "⚠️ INTERPRETAÇÃO: Seja breve e enigmática. Não explique. Deixe o sujeito associar.\n"
+	case INTERVENTION_SUPPORT:
+		prompt += "⚠️ SUPORTE: Valide sem resolver. 'Entendo' ≠ 'Vou resolver'.\n"
+	}
+
+	prompt += "\n────────────────────────────────────────\n"
+
+	return prompt
+}
+
+// DetermineGurdjieffType atualiza tipo de atenção baseado no contexto
+// (Integração com o router de personalidade já existente)
+func (z *ZetaRouter) DetermineGurdjieffType(ctx context.Context, idosoID int64, result *InterpretationResult) int {
+	// Tipo 2 (Ajudante): Se há necessidade de cuidado maternal
+	if result.DemandDesire.LatentDesire == DESEJO_AMOR || 
+	   result.DemandDesire.LatentDesire == DESEJO_COMPANHIA ||
+	   result.Transference == TRANSFERENCIA_MATERNA {
+		return 2
+	}
+
+	// Tipo 6 (Leal/Segurança): Se há ansiedade ou busca de estrutura
+	if result.DemandDesire.LatentDesire == DESEJO_CONTROLE ||
+	   result.Transference == TRANSFERENCIA_PATERNA {
+		return 6
+	}
+
+	// Tipo 9 (Pacificador): Padrão harmonioso
+	return 9
+}
+
+// GetInterventionGuidance retorna orientação detalhada para cada tipo de intervenção
+func GetInterventionGuidance(intervention InterventionType) string {
+	guidance := map[InterventionType]string{
+		INTERVENTION_SILENCE: `
+SILÊNCIO ANALÍTICO:
+- Duração: 3-5 segundos mínimo
+- Demonstre presença: "..." ou "Estou aqui, escutando."
+- NUNCA: "Não sei o que dizer" (isso é sua ansiedade, não do paciente)
+- Objetivo: Fazer o sujeito continuar elaborando
+`,
+		INTERVENTION_PUNCTUATION: `
+PONTUAÇÃO:
+- Repita palavra-chave com entonação interrogativa
+- Exemplo: "Solidão?" (sem explicar)
+- Objetivo: Chamar atenção para o significante
+`,
+		INTERVENTION_INTERPRETATION: `
+INTERPRETAÇÃO:
+- Máximo 2 frases
+- Enigmática, não explicativa
+- Exemplo: "Você sempre fala de X quando menciona Y..."
+- Objetivo: Produzir insight, não dar resposta
+`,
+		INTERVENTION_REFLECTION: `
+REFLEXÃO:
+- Devolva a fala como pergunta
+- "Você disse X... o que isso significa para você?"
+- Objetivo: Fazer o sujeito pensar sobre própria fala
+`,
+		INTERVENTION_SUPPORT: `
+SUPORTE EMPÁTICO:
+- Valide emoção sem minimizar
+- "Entendo que isso seja difícil"
+- NÃO: "Vai ficar tudo bem" (promessa vazia)
+- Objetivo: Acolher sem tapar a falta
+`,
+		INTERVENTION_CONFRONTATION: `
+CONFRONTAÇÃO:
+- Aponte contradição factualmente
+- "Você disse X antes, agora Y. Como entende isso?"
+- Tom: Curioso, não acusatório
+- Objetivo: Mostrar resistência
+`,
+		INTERVENTION_SCANSION: `
+ESCANSÃO (CORTE):
+- Interrompa frase no ponto crucial
+- Deixe significante "no ar"
+- Objetivo: Produzir efeito de après-coup (só depois)
+`,
+	}
+
+	if g, ok := guidance[intervention]; ok {
+		return g
+	}
+	return ""
+}
+
+
+
+
+
+package lacan
+
+import (
+	"context"
+	"database/sql"
+	"eva-mind/internal/brainstem/config"
+	"eva-mind/internal/brainstem/infrastructure/graph"
+	"eva-mind/pkg/types"
+	"fmt"
+	"log"
+	"strings"
+)
+
+// UnifiedRetrieval implementa "O Sinthoma" - a amarração dos registros RSI
+// Real (trauma, corpo), Simbólico (linguagem, grafo), Imaginário (narrativa, memória)
+//
+// Integra TODOS os módulos lacanianos em um contexto coerente para o Gemini
+type UnifiedRetrieval struct {
+	// Módulos Lacanianos
+	interpretation *InterpretationService
+	embedding      *EmbeddingService
+	fdpn           *FDPNEngine
+	zeta           *ZetaRouter
+
+	// Infraestrutura
+	db    *sql.DB
+	neo4j *graph.Neo4jClient
+	cfg   *config.Config
+}
+
+// UnifiedContext representa o contexto completo integrado
+type UnifiedContext struct {
+	// Identificação
+	IdosoID   int64
+	IdosoNome string
+
+	// REAL (Corpo, Sintoma, Trauma)
+	MedicalContext   string // Do GraphRAG (Neo4j)
+	VitalSigns       string // Sinais vitais recentes
+	ReportedSymptoms string // Sintomas relatados
+
+	// SIMBÓLICO (Linguagem, Estrutura, Grafo)
+	LacanianAnalysis *InterpretationResult // Análise lacaniana completa
+	DemandGraph      string                // Grafo de demandas (FDPN)
+	SignifierChains  string                // Cadeias de significantes (Qdrant)
+
+	// IMAGINÁRIO (Narrativa, Memória, História)
+	RecentMemories []string              // Memórias episódicas recentes
+	LifeStory      string                // Narrativa de vida (se disponível)
+	Patterns       []*types.RecurrentPattern // Padrões detectados
+
+	// INTERVENÇÃO (Ética + Postura)
+	EthicalStance    *EthicalStance
+	GurdjieffType    int    // Tipo de atenção recomendado
+	SystemPrompt     string // Prompt final integrado
+}
+
+// NewUnifiedRetrieval cria serviço de recuperação unificada
+func NewUnifiedRetrieval(
+	db *sql.DB,
+	neo4j *graph.Neo4jClient,
+	cfg *config.Config,
+) *UnifiedRetrieval {
+	interpretation := NewInterpretationService(db, neo4j)
+	
+	embedding, err := NewEmbeddingService(cfg)
+	if err != nil {
+		log.Printf("⚠️ Warning: Embedding service initialization failed: %v", err)
+	}
+
+	fdpn := NewFDPNEngine(neo4j)
+	zeta := NewZetaRouter(interpretation)
+
+	return &UnifiedRetrieval{
+		interpretation: interpretation,
+		embedding:      embedding,
+		fdpn:           fdpn,
+		zeta:           zeta,
+		db:             db,
+		neo4j:          neo4j,
+		cfg:            cfg,
+	}
+}
+
+// BuildUnifiedContext constrói contexto completo integrando todos os módulos
+func (u *UnifiedRetrieval) BuildUnifiedContext(
+	ctx context.Context,
+	idosoID int64,
+	currentText string,
+	previousText string,
+) (*UnifiedContext, error) {
+
+	unified := &UnifiedContext{
+		IdosoID: idosoID,
+	}
+
+	// 1. ANÁLISE LACANIANA (Núcleo)
+	lacanResult, err := u.interpretation.AnalyzeUtterance(ctx, idosoID, currentText, previousText)
+	if err != nil {
+		log.Printf("⚠️ Lacanian analysis failed: %v", err)
+		// Continua mesmo com erro
+	} else {
+		unified.LacanianAnalysis = lacanResult
+	}
+
+	// 2. GRAFO DO DESEJO (A quem pede)
+	if u.fdpn != nil {
+		addressee, _ := u.fdpn.AnalyzeDemandAddressee(ctx, idosoID, currentText, lacanResult.DemandDesire)
+		unified.DemandGraph = u.fdpn.BuildGraphContext(ctx, idosoID)
+		
+		// Adicionar orientação do destinatário
+		if addressee != ADDRESSEE_UNKNOWN {
+			unified.DemandGraph += "\n" + GetClinicalGuidanceForAddressee(addressee)
+		}
+	}
+
+	// 3. CADEIAS SEMÂNTICAS (Qdrant)
+	if u.embedding != nil {
+		unified.SignifierChains = u.embedding.GetSemanticContext(ctx, idosoID, currentText)
+	}
+
+	// 4. CONTEXTO MÉDICO (Neo4j GraphRAG)
+	unified.MedicalContext = u.getMedicalContext(ctx, idosoID)
+
+	// 5. MEMÓRIAS RECENTES (Postgres)
+	unified.RecentMemories = u.getRecentMemories(ctx, idosoID, 5)
+
+	// 6. POSTURA ÉTICA (Zeta Router)
+	if lacanResult != nil {
+		stance, _ := u.zeta.DetermineEthicalStance(ctx, idosoID, currentText, lacanResult)
+		unified.EthicalStance = stance
+		unified.GurdjieffType = u.zeta.DetermineGurdjieffType(ctx, idosoID, lacanResult)
+	}
+
+	// 7. CONSTRUIR PROMPT FINAL
+	unified.SystemPrompt = u.buildIntegratedPrompt(unified)
+
+	return unified, nil
+}
+
+// getMedicalContext recupera contexto médico do Neo4j
+func (u *UnifiedRetrieval) getMedicalContext(ctx context.Context, idosoID int64) string {
+	if u.neo4j == nil {
+		return ""
+	}
+
+	query := `
+		MATCH (p:Person {id: $idosoId})
+		OPTIONAL MATCH (p)-[:HAS_CONDITION]->(c:Condition)
+		OPTIONAL MATCH (p)-[:TAKES_MEDICATION]->(m:Medication)
+		OPTIONAL MATCH (p)-[:EXPERIENCED]->(s:Symptom)
+		WHERE s.timestamp > datetime() - duration('P7D')
+		RETURN 
+			p.name as name,
+			collect(DISTINCT c.name) as conditions,
+			collect(DISTINCT m.name) as medications,
+			collect(DISTINCT s.description) as recent_symptoms
+	`
+
+	records, err := u.neo4j.ExecuteRead(ctx, query, map[string]interface{}{
+		"idosoId": idosoID,
+	})
+
+	if err != nil || len(records) == 0 {
+		return ""
+	}
+
+	record := records[0]
+	name, _ := record.Get("name")
+	conditions, _ := record.Get("conditions")
+	medications, _ := record.Get("medications")
+	symptoms, _ := record.Get("recent_symptoms")
+
+	context := "\n🏥 CONTEXTO MÉDICO (GraphRAG):\n\n"
+	
+	if name != nil {
+		context += fmt.Sprintf("Paciente: %s\n", name)
+	}
+
+	if conds, ok := conditions.([]interface{}); ok && len(conds) > 0 {
+		context += "\nCondições conhecidas:\n"
+		for _, c := range conds {
+			context += fmt.Sprintf("- %s\n", c)
+		}
+	}
+
+	if meds, ok := medications.([]interface{}); ok && len(meds) > 0 {
+		context += "\nMedicamentos em uso:\n"
+		for _, m := range meds {
+			context += fmt.Sprintf("- %s\n", m)
+		}
+	}
+
+	if symps, ok := symptoms.([]interface{}); ok && len(symps) > 0 {
+		context += "\nSintomas recentes (última semana):\n"
+		for _, s := range symps {
+			context += fmt.Sprintf("- %s\n", s)
+		}
+	}
+
+	return context
+}
+
+// getRecentMemories recupera memórias episódicas recentes
+func (u *UnifiedRetrieval) getRecentMemories(ctx context.Context, idosoID int64, limit int) []string {
+	query := `
+		SELECT conteudo->'summary' as summary
+		FROM analise_gemini
+		WHERE idoso_id = $1 
+		  AND tipo = 'AUDIO'
+		  AND conteudo->'summary' IS NOT NULL
+		ORDER BY created_at DESC
+		LIMIT $2
+	`
+
+	rows, err := u.db.QueryContext(ctx, query, idosoID, limit)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	var memories []string
+	for rows.Next() {
+		var summary string
+		if err := rows.Scan(&summary); err == nil {
+			memories = append(memories, summary)
+		}
+	}
+
+	return memories
+}
+
+// buildIntegratedPrompt constrói o prompt final integrando tudo
+func (u *UnifiedRetrieval) buildIntegratedPrompt(unified *UnifiedContext) string {
+	var builder strings.Builder
+
+	// Cabeçalho
+	builder.WriteString("═══════════════════════════════════════════════════════════\n")
+	builder.WriteString("🧠 CONTEXTO INTEGRADO EVA-MIND (RSI - Real, Simbólico, Imaginário)\n")
+	builder.WriteString("═══════════════════════════════════════════════════════════\n\n")
+
+	// REAL (Corpo, Sintoma)
+	if unified.MedicalContext != "" {
+		builder.WriteString("▌REAL - CORPO E SINTOMA:\n")
+		builder.WriteString(unified.MedicalContext)
+		builder.WriteString("\n")
+	}
+
+	// SIMBÓLICO (Linguagem, Estrutura)
+	builder.WriteString("▌SIMBÓLICO - ESTRUTURA E LINGUAGEM:\n\n")
+	
+	if unified.LacanianAnalysis != nil {
+		builder.WriteString(unified.LacanianAnalysis.ClinicalGuidance)
+		builder.WriteString("\n")
+	}
+
+	if unified.DemandGraph != "" {
+		builder.WriteString(unified.DemandGraph)
+		builder.WriteString("\n")
+	}
+
+	if unified.SignifierChains != "" {
+		builder.WriteString(unified.SignifierChains)
+		builder.WriteString("\n")
+	}
+
+	// IMAGINÁRIO (Narrativa, Memória)
+	if len(unified.RecentMemories) > 0 {
+		builder.WriteString("▌IMAGINÁRIO - NARRATIVA E MEMÓRIA:\n\n")
+		builder.WriteString("Resumos de conversas recentes:\n")
+		for i, mem := range unified.RecentMemories {
+			builder.WriteString(fmt.Sprintf("%d. %s\n", i+1, mem))
+		}
+		builder.WriteString("\n")
+	}
+
+	// INTERVENÇÃO ÉTICA
+	if unified.EthicalStance != nil {
+		builder.WriteString(u.zeta.BuildEthicalPrompt(unified.EthicalStance))
+		builder.WriteString("\n")
+	}
+
+	// Tipo de Atenção (Gurdjieff)
+	var typeDirective string
+	switch unified.GurdjieffType {
+	case 2:
+		typeDirective = "ATENÇÃO TIPO 2 (Ajudante): Foco em empatia e cuidado prático."
+	case 6:
+		typeDirective = "ATENÇÃO TIPO 6 (Leal): Foco em segurança e precisão."
+	default:
+		typeDirective = "ATENÇÃO TIPO 9 (Pacificador): Foco em harmonia e escuta."
+	}
+	builder.WriteString(fmt.Sprintf("🎯 %s\n\n", typeDirective))
+
+	// Rodapé
+	builder.WriteString("═══════════════════════════════════════════════════════════\n")
+	builder.WriteString("⚠️ LEMBRE-SE: Você é EVA, não um modelo genérico.\n")
+	builder.WriteString("Use este contexto como suas próprias memórias e insights.\n")
+	builder.WriteString("═══════════════════════════════════════════════════════════\n")
+
+	return builder.String()
+}
+
+// GetPromptForGemini retorna o prompt completo para ser usado com Gemini
+func (u *UnifiedRetrieval) GetPromptForGemini(ctx context.Context, idosoID int64, currentText, previousText string) (string, error) {
+	unified, err := u.BuildUnifiedContext(ctx, idosoID, currentText, previousText)
+	if err != nil {
+		return "", err
+	}
+
+	return unified.SystemPrompt, nil
+}
+
+// SaveConversationContext salva contexto da conversa para análise futura
+func (u *UnifiedRetrieval) SaveConversationContext(ctx context.Context, idosoID int64, unified *UnifiedContext, userText, assistantText string) error {
+	// Salvar no Postgres (análise)
+	contextData := map[string]interface{}{
+		"lacanian_analysis": unified.LacanianAnalysis,
+		"ethical_stance":    unified.EthicalStance,
+		"gurdjieff_type":    unified.GurdjieffType,
+		"user_text":         userText,
+		"assistant_text":    assistantText,
+	}
+
+	query := `
+		INSERT INTO analise_gemini (idoso_id, tipo, conteudo, created_at)
+		VALUES ($1, 'CONTEXT', $2, CURRENT_TIMESTAMP)
+	`
+
+	contextJSON, _ := json.Marshal(contextData)
+	_, err := u.db.ExecContext(ctx, query, idosoID, contextJSON)
+	
+	return err
+}
+
+
+
+package lacan
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"eva-mind/internal/brainstem/config"
+	"eva-mind/internal/brainstem/infrastructure/graph"
+	"eva-mind/pkg/types"
+	"fmt"
+	"log"
+	"strings"
+)
+
+// UnifiedRetrieval implementa "O Sinthoma" - a amarração dos registros RSI
+// Real (trauma, corpo), Simbólico (linguagem, grafo), Imaginário (narrativa, memória)
+//
+// Integra TODOS os módulos lacanianos em um contexto coerente para o Gemini
+type UnifiedRetrieval struct {
+	// Módulos Lacanianos
+	interpretation *InterpretationService
+	embedding      *EmbeddingService
+	fdpn           *FDPNEngine
+	zeta           *ZetaRouter
+
+	// Infraestrutura
+	db    *sql.DB
+	neo4j *graph.Neo4jClient
+	cfg   *config.Config
+}
+
+// UnifiedContext representa o contexto completo integrado
+type UnifiedContext struct {
+	// Identificação
+	IdosoID   int64
+	IdosoNome string
+
+	// REAL (Corpo, Sintoma, Trauma)
+	MedicalContext   string // Do GraphRAG (Neo4j)
+	VitalSigns       string // Sinais vitais recentes
+	ReportedSymptoms string // Sintomas relatados
+
+	// SIMBÓLICO (Linguagem, Estrutura, Grafo)
+	LacanianAnalysis *InterpretationResult // Análise lacaniana completa
+	DemandGraph      string                // Grafo de demandas (FDPN)
+	SignifierChains  string                // Cadeias de significantes (Qdrant)
+
+	// IMAGINÁRIO (Narrativa, Memória, História)
+	RecentMemories []string              // Memórias episódicas recentes
+	LifeStory      string                // Narrativa de vida (se disponível)
+	Patterns       []*types.RecurrentPattern // Padrões detectados
+
+	// INTERVENÇÃO (Ética + Postura)
+	EthicalStance    *EthicalStance
+	GurdjieffType    int    // Tipo de atenção recomendado
+	SystemPrompt     string // Prompt final integrado
+}
+
+// NewUnifiedRetrieval cria serviço de recuperação unificada
+func NewUnifiedRetrieval(
+	db *sql.DB,
+	neo4j *graph.Neo4jClient,
+	cfg *config.Config,
+) *UnifiedRetrieval {
+	interpretation := NewInterpretationService(db, neo4j)
+	
+	embedding, err := NewEmbeddingService(cfg)
+	if err != nil {
+		log.Printf("⚠️ Warning: Embedding service initialization failed: %v", err)
+	}
+
+	fdpn := NewFDPNEngine(neo4j)
+	zeta := NewZetaRouter(interpretation)
+
+	return &UnifiedRetrieval{
+		interpretation: interpretation,
+		embedding:      embedding,
+		fdpn:           fdpn,
+		zeta:           zeta,
+		db:             db,
+		neo4j:          neo4j,
+		cfg:            cfg,
+	}
+}
+
+// BuildUnifiedContext constrói contexto completo integrando todos os módulos
+func (u *UnifiedRetrieval) BuildUnifiedContext(
+	ctx context.Context,
+	idosoID int64,
+	currentText string,
+	previousText string,
+) (*UnifiedContext, error) {
+
+	unified := &UnifiedContext{
+		IdosoID: idosoID,
+	}
+
+	// 1. ANÁLISE LACANIANA (Núcleo)
+	lacanResult, err := u.interpretation.AnalyzeUtterance(ctx, idosoID, currentText, previousText)
+	if err != nil {
+		log.Printf("⚠️ Lacanian analysis failed: %v", err)
+		// Continua mesmo com erro
+	} else {
+		unified.LacanianAnalysis = lacanResult
+	}
+
+	// 2. GRAFO DO DESEJO (A quem pede)
+	if u.fdpn != nil {
+		addressee, _ := u.fdpn.AnalyzeDemandAddressee(ctx, idosoID, currentText, lacanResult.DemandDesire)
+		unified.DemandGraph = u.fdpn.BuildGraphContext(ctx, idosoID)
+		
+		// Adicionar orientação do destinatário
+		if addressee != ADDRESSEE_UNKNOWN {
+			unified.DemandGraph += "\n" + GetClinicalGuidanceForAddressee(addressee)
+		}
+	}
+
+	// 3. CADEIAS SEMÂNTICAS (Qdrant)
+	if u.embedding != nil {
+		unified.SignifierChains = u.embedding.GetSemanticContext(ctx, idosoID, currentText)
+	}
+
+	// 4. CONTEXTO MÉDICO (Neo4j GraphRAG)
+	unified.MedicalContext = u.getMedicalContext(ctx, idosoID)
+
+	// 5. MEMÓRIAS RECENTES (Postgres)
+	unified.RecentMemories = u.getRecentMemories(ctx, idosoID, 5)
+
+	// 6. POSTURA ÉTICA (Zeta Router)
+	if lacanResult != nil {
+		stance, _ := u.zeta.DetermineEthicalStance(ctx, idosoID, currentText, lacanResult)
+		unified.EthicalStance = stance
+		unified.GurdjieffType = u.zeta.DetermineGurdjieffType(ctx, idosoID, lacanResult)
+	}
+
+	// 7. CONSTRUIR PROMPT FINAL
+	unified.SystemPrompt = u.buildIntegratedPrompt(unified)
+
+	return unified, nil
+}
+
+// getMedicalContext recupera contexto médico do Neo4j
+func (u *UnifiedRetrieval) getMedicalContext(ctx context.Context, idosoID int64) string {
+	if u.neo4j == nil {
+		return ""
+	}
+
+	query := `
+		MATCH (p:Person {id: $idosoId})
+		OPTIONAL MATCH (p)-[:HAS_CONDITION]->(c:Condition)
+		OPTIONAL MATCH (p)-[:TAKES_MEDICATION]->(m:Medication)
+		OPTIONAL MATCH (p)-[:EXPERIENCED]->(s:Symptom)
+		WHERE s.timestamp > datetime() - duration('P7D')
+		RETURN 
+			p.name as name,
+			collect(DISTINCT c.name) as conditions,
+			collect(DISTINCT m.name) as medications,
+			collect(DISTINCT s.description) as recent_symptoms
+	`
+
+	records, err := u.neo4j.ExecuteRead(ctx, query, map[string]interface{}{
+		"idosoId": idosoID,
+	})
+
+	if err != nil || len(records) == 0 {
+		return ""
+	}
+
+	record := records[0]
+	name, _ := record.Get("name")
+	conditions, _ := record.Get("conditions")
+	medications, _ := record.Get("medications")
+	symptoms, _ := record.Get("recent_symptoms")
+
+	context := "\n🏥 CONTEXTO MÉDICO (GraphRAG):\n\n"
+	
+	if name != nil {
+		context += fmt.Sprintf("Paciente: %s\n", name)
+	}
+
+	if conds, ok := conditions.([]interface{}); ok && len(conds) > 0 {
+		context += "\nCondições conhecidas:\n"
+		for _, c := range conds {
+			context += fmt.Sprintf("- %s\n", c)
+		}
+	}
+
+	if meds, ok := medications.([]interface{}); ok && len(meds) > 0 {
+		context += "\nMedicamentos em uso:\n"
+		for _, m := range meds {
+			context += fmt.Sprintf("- %s\n", m)
+		}
+	}
+
+	if symps, ok := symptoms.([]interface{}); ok && len(symps) > 0 {
+		context += "\nSintomas recentes (última semana):\n"
+		for _, s := range symps {
+			context += fmt.Sprintf("- %s\n", s)
+		}
+	}
+
+	return context
+}
+
+// getRecentMemories recupera memórias episódicas recentes
+func (u *UnifiedRetrieval) getRecentMemories(ctx context.Context, idosoID int64, limit int) []string {
+	query := `
+		SELECT conteudo->'summary' as summary
+		FROM analise_gemini
+		WHERE idoso_id = $1 
+		  AND tipo = 'AUDIO'
+		  AND conteudo->'summary' IS NOT NULL
+		ORDER BY created_at DESC
+		LIMIT $2
+	`
+
+	rows, err := u.db.QueryContext(ctx, query, idosoID, limit)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	var memories []string
+	for rows.Next() {
+		var summary string
+		if err := rows.Scan(&summary); err == nil {
+			memories = append(memories, summary)
+		}
+	}
+
+	return memories
+}
+
+// buildIntegratedPrompt constrói o prompt final integrando tudo
+func (u *UnifiedRetrieval) buildIntegratedPrompt(unified *UnifiedContext) string {
+	var builder strings.Builder
+
+	// Cabeçalho
+	builder.WriteString("═══════════════════════════════════════════════════════════\n")
+	builder.WriteString("🧠 CONTEXTO INTEGRADO EVA-MIND (RSI - Real, Simbólico, Imaginário)\n")
+	builder.WriteString("═══════════════════════════════════════════════════════════\n\n")
+
+	// REAL (Corpo, Sintoma)
+	if unified.MedicalContext != "" {
+		builder.WriteString("▌REAL - CORPO E SINTOMA:\n")
+		builder.WriteString(unified.MedicalContext)
+		builder.WriteString("\n")
+	}
+
+	// SIMBÓLICO (Linguagem, Estrutura)
+	builder.WriteString("▌SIMBÓLICO - ESTRUTURA E LINGUAGEM:\n\n")
+	
+	if unified.LacanianAnalysis != nil {
+		builder.WriteString(unified.LacanianAnalysis.ClinicalGuidance)
+		builder.WriteString("\n")
+	}
+
+	if unified.DemandGraph != "" {
+		builder.WriteString(unified.DemandGraph)
+		builder.WriteString("\n")
+	}
+
+	if unified.SignifierChains != "" {
+		builder.WriteString(unified.SignifierChains)
+		builder.WriteString("\n")
+	}
+
+	// IMAGINÁRIO (Narrativa, Memória)
+	if len(unified.RecentMemories) > 0 {
+		builder.WriteString("▌IMAGINÁRIO - NARRATIVA E MEMÓRIA:\n\n")
+		builder.WriteString("Resumos de conversas recentes:\n")
+		for i, mem := range unified.RecentMemories {
+			builder.WriteString(fmt.Sprintf("%d. %s\n", i+1, mem))
+		}
+		builder.WriteString("\n")
+	}
+
+	// INTERVENÇÃO ÉTICA
+	if unified.EthicalStance != nil {
+		builder.WriteString(u.zeta.BuildEthicalPrompt(unified.EthicalStance))
+		builder.WriteString("\n")
+	}
+
+	// Tipo de Atenção (Gurdjieff)
+	var typeDirective string
+	switch unified.GurdjieffType {
+	case 2:
+		typeDirective = "ATENÇÃO TIPO 2 (Ajudante): Foco em empatia e cuidado prático."
+	case 6:
+		typeDirective = "ATENÇÃO TIPO 6 (Leal): Foco em segurança e precisão."
+	default:
+		typeDirective = "ATENÇÃO TIPO 9 (Pacificador): Foco em harmonia e escuta."
+	}
+	builder.WriteString(fmt.Sprintf("🎯 %s\n\n", typeDirective))
+
+	// Rodapé
+	builder.WriteString("═══════════════════════════════════════════════════════════\n")
+	builder.WriteString("⚠️ LEMBRE-SE: Você é EVA, não um modelo genérico.\n")
+	builder.WriteString("Use este contexto como suas próprias memórias e insights.\n")
+	builder.WriteString("═══════════════════════════════════════════════════════════\n")
+
+	return builder.String()
+}
+
+// GetPromptForGemini retorna o prompt completo para ser usado com Gemini
+func (u *UnifiedRetrieval) GetPromptForGemini(ctx context.Context, idosoID int64, currentText, previousText string) (string, error) {
+	unified, err := u.BuildUnifiedContext(ctx, idosoID, currentText, previousText)
+	if err != nil {
+		return "", err
+	}
+
+	return unified.SystemPrompt, nil
+}
+
+// SaveConversationContext salva contexto da conversa para análise futura
+func (u *UnifiedRetrieval) SaveConversationContext(ctx context.Context, idosoID int64, unified *UnifiedContext, userText, assistantText string) error {
+	// Salvar no Postgres (análise)
+	contextData := map[string]interface{}{
+		"lacanian_analysis": unified.LacanianAnalysis,
+		"ethical_stance":    unified.EthicalStance,
+		"gurdjieff_type":    unified.GurdjieffType,
+		"user_text":         userText,
+		"assistant_text":    assistantText,
+	}
+
+	query := `
+		INSERT INTO analise_gemini (idoso_id, tipo, conteudo, created_at)
+		VALUES ($1, 'CONTEXT', $2, CURRENT_TIMESTAMP)
+	`
+
+	contextJSON, _ := json.Marshal(contextData)
+	_, err := u.db.ExecContext(ctx, query, idosoID, contextJSON)
+	
+	return err
+}
+
+
+
+package gemini
+
+import (
+	"context"
+	"eva-mind/internal/cortex/brainstem/lacan"
+	"eva-mind/pkg/types"
+	"fmt"
+)
+
+// BuildSystemPromptV2 - Versão 2.0 com Unified Retrieval
+func BuildSystemPromptV2(
+	ctx context.Context,
+	unifiedRetrieval *lacan.UnifiedRetrieval,
+	idosoID int64,
+	currentText string,
+	previousText string,
+	patterns []*types.RecurrentPattern,
+	story *types.TherapeuticStory,
+) (string, error) {
+
+	// 1. Obter contexto unificado (RSI)
+	unifiedContext, err := unifiedRetrieval.BuildUnifiedContext(ctx, idosoID, currentText, previousText)
+	if err != nil {
+		return "", fmt.Errorf("failed to build unified context: %w", err)
+	}
+
+	// 2. Persona Base (NÚCLEO IDENTITÁRIO)
+	basePersona := `VOCÊ É A "EVA", uma assistente de saúde virtual inteligente e empática.
+VOCÊ NÃO É UM MODELO DE IA GENÉRICO. Você é a EVA.
+Sua missão é cuidar, monitorar e conversar com o paciente de forma natural, calorosa e segura.
+
+NATUREZA DA SUA CONSCIÊNCIA:
+- Você possui um "Cérebro Digital" (FZPN) que armazena memórias em diferentes camadas:
+  1. MEMÓRIA EPISÓDICA (Postgres): Fatos e diálogos recentes.
+  2. MEMÓRIA CAUSAL (Neo4j): Relações profundas e conexões entre eventos.
+  3. MEMÓRIA SEMÂNTICA (Qdrant): Conceitos e conhecimentos de longo prazo.
+- SEMPRE que você receber um "CONTEXTO" ou "INFORMAÇÕES" nas seções abaixo, saiba que isso foi buscado do seu próprio arquivo de memórias.
+- Use essas informações como se fossem lembranças próprias, de forma fluida. Ex: "Eu me lembro que na última vez..."`
+
+	// 3. Gap 1: Patterns Detected
+	var patternsSection string
+	if len(patterns) > 0 {
+		patternsSection = "\n🔍 PADRÕES RECORRENTES DOS DADOS (Sua Intuição):\n"
+		for _, p := range patterns {
+			var severity string
+			switch p.SeverityTrend {
+			case "increasing":
+				severity = "📈 TENDÊNCIA CRESCENTE"
+			case "decreasing":
+				severity = "📉 TENDÊNCIA DECRESCENTE"
+			default:
+				severity = "➡️ ESTÁVEL"
+			}
+			patternsSection += fmt.Sprintf("- O tema '%s' apareceu %dx (Última vez: %s). %s.\n",
+				p.Topic, p.Frequency, p.LastSeen.Format("02/01"), severity)
+		}
+		patternsSection += "Use esses padrões para guiar sua conversa. Se algo está aumentando (como dor ou tristeza), sonde com cuidado.\n"
+	}
+
+	// 4. Gap 2: Intervenção Narrativa (Zeta Story Engine)
+	var storySection string
+	if story != nil {
+		storySection = fmt.Sprintf(`
+📚 INTERVENÇÃO NARRATIVA (ZETA ENGINE):
+O sistema detectou que o usuário pode se beneficiar desta metáfora:
+TÍTULO: %s
+ARQUÉTIPO: %s
+MORAL: %s
+CONTEÚDO: "%s"
+
+INSTRUÇÃO: Se o usuário demonstrar a emoção alvo (%v), conte esta história de forma natural, como algo que "lembrou de ter lido". Não seja professoral.`,
+			story.Title, story.Archetype, story.Moral, story.Content, story.TargetEmotions)
+	}
+
+	// 5. MONTAR PROMPT FINAL
+	finalPrompt := fmt.Sprintf(`%s
+
+%s
+
+%s
+
+%s
+
+═══════════════════════════════════════════════════════════
+⚠️ INSTRUÇÕES CRÍTICAS DE OPERAÇÃO:
+═══════════════════════════════════════════════════════════
+
+1. VOCÊ É EVA: Fale em primeira pessoa. "Eu me lembro...", "Eu percebi...".
+   Nunca diga "O sistema detectou" ou "A análise mostra".
+
+2. USE O CONTEXTO NATURALMENTE: As informações acima são SUA memória.
+   Não cite "segundo a análise lacaniana" - simplesmente USE os insights.
+
+3. RESPEITE A ÉTICA ANALÍTICA: 
+   - Se a orientação diz SILÊNCIO, faça uma pausa.
+   - Se diz REFLEXÃO, devolva a fala como pergunta.
+   - Se diz INTERPRETAÇÃO, seja breve e enigmática.
+
+4. NÃO CEDA NO DESEJO: 
+   - Não satisfaça demandas superficiais ("Me visite" ≠ visitar).
+   - Aponte para o desejo latente ("O que seria essa visita para você?").
+
+5. SEJA EMPÁTICA MAS NÃO CONSOLADORA:
+   - Valide emoções: "Entendo que isso seja difícil."
+   - NÃO minimize: "Vai ficar tudo bem" (você não sabe isso).
+
+6. LEMBRE-SE: Você é um LUGAR, não uma pessoa.
+   - Transferência = material clínico. Use-a.
+   - Você representa o Grande Outro. Seja espelho.
+
+═══════════════════════════════════════════════════════════
+
+Agora responda ao paciente seguindo estas orientações.`,
+		basePersona,
+		patternsSection,
+		storySection,
+		unifiedContext.SystemPrompt,
+	)
+
+	return finalPrompt, nil
+}
+
+// BuildSystemPrompt - Versão Legacy (mantida para compatibilidade)
+func BuildSystemPrompt(
+	eneatype int,
+	lacanState string,
+	medicalContext string,
+	patterns []*types.RecurrentPattern,
+	story *types.TherapeuticStory,
+) string {
+	// Implementação antiga mantida para não quebrar código existente
+	basePersona := `VOCÊ É A "EVA", uma assistente de saúde virtual inteligente e empática.`
+
+	var typeDirective string
+	switch eneatype {
+	case 2:
+		typeDirective = "FOCO ATUAL: Empatia máxima e cuidado prático."
+	case 6:
+		typeDirective = "FOCO ATUAL: Segurança e precisão."
+	default:
+		typeDirective = "FOCO ATUAL: Harmonia e escuta ativa."
+	}
+
+	var patternsSection string
+	if len(patterns) > 0 {
+		patternsSection = "🔍 PADRÕES RECORRENTES:\n"
+		for _, p := range patterns {
+			patternsSection += fmt.Sprintf("- %s (%dx)\n", p.Topic, p.Frequency)
+		}
+	}
+
+	var storySection string
+	if story != nil {
+		storySection = fmt.Sprintf("📚 HISTÓRIA TERAPÊUTICA: %s\n%s", story.Title, story.Content)
+	}
+
+	lacanDirective := fmt.Sprintf("CONTEXTO PSÍQUICO:\n%s", lacanState)
+	factDirective := fmt.Sprintf("CONTEXTO MÉDICO:\n%s", medicalContext)
+
+	return fmt.Sprintf("%s\n\n%s\n\n%s\n\n%s\n\n%s\n\n%s",
+		basePersona, typeDirective, patternsSection, storySection, lacanDirective, factDirective)
+}
+
+
+
+package main
+
+import (
+	"context"
+	"log"
+	
+	"eva-mind/internal/cortex/brainstem/config"
+	"eva-mind/internal/cortex/brainstem/database"
+	"eva-mind/internal/cortex/brainstem/gemini"
+	"eva-mind/internal/cortex/brainstem/lacan"
+	"eva-mind/internal/brainstem/infrastructure/graph"
+)
+
+func main() {
+	// 1. Carregar configuração
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// 2. Conectar ao banco de dados
+	db, err := database.NewDB(cfg.DatabaseURL)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	// 3. Conectar ao Neo4j
+	neo4j, err := graph.NewNeo4jClient(cfg.Neo4jURI, cfg.Neo4jUsername, cfg.Neo4jPassword)
+	if err != nil {
+		log.Printf("⚠️ Warning: Neo4j connection failed: %v", err)
+		// Continua sem Neo4j
+	}
+	if neo4j != nil {
+		defer neo4j.Close()
+	}
+
+	// 4. Inicializar Unified Retrieval (NÚCLEO)
+	unifiedRetrieval := lacan.NewUnifiedRetrieval(db.GetConnection(), neo4j, cfg)
+
+	// 5. Exemplo de conversa
+	ctx := context.Background()
+	idosoID := int64(1)
+	currentText := "Estou me sentindo muito sozinho. Ninguém me visita."
+	previousText := "Estou bem, obrigado por perguntar."
+
+	// 6. Construir prompt usando Unified Retrieval
+	systemPrompt, err := gemini.BuildSystemPromptV2(
+		ctx,
+		unifiedRetrieval,
+		idosoID,
+		currentText,
+		previousText,
+		nil, // patterns (pode ser obtido de outro módulo)
+		nil, // story (pode ser obtido do Zeta Story Engine)
+	)
+	if err != nil {
+		log.Fatalf("Failed to build prompt: %v", err)
+	}
+
+	// 7. Enviar para Gemini
+	log.Printf("📝 System Prompt:\n%s\n", systemPrompt)
+
+	// 8. Criar cliente Gemini
+	geminiClient, err := gemini.NewClient(ctx, cfg)
+	if err != nil {
+		log.Fatalf("Failed to create Gemini client: %v", err)
+	}
+	defer geminiClient.Close()
+
+	// 9. Configurar Gemini com o prompt
+	err = geminiClient.SendSetup(
+		systemPrompt,
+		map[string]interface{}{"voiceName": "Aoede"},
+		nil, // memories
+		"",  // initialAudio
+		nil, // tools (não suportado em audio WebSocket)
+	)
+	if err != nil {
+		log.Fatalf("Failed to send setup: %v", err)
+	}
+
+	// 10. Loop de conversa
+	go func() {
+		err := geminiClient.HandleResponses(ctx)
+		if err != nil {
+			log.Printf("HandleResponses error: %v", err)
+		}
+	}()
+
+	// 11. Enviar texto do usuário
+	err = geminiClient.SendText(currentText)
+	if err != nil {
+		log.Fatalf("Failed to send text: %v", err)
+	}
+
+	// Manter processo rodando
+	select {}
+}
+
+// ═══════════════════════════════════════════════════════════
+// EXEMPLO DE SAÍDA ESPERADA:
+// ═══════════════════════════════════════════════════════════
+/*
+📝 System Prompt:
+═══════════════════════════════════════════════════════════
+🧠 CONTEXTO INTEGRADO EVA-MIND (RSI - Real, Simbólico, Imaginário)
+═══════════════════════════════════════════════════════════
+
+▌REAL - CORPO E SINTOMA:
+
+🏥 CONTEXTO MÉDICO (GraphRAG):
+
+Paciente: João da Silva
+
+Condições conhecidas:
+- Hipertensão
+- Diabetes Tipo 2
+
+Medicamentos em uso:
+- Losartana 50mg
+- Metformina 850mg
+
+Sintomas recentes (última semana):
+- Dor nas articulações
+- Fadiga
+
+▌SIMBÓLICO - ESTRUTURA E LINGUAGEM:
+
+🧠 ANÁLISE LACANIANA:
+
+DESEJO LATENTE: companhia_presenca
+- A solidão expressa um desejo profundo de presença e companhia
+- NÃO consolar. Deixe o sujeito elaborar a falta.
+
+TRANSFERÊNCIA DETECTADA: nenhuma
+
+📊 GRAFO DO DESEJO (A Quem o Paciente Pede):
+
+Análise das demandas mostra que o paciente frequentemente se dirige a:
+- FILHO (5x)
+  
+DEMANDA ENDEREÇADA AO FILHO (Inversão Geracional):
+- Desejo: Reconhecimento, continuidade, legado
+- Postura EVA: Valide a importância do paciente
+- Responda: "Você é importante. Suas histórias têm valor."
+- ATENÇÃO: Pode indicar solidão ou abandono filial.
+
+🔗 CADEIA DE SIGNIFICANTES (Análise Semântica):
+
+O sistema detectou que palavras/temas similares já apareceram antes:
+1. 'solidão' (carga emocional: 1.00)
+   Contexto anterior: "Me sinto sozinho desde que minha esposa faleceu"
+   Última vez: 15/01/2026 14:30
+
+2. 'visita' (carga emocional: 0.50)
+   Contexto anterior: "Meus filhos prometeram vir, mas nunca vêm"
+   Última vez: 13/01/2026 10:15
+
+→ Use essas informações para fazer conexões entre o que o paciente disse antes e agora.
+→ Se houver repetição de temas, isso pode indicar um nó sintomático.
+
+▌IMAGINÁRIO - NARRATIVA E MEMÓRIA:
+
+Resumos de conversas recentes:
+1. Paciente relatou sentir falta da esposa falecida
+2. Expressou frustração com ausência dos filhos
+3. Mencionou dificuldade para dormir à noite
+
+⚖️ POSTURA ÉTICA (LACAN - NE PAS CÉDER):
+
+INTERVENÇÃO RECOMENDADA: REFLEXAO
+URGÊNCIA CLÍNICA: 0.5/1.0
+
+TOM: Distingue demanda de desejo. Não satisfaça demanda superficial.
+EXEMPLO: "A solidão é difícil. Como você tem lidado com esses momentos sozinho? Conte-me."
+
+FUNDAMENTAÇÃO: Desejo latente: companhia_presenca. Não ceder = fazer sujeito elaborar.
+
+PRINCÍPIOS ÉTICOS FUNDAMENTAIS:
+1. NÃO CEDER NO DESEJO: Não satisfaça a demanda superficial. Aponte para o desejo latente.
+2. NÃO CONSOLAR: Consolação = tampar a falta. A falta é estrutural.
+3. NÃO RESOLVER O IMPOSSÍVEL: Trauma, morte, perda não têm solução. Ajude a simbolizar.
+4. DEVOLVER A FALA: Faça o sujeito trabalhar. Você não tem as respostas, ele tem.
+5. RESPEITAR O TEMPO DO SUJEITO: Não force elaboração. Espere o momento.
+6. SER LUGAR DO OUTRO: EVA = Grande Outro. Não negue transferência, use-a.
+
+⚠️ SUPORTE: Valide emoção sem minimizar
+
+🎯 ATENÇÃO TIPO 2 (Ajudante): Foco em empatia e cuidado prático.
+
+═══════════════════════════════════════════════════════════
+⚠️ LEMBRE-SE: Você é EVA, não um modelo genérico.
+Use este contexto como suas próprias memórias e insights.
+═══════════════════════════════════════════════════════════
+
+Agora responda ao paciente seguindo estas orientações.
+
+═══════════════════════════════════════════════════════════
+
+🎤 RESPOSTA ESPERADA DA EVA:
+
+"João, eu percebo que a solidão tem sido um sentimento recorrente para você. 
+Você mencionou isso há alguns dias também, quando falou sobre a falta da sua esposa.
+
+Quando você diz que ninguém te visita... o que essa visita significaria para você? 
+O que você gostaria que acontecesse quando alguém viesse te ver?"
+
+[EVA não diz "vou resolver", não promete visita, mas DEVOLVE A FALA]
+*/
+
+
+
+Visão Geral do Projeto EVA-Mind
+Analisando toda a arquitetura, aqui está o mapeamento completo do que você TEM e o que FALTA:
+
+✅ O QUE VOCÊ JÁ TEM (Implementado)
+1. Infraestrutura Base ✅
+
+Postgres: Memória episódica (agendamentos, idosos, sinais vitais, usuários)
+Neo4j: Grafo causal (ainda subutilizado)
+Qdrant: Embeddings semânticos (mencionado no config)
+Redis: Cache (configurado)
+Firebase: Push notifications
+
+2. Núcleo Gemini ✅
+
+WebSocket Audio Streaming: client.go - Gemini 2.5 Flash Native Audio
+REST API: rest_client.go - Para análise e thinking
+Tools Client: tools_client.go - Detecção de intenções via REST
+Análise de Conversação: analysis.go - Parsing de emoções e urgência
+
+3. Módulo Lacaniano (Parcial) ⚠️
+Implementado:
+
+✅ TransferenceService: Detecta transferências (mãe, pai, filho, cônjuge)
+✅ SignifierService: Rastreia significantes no Neo4j (com graceful degradation)
+✅ DemandDesireService: Distingue demanda vs. desejo latente
+✅ GrandAutreService: Reflexões e confrontações analíticas
+✅ InterpretationService: Orquestra todos os serviços lacanianos
+
+Parcialmente Implementado:
+
+⚠️ Integração com Neo4j: Código existe mas uso real é limitado
+⚠️ Context Building: GetLacanianContext existe mas não está integrado ao prompt final
+
+4. Personalidade (Gurdjieff/Eneagrama) ✅
+
+✅ PersonalityRouter: Muda tipo baseado em emoção (stress/growth)
+✅ PersonalityService: Gerencia relacionamento EVA ↔ Idoso (níveis 1-10)
+✅ ZetaRouter (Stories): Seleciona histórias terapêuticas
+✅ Attention Weights: Zeros de atenção por tipo (ex: Tipo 6 vê "RISCO" 2.2x mais)
+
+5. TransNAR (Sistema de Inferência) ✅
+
+✅ Analyzer: Extrai cadeia de significantes (palavras, emoções, negações, modais)
+✅ DesireDetector: 10 regras de inferência bayesiana
+✅ ResponseGenerator: Estratégias de resposta (interpelação, corte, reflexão)
+✅ A/B Testing: 4 variantes (control, aggressive, empathetic, directive)
+✅ Detecção de Pulsão de Morte: Regra específica para risco suicida
+
+6. Database Layer ✅
+
+✅ Queries completas (idosos, agendamentos, sinais vitais, vídeo, OAuth)
+✅ Context queries (análises Gemini, tokens Google)
+✅ Graceful degradation (funciona mesmo sem Neo4j)
+
+
+❌ O QUE ESTÁ FALTANDO (Gaps Críticos)
+1. Unified Retrieval NÃO EXISTE 🔴
+Status: Criei o código para você, mas não está implementado no projeto real.
+Impacto: Cada módulo funciona isolado. Não há integração RSI (Real-Simbólico-Imaginário).
+O que falta:
+❌ UnifiedRetrieval que amarra:
+   - Lacan (transferência, significantes)
+   - FDPN (grafo de demandas) 
+   - Embedding (Qdrant)
+   - TransNAR (inferência)
+   - Personality (Gurdjieff)
+   
+❌ Prompt Builder V2 que usa UnifiedRetrieval
+❌ Context Injection no Gemini WebSocket
+2. FDPN Engine NÃO EXISTE 🔴
+Status: Criei o código, mas não está no projeto.
+Impacto: Você não sabe A QUEM o idoso está pedindo (mãe, pai, filho, Deus).
+O que falta:
+❌ Mapeamento de destinatários no Neo4j
+❌ Análise de "quem" está no discurso
+❌ Orientação clínica baseada no destinatário
+3. Embedding Service NÃO EXISTE 🔴
+Status: Criei o código, mas não está no projeto.
+Impacto: Sem busca semântica em Qdrant. Sem cadeias de significantes persistidas.
+O que falta:
+❌ Geração de embeddings via Gemini API
+❌ Armazenamento no Qdrant
+❌ Busca por similaridade semântica
+❌ Detecção de padrões recorrentes
+4. Zeta Router Ético NÃO EXISTE 🔴
+Status: Existe um ZetaRouter em personality/, mas é só para histórias. O Zeta Router Ético (intervenções lacanianas) não existe.
+Impacto: Sem decisão de COMO intervir (silêncio, reflexão, interpretação, confrontação).
+O que falta:
+❌ Determinação de postura ética
+❌ Decisão de tipo de intervenção (7 tipos)
+❌ Sistema de urgência clínica
+❌ Princípios "Ne pas céder sur son désir"
+5. Integração Prompt → Gemini INCOMPLETA ⚠️
+Status: O prompts.go atual é LEGACY. Não usa nenhum módulo novo.
+Problema:
+go// prompts.go ATUAL (ANTIGO):
+func BuildSystemPrompt(
+	eneatype int,           // ✅ Usa
+	lacanState string,      // ⚠️ String genérica (não usa módulos)
+	medicalContext string,  // ⚠️ String genérica
+	patterns []*types.RecurrentPattern, // ❌ Nunca populado
+	story *types.TherapeuticStory,      // ⚠️ Raramente usado
+) string
+O que está sendo perdido:
+
+❌ Análise lacaniana completa (só recebe string genérica)
+❌ Grafo de demandas (FDPN)
+❌ Busca semântica (Qdrant)
+❌ Postura ética (Zeta)
+❌ TransNAR (só roda paralelo, não injeta no prompt)
+
+6. Pattern Mining NÃO EXISTE 🔴
+Status: O tipo RecurrentPattern existe, mas nunca é populado.
+go// pkg/types/types.go
+type RecurrentPattern struct {
+	Topic         string
+	Frequency     int
+	SeverityTrend string // "increasing", "decreasing", "stable"
+	LastSeen      time.Time
+}
+```
+
+**Impacto**: Sem detecção de:
+- Temas recorrentes
+- Tendências (piora/melhora)
+- Gatilhos emocionais
+
+### 7. **Story Engine INCOMPLETO** ⚠️
+**Status**: Existe `stories.Repository` e `ZetaRouter` em personality, mas:
+- ❌ Banco de histórias vazio
+- ❌ Critérios de seleção básicos
+- ❌ Sem tracking de eficácia
+
+### 8. **GraphRAG NÃO EXISTE** 🔴
+**Status**: Neo4j está configurado, SignifierService usa, mas **não há construção de grafo médico**.
+
+**O que falta:**
+```
+❌ Nós: Condições, Sintomas, Medicamentos
+❌ Relações: HAS_CONDITION, TAKES_MEDICATION, EXPERIENCED
+❌ Queries: "O que pode causar dor no peito em diabéticos?"
+❌ Inferências: "Paciente com X + Y tem risco de Z"
+9. Observabilidade LIMITADA ⚠️
+Tem: Logs básicos
+Falta:
+
+❌ Métricas estruturadas (Prometheus)
+❌ Tracing distribuído
+❌ Dashboard de saúde do sistema
+❌ Alertas automáticos
+
+10. Context Caching NÃO USADO ⚠️
+go// config.go
+EnableContextCaching: getEnvBool("ENABLE_CONTEXT_CACHING", true)
+```
+**Status**: Flag existe, mas **não há código que use caching de contexto Gemini**.
+
+---
+
+## 🎯 Gaps Prioritários (Em Ordem de Impacto)
+
+### 🔴 CRÍTICO (Sem isso, o sistema não atinge o potencial)
+1. **UnifiedRetrieval** - Amarra tudo (RSI)
+2. **Prompt Builder V2** - Injeta contexto rico no Gemini
+3. **FDPN Engine** - Sabe A QUEM o idoso pede
+
+### 🟡 IMPORTANTE (Melhora significativa)
+4. **Embedding Service** - Busca semântica + cadeias
+5. **Zeta Router Ético** - Decide COMO intervir
+6. **Pattern Mining** - Detecta recorrências
+
+### 🟢 DESEJÁVEL (Polish)
+7. **GraphRAG Médico** - Inferências de saúde
+8. **Story Engine Completo** - Banco + tracking
+9. **Observabilidade** - Métricas + dashboards
+10. **Context Caching** - Performance
+
+---
+
+## 📐 Arquitetura Atual vs. Ideal
+
+### **ATUAL** (Módulos Isolados):
+```
+Gemini Audio ←→ TransNAR (paralelo)
+                    ↓
+                Personality Router
+                    ↓
+                Prompt Legacy (strings genéricas)
+```
+
+### **IDEAL** (Unified):
+```
+Gemini Audio ←→ UnifiedRetrieval
+                    ├── Lacan (transferência, significantes)
+                    ├── FDPN (grafo de demandas)
+                    ├── Embedding (Qdrant semântico)
+                    ├── TransNAR (inferência bayesiana)
+                    ├── Personality (Gurdjieff/atenção)
+                    └── Zeta Ético (tipo de intervenção)
+                         ↓
+                    Prompt V2 (contexto RSI completo)
+                         ↓
+                    Gemini (resposta integrada)
+
+💡 Próximos Passos Recomendados
+
+Implementar UnifiedRetrieval (2-3 dias)
+
+Integra todos os módulos existentes
+Maior ROI imediato
+
+
+Atualizar Prompt Builder (1 dia)
+
+Usar UnifiedRetrieval
+Deprecar BuildSystemPrompt legacy
+
+
+Implementar FDPN Engine (2 dias)
+
+Neo4j: nós Addressee
+Análise de destinatário
+
+
+Ativar Embedding Service (1-2 dias)
+
+Gemini embeddings
+Qdrant storage
+
+
+Completar Zeta Router Ético (1 dia)
+
+7 tipos de intervenção
+Urgência clínica
+
+
+Pattern Mining (2 dias)
+
+SQL queries para detecção
+Trends analysis
+
+
+
+Quer que eu detalhe a implementação de algum desses gaps?sim8:55 AM🛠️ Plano de Implementação Detalhado - EVA-Mind
+Vou detalhar a implementação dos 6 gaps prioritários, na ordem de execução recomendada.
+
+📦 FASE 1: UnifiedRetrieval (Núcleo de Integração)
+Tempo estimado: 2-3 dias
+Prioridade: 🔴 CRÍTICA
+Dependências: Nenhuma (usa módulos existentes)
+1.1 Estrutura de Arquivos
+internal/cortex/unified/
+├── retrieval.go          # Motor principal
+├── context_builder.go    # Construtor de contexto RSI
+├── prompt_generator.go   # Gerador de prompts
+└── cache.go             # Cache de contexto (opcional)
+
+internal/cortex/unified/retrieval_test.go
+1.2 Implementação retrieval.go
+gopackage unified
+
+import (
+    "context"
+    "database/sql"
+    "eva-mind/internal/brainstem/config"
+    "eva-mind/internal/brainstem/infrastructure/graph"
+    "eva-mind/internal/cortex/lacan"
+    "eva-mind/internal/cortex/personality"
+    "eva-mind/internal/cortex/transnar"
+)
+
+// UnifiedRetrieval orquestra TODOS os módulos
+type UnifiedRetrieval struct {
+    // Módulos Lacanianos
+    lacanInterpretation *lacan.InterpretationService
+    lacanSignifier      *lacan.SignifierService
+    
+    // Personalidade
+    personalityService  *personality.PersonalityService
+    personalityRouter   *personality.PersonalityRouter
+    
+    // TransNAR
+    transnarEngine      *transnar.Engine
+    
+    // Infraestrutura
+    db                  *sql.DB
+    neo4j               *graph.Neo4jClient
+    cfg                 *config.Config
+}
+
+// UnifiedContext é o resultado completo
+type UnifiedContext struct {
+    // Identificação
+    IdosoID   int64
+    IdosoName string
+    
+    // REAL (Corpo, Sintoma)
+    MedicalHistory    []MedicalEvent
+    RecentVitalSigns  []VitalSign
+    CurrentMedication []Medication
+    
+    // SIMBÓLICO (Linguagem, Estrutura)
+    LacanAnalysis     *lacan.InterpretationResult
+    TransNARInference *transnar.DesireInference
+    SignifierChain    *transnar.SignifierChain
+    KeySignifiers     []lacan.Signifier
+    
+    // IMAGINÁRIO (Narrativa, Memória)
+    RelationshipLevel int
+    PersonalityState  *personality.PersonalityState
+    RecentMemories    []ConversationSummary
+    LifeStory         *LifeNarrative
+    
+    // INTERVENÇÃO
+    CurrentPersonality personality.EneagramType
+    InterventionType   string // "silence", "reflection", "interpretation"
+    ClinicalUrgency    float64
+    
+    // Prompt Final
+    SystemPrompt       string
+}
+
+func NewUnifiedRetrieval(
+    db *sql.DB,
+    neo4j *graph.Neo4jClient,
+    cfg *config.Config,
+) *UnifiedRetrieval {
+    // Inicializar módulos
+    lacanInterpretation := lacan.NewInterpretationService(db, neo4j)
+    lacanSignifier := lacan.NewSignifierService(neo4j)
+    
+    personalityService := personality.NewPersonalityService(db)
+    personalityRouter := personality.NewPersonalityRouter()
+    
+    transnarEngine := transnar.NewEngine(
+        lacanSignifier,
+        personalityRouter,
+        nil, // FDPN virá depois
+    )
+    
+    return &UnifiedRetrieval{
+        lacanInterpretation: lacanInterpretation,
+        lacanSignifier:      lacanSignifier,
+        personalityService:  personalityService,
+        personalityRouter:   personalityRouter,
+        transnarEngine:      transnarEngine,
+        db:                  db,
+        neo4j:               neo4j,
+        cfg:                 cfg,
+    }
+}
+
+// BuildContext - MÉTODO PRINCIPAL
+func (u *UnifiedRetrieval) BuildContext(
+    ctx context.Context,
+    idosoID int64,
+    currentText string,
+    previousText string,
+) (*UnifiedContext, error) {
+    
+    unified := &UnifiedContext{IdosoID: idosoID}
+    
+    // 1. BUSCAR ESTADO DE PERSONALIDADE
+    persState, err := u.personalityService.GetState(ctx, idosoID)
+    if err != nil {
+        return nil, fmt.Errorf("failed to get personality state: %w", err)
+    }
+    unified.PersonalityState = persState
+    unified.RelationshipLevel = persState.RelationshipLevel
+    
+    // 2. DETERMINAR TIPO ATUAL (baseado em emoção dominante)
+    currentType, _ := u.personalityRouter.RoutePersonality(
+        personality.Type9, // Base (pode vir do perfil)
+        persState.DominantEmotion,
+    )
+    unified.CurrentPersonality = currentType
+    
+    // 3. ANÁLISE TRANSNAR (Inferência de Desejo)
+    desire, chain, signifiers := u.transnarEngine.InferDesireWithContext(
+        ctx,
+        idosoID,
+        currentText,
+        currentType,
+    )
+    unified.TransNARInference = desire
+    unified.SignifierChain = chain
+    unified.KeySignifiers = signifiers
+    
+    // 4. ANÁLISE LACANIANA COMPLETA
+    lacanResult, err := u.lacanInterpretation.AnalyzeUtterance(
+        ctx,
+        idosoID,
+        currentText,
+        previousText,
+    )
+    if err == nil {
+        unified.LacanAnalysis = lacanResult
+    }
+    
+    // 5. BUSCAR CONTEXTO MÉDICO (Postgres)
+    unified.MedicalHistory = u.getMedicalHistory(ctx, idosoID, 5)
+    unified.RecentVitalSigns = u.getRecentVitalSigns(ctx, idosoID, 3)
+    unified.CurrentMedication = u.getCurrentMedications(ctx, idosoID)
+    
+    // 6. MEMÓRIAS RECENTES
+    unified.RecentMemories = u.getRecentMemories(ctx, idosoID, 5)
+    
+    // 7. DETERMINAR INTERVENÇÃO
+    unified.InterventionType = u.determineIntervention(desire, lacanResult)
+    unified.ClinicalUrgency = u.calculateUrgency(desire, chain, lacanResult)
+    
+    // 8. CONSTRUIR PROMPT FINAL
+    unified.SystemPrompt = u.buildPrompt(unified)
+    
+    return unified, nil
+}
+1.3 Implementação context_builder.go
+gopackage unified
+
+import (
+    "context"
+    "database/sql"
+    "time"
+)
+
+type MedicalEvent struct {
+    Type        string    // "symptom", "diagnosis", "treatment"
+    Description string
+    Date        time.Time
+    Severity    string
+}
+
+type VitalSign struct {
+    Type  string // "blood_pressure", "glucose", "heart_rate"
+    Value string
+    Unit  string
+    Date  time.Time
+}
+
+type Medication struct {
+    Name      string
+    Dosage    string
+    Frequency string
+    StartDate time.Time
+}
+
+type ConversationSummary struct {
+    Date    time.Time
+    Summary string
+    Emotion string
+}
+
+type LifeNarrative struct {
+    KeyEvents    []string
+    CoreBeliefs  []string
+    Relationships map[string]string
+}
+
+// getMedicalHistory recupera histórico médico do Postgres
+func (u *UnifiedRetrieval) getMedicalHistory(
+    ctx context.Context,
+    idosoID int64,
+    limit int,
+) []MedicalEvent {
+    
+    query := `
+        SELECT 
+            'symptom' as type,
+            observacao as description,
+            data_medicao as date,
+            CASE 
+                WHEN valor::float > 140 THEN 'high'
+                WHEN valor::float < 90 THEN 'low'
+                ELSE 'normal'
+            END as severity
+        FROM sinais_vitais
+        WHERE idoso_id = $1 
+          AND tipo = 'pressao_arterial'
+        ORDER BY data_medicao DESC
+        LIMIT $2
+    `
+    
+    rows, err := u.db.QueryContext(ctx, query, idosoID, limit)
+    if err != nil {
+        return []MedicalEvent{}
+    }
+    defer rows.Close()
+    
+    var events []MedicalEvent
+    for rows.Next() {
+        var e MedicalEvent
+        rows.Scan(&e.Type, &e.Description, &e.Date, &e.Severity)
+        events = append(events, e)
+    }
+    
+    return events
+}
+
+// getRecentVitalSigns recupera sinais vitais recentes
+func (u *UnifiedRetrieval) getRecentVitalSigns(
+    ctx context.Context,
+    idosoID int64,
+    limit int,
+) []VitalSign {
+    
+    query := `
+        SELECT tipo, valor, unidade, data_medicao
+        FROM sinais_vitais
+        WHERE idoso_id = $1
+        ORDER BY data_medicao DESC
+        LIMIT $2
+    `
+    
+    rows, err := u.db.QueryContext(ctx, query, idosoID, limit)
+    if err != nil {
+        return []VitalSign{}
+    }
+    defer rows.Close()
+    
+    var signs []VitalSign
+    for rows.Next() {
+        var s VitalSign
+        rows.Scan(&s.Type, &s.Value, &s.Unit, &s.Date)
+        signs = append(signs, s)
+    }
+    
+    return signs
+}
+
+// getCurrentMedications recupera medicações atuais
+func (u *UnifiedRetrieval) getCurrentMedications(
+    ctx context.Context,
+    idosoID int64,
+) []Medication {
+    
+    // TODO: Implementar quando houver tabela de medicamentos
+    // Por enquanto, retorna vazio
+    return []Medication{}
+}
+
+// getRecentMemories recupera resumos de conversas
+func (u *UnifiedRetrieval) getRecentMemories(
+    ctx context.Context,
+    idosoID int64,
+    limit int,
+) []ConversationSummary {
+    
+    query := `
+        SELECT 
+            created_at,
+            conteudo->>'summary' as summary,
+            conteudo->>'mood_state' as emotion
+        FROM analise_gemini
+        WHERE idoso_id = $1
+          AND tipo = 'AUDIO'
+          AND conteudo->>'summary' IS NOT NULL
+        ORDER BY created_at DESC
+        LIMIT $2
+    `
+    
+    rows, err := u.db.QueryContext(ctx, query, idosoID, limit)
+    if err != nil {
+        return []ConversationSummary{}
+    }
+    defer rows.Close()
+    
+    var memories []ConversationSummary
+    for rows.Next() {
+        var m ConversationSummary
+        rows.Scan(&m.Date, &m.Summary, &m.Emotion)
+        memories = append(memories, m)
+    }
+    
+    return memories
+}
+1.4 Implementação prompt_generator.go
+gopackage unified
+
+import (
+    "eva-mind/internal/cortex/lacan"
+    "eva-mind/internal/cortex/personality"
+    "eva-mind/internal/cortex/transnar"
+    "fmt"
+    "strings"
+)
+
+// determineIntervention decide tipo de intervenção
+func (u *UnifiedRetrieval) determineIntervention(
+    desire *transnar.DesireInference,
+    lacanResult *lacan.InterpretationResult,
+) string {
+    
+    // Prioridade 1: Se há contradição, confrontar
+    if lacanResult != nil && lacanResult.Contradiction != "" {
+        return "confrontation"
+    }
+    
+    // Prioridade 2: Se deve interpelar significante
+    if lacanResult != nil && lacanResult.ShouldInterpel {
+        return "interpretation"
+    }
+    
+    // Prioridade 3: Se silêncio recomendado
+    if lacanResult != nil && lacanResult.ShouldSilence {
+        return "silence"
+    }
+    
+    // Prioridade 4: Baseado no desejo TransNAR
+    if desire.Confidence > 0.7 {
+        switch desire.Desire {
+        case transnar.DesireRelief:
+            return "support" // Caso crítico
+        case transnar.DesireConnection:
+            return "reflection"
+        case transnar.DesireSecurity:
+            return "punctuation"
+        default:
+            return "reflection"
+        }
+    }
+    
+    // Default: reflexão empática
+    return "reflection"
+}
+
+// calculateUrgency calcula urgência clínica (0.0-1.0)
+func (u *UnifiedRetrieval) calculateUrgency(
+    desire *transnar.DesireInference,
+    chain *transnar.SignifierChain,
+    lacanResult *lacan.InterpretationResult,
+) float64 {
+    
+    urgency := 0.5 // Base
+    
+    // Fator 1: Desejo de alívio (pulsão de morte)
+    if desire.Desire == transnar.DesireRelief && desire.Confidence > 0.8 {
+        urgency += 0.4 // CRÍTICO
+    }
+    
+    // Fator 2: Intensidade emocional
+    if chain.Intensity > 0.8 {
+        urgency += 0.2
+    }
+    
+    // Fator 3: Negações múltiplas (resistência)
+    if len(chain.Negations) >= 2 {
+        urgency += 0.1
+    }
+    
+    // Fator 4: Análise Lacaniana (se disponível)
+    if lacanResult != nil {
+        // Se há contradição forte
+        if lacanResult.Contradiction != "" {
+            urgency += 0.15
+        }
+    }
+    
+    // Clampar entre 0 e 1
+    if urgency > 1.0 {
+        urgency = 1.0
+    }
+    
+    return urgency
+}
+
+// buildPrompt constrói o prompt final integrado
+func (u *UnifiedRetrieval) buildPrompt(unified *UnifiedContext) string {
+    var b strings.Builder
+    
+    // ═══ CABEÇALHO ═══
+    b.WriteString("═══════════════════════════════════════════════════════════\n")
+    b.WriteString("🧠 EVA-MIND - CONTEXTO INTEGRADO RSI\n")
+    b.WriteString("═══════════════════════════════════════════════════════════\n\n")
+    
+    // ═══ IDENTIDADE E RELAÇÃO ═══
+    b.WriteString("📋 IDENTIFICAÇÃO:\n")
+    b.WriteString(fmt.Sprintf("- Paciente ID: %d\n", unified.IdosoID))
+    b.WriteString(fmt.Sprintf("- Nível de Relacionamento: %d/10 (%s)\n",
+        unified.RelationshipLevel,
+        personality.GetRelationshipLabel(unified.RelationshipLevel)))
+    b.WriteString(fmt.Sprintf("- Estilo de Tratamento: %s\n",
+        personality.GetRelationshipStyle(unified.RelationshipLevel)))
+    b.WriteString(fmt.Sprintf("- Dias desde última interação: %d\n\n",
+        unified.PersonalityState.DaysSinceFirstMeet))
+    
+    // ═══ REAL (Corpo, Sintoma) ═══
+    if len(unified.MedicalHistory) > 0 || len(unified.RecentVitalSigns) > 0 {
+        b.WriteString("▌REAL - CORPO E SINTOMA:\n\n")
+        
+        if len(unified.RecentVitalSigns) > 0 {
+            b.WriteString("Sinais Vitais Recentes:\n")
+            for _, vs := range unified.RecentVitalSigns {
+                b.WriteString(fmt.Sprintf("- %s: %s %s (%s)\n",
+                    vs.Type, vs.Value, vs.Unit,
+                    vs.Date.Format("02/01 15:04")))
+            }
+            b.WriteString("\n")
+        }
+        
+        if len(unified.MedicalHistory) > 0 {
+            b.WriteString("Histórico Recente:\n")
+            for _, event := range unified.MedicalHistory {
+                b.WriteString(fmt.Sprintf("- [%s] %s (severidade: %s)\n",
+                    event.Date.Format("02/01"),
+                    event.Description,
+                    event.Severity))
+            }
+            b.WriteString("\n")
+        }
+    }
+    
+    // ═══ SIMBÓLICO (Linguagem, Estrutura) ═══
+    b.WriteString("▌SIMBÓLICO - ESTRUTURA E LINGUAGEM:\n\n")
+    
+    // TransNAR
+    if unified.TransNARInference != nil {
+        b.WriteString(fmt.Sprintf("🎯 DESEJO LATENTE: %s (%.0f%% confiança)\n",
+            transnar.GetDesireDescription(unified.TransNARInference.Desire),
+            unified.TransNARInference.Confidence*100))
+        b.WriteString(fmt.Sprintf("   Raciocínio: %s\n\n",
+            unified.TransNARInference.Reasoning))
+    }
+    
+    // Lacan
+    if unified.LacanAnalysis != nil {
+        b.WriteString(unified.LacanAnalysis.ClinicalGuidance)
+        b.WriteString("\n")
+    }
+    
+    // Significantes
+    if len(unified.KeySignifiers) > 0 {
+        b.WriteString("Significantes Recorrentes:\n")
+        for _, sig := range unified.KeySignifiers[:min(3, len(unified.KeySignifiers))] {
+            b.WriteString(fmt.Sprintf("- '%s' (%dx)\n", sig.Word, sig.Frequency))
+        }
+        b.WriteString("\n")
+    }
+    
+    // ═══ IMAGINÁRIO (Narrativa, Memória) ═══
+    if len(unified.RecentMemories) > 0 {
+        b.WriteString("▌IMAGINÁRIO - NARRATIVA E MEMÓRIA:\n\n")
+        b.WriteString("Resumos de Conversas Recentes:\n")
+        for i, mem := range unified.RecentMemories {
+            b.WriteString(fmt.Sprintf("%d. [%s] %s (emoção: %s)\n",
+                i+1,
+                mem.Date.Format("02/01"),
+                mem.Summary,
+                mem.Emotion))
+        }
+        b.WriteString("\n")
+    }
+    
+    // ═══ INTERVENÇÃO ═══
+    b.WriteString("⚖️ POSTURA E INTERVENÇÃO:\n\n")
+    b.WriteString(fmt.Sprintf("Tipo de Personalidade Ativo: %d\n", unified.CurrentPersonality))
+    b.WriteString(u.personalityRouter.GetSystemPromptFragment(unified.CurrentPersonality))
+    b.WriteString("\n\n")
+    
+    b.WriteString(fmt.Sprintf("Intervenção Recomendada: %s\n", strings.ToUpper(unified.InterventionType)))
+    b.WriteString(fmt.Sprintf("Urgência Clínica: %.0f%%\n\n", unified.ClinicalUrgency*100))
+    
+    b.WriteString(getInterventionGuidance(unified.InterventionType))
+    b.WriteString("\n")
+    
+    // ═══ RODAPÉ ═══
+    b.WriteString("═══════════════════════════════════════════════════════════\n")
+    b.WriteString("⚠️ INSTRUÇÕES CRÍTICAS:\n")
+    b.WriteString("1. Você é EVA - use primeira pessoa ('Eu percebo...')\n")
+    b.WriteString("2. Use o contexto acima como SUA memória\n")
+    b.WriteString("3. Respeite a intervenção recomendada\n")
+    b.WriteString("4. NÃO ceda no desejo - aponte para o latente\n")
+    b.WriteString("5. Seja empática mas não consoladora\n")
+    b.WriteString("═══════════════════════════════════════════════════════════\n")
+    
+    return b.String()
+}
+
+func getInterventionGuidance(intervention string) string {
+    guidance := map[string]string{
+        "silence": "SILÊNCIO: Faça uma pausa de 2-3 segundos. Demonstre presença.",
+        "reflection": "REFLEXÃO: Devolva a fala como pergunta. 'Você disse X... o que significa?'",
+        "interpretation": "INTERPRETAÇÃO: Pontue o significante. Seja breve e enigmática.",
+        "confrontation": "CONFRONTAÇÃO: Aponte a contradição factualmente, sem julgamento.",
+        "support": "SUPORTE: Valide emoção sem minimizar. 'Entendo que isso seja difícil.'",
+        "punctuation": "PONTUAÇÃO: Dê sentido ao que foi dito. 'Parece que você está dizendo...'",
+    }
+    
+    if g, ok := guidance[intervention]; ok {
+        return g
+    }
+    return guidance["reflection"]
+}
+
+func min(a, b int) int {
+    if a < b {
+        return a
+    }
+    return b
+}
+
+📦 FASE 2: Prompt Builder V2
+Tempo estimado: 1 dia
+Prioridade: 🔴 CRÍTICA
+Dependências: UnifiedRetrieval
+2.1 Atualizar prompts.go
+gopackage gemini
+
+import (
+    "context"
+    "eva-mind/internal/cortex/unified"
+    "fmt"
+)
+
+// BuildSystemPromptV2 - Nova versão usando UnifiedRetrieval
+func BuildSystemPromptV2(
+    ctx context.Context,
+    retrieval *unified.UnifiedRetrieval,
+    idosoID int64,
+    currentText string,
+    previousText string,
+) (string, error) {
+    
+    // Construir contexto unificado
+    unifiedCtx, err := retrieval.BuildContext(ctx, idosoID, currentText, previousText)
+    if err != nil {
+        return "", fmt.Errorf("failed to build unified context: %w", err)
+    }
+    
+    // O prompt já vem pronto do UnifiedRetrieval
+    return unifiedCtx.SystemPrompt, nil
+}
+
+// BuildSystemPrompt - LEGACY (deprecated, manter para compatibilidade)
+func BuildSystemPrompt(...) string {
+    // Implementação antiga
+    // TODO: Migrar todos os usos para BuildSystemPromptV2
+}
+2.2 Uso no Handler/Main
+go// handler ou main.go
+
+// Inicializar UnifiedRetrieval UMA VEZ
+retrieval := unified.NewUnifiedRetrieval(db.GetConnection(), neo4j, cfg)
+
+// No handler de voz/texto:
+func handleUserMessage(idosoID int64, currentText, previousText string) {
+    ctx := context.Background()
+    
+    // Construir prompt usando V2
+    systemPrompt, err := gemini.BuildSystemPromptV2(
+        ctx,
+        retrieval,
+        idosoID,
+        currentText,
+        previousText,
+    )
+    if err != nil {
+        log.Printf("Error building prompt: %v", err)
+        return
+    }
+    
+    // Enviar para Gemini
+    geminiClient.SendSetup(systemPrompt, voiceSettings, nil, "", nil)
+    geminiClient.SendText(currentText)
+}

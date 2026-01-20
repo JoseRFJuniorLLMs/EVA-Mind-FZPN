@@ -8,8 +8,8 @@ package main
 import (
 	"context"
 	"database/sql"
-	"eva-mind/internal/config"
-	"eva-mind/internal/memory"
+	"eva-mind/internal/brainstem/config"
+	"eva-mind/internal/hippocampus/memory"
 	"fmt"
 	"log"
 	"time"

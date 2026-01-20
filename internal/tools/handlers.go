@@ -1,12 +1,12 @@
 package tools
 
 import (
-	"eva-mind/internal/actions" // ✅ NEW IMPORT
-	"eva-mind/internal/database"
-	"eva-mind/internal/email"
+	"eva-mind/internal/motor/actions" // ✅ NEW IMPORT
+	"eva-mind/internal/brainstem/database"
+	"eva-mind/internal/motor/email"
 
-	// "eva-mind/internal/gemini" // ❌ REMOVED IMPORTS to break cycle
-	"eva-mind/internal/push"
+	// "eva-mind/internal/cortex/gemini" // ❌ REMOVED IMPORTS to break cycle
+	"eva-mind/internal/brainstem/push"
 	"fmt"
 	"log"
 )

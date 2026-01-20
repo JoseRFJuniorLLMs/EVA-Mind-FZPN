@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"strings"
 
-	"eva-mind/internal/actions" // ✅ NEW IMPORT
-	"eva-mind/internal/config"
-	"eva-mind/internal/gemini"
-	"eva-mind/internal/logger"
-	"eva-mind/internal/push"
+	"eva-mind/internal/motor/actions" // ✅ NEW IMPORT
+	"eva-mind/internal/brainstem/config"
+	"eva-mind/internal/cortex/gemini"
+	"eva-mind/internal/brainstem/logger"
+	"eva-mind/internal/brainstem/push"
 
 	"github.com/rs/zerolog"
 )

@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"text/template"
 
-	"eva-mind/internal/logger"
+	"eva-mind/internal/brainstem/logger"
 
 	"github.com/rs/zerolog"
 )

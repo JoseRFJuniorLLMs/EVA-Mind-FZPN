@@ -2,9 +2,9 @@ package main
 
 import (
 	"context"
-	"eva-mind/internal/config"
-	"eva-mind/internal/infrastructure/vector"
-	"eva-mind/internal/memory" // For EmbeddingService
+	"eva-mind/internal/brainstem/config"
+	"eva-mind/internal/brainstem/infrastructure/vector"
+	"eva-mind/internal/hippocampus/memory" // For EmbeddingService
 	"eva-mind/pkg/types"
 	"fmt"
 	"log"
