@@ -854,8 +854,28 @@ func (s *SignalingServer) setupGeminiSession(client *PCMClient, voiceName string
 		log.Printf("🔍 [Patterns] Detected %d patterns for user %d", len(patterns), client.IdosoID)
 	}
 
-	// ⚡ BUILD FINAL PROMPT (Co-Intelligence)
-	instructions := gemini.BuildSystemPrompt(currentType, lacanState, medicalContext, patterns, nil)
+	// ⚡ BUILD FINAL PROMPT usando UnifiedRetrieval (RSI - Real, Simbólico, Imaginário)
+	// Isso inclui:
+	// - Nome do paciente (Neo4j/Postgres)
+	// - Agendamentos (Postgres)
+	// - Memórias (Qdrant)
+	// - Regra de ouro: "Oi [Nome], tudo bem?"
+	log.Printf("🧠 [DEBUG] Gerando prompt unificado para idoso %d", client.IdosoID)
+	instructions, err := s.brain.GetSystemPrompt(client.ctx, client.IdosoID)
+	if err != nil {
+		log.Printf("❌ [CRÍTICO] Erro ao gerar prompt unificado: %v", err)
+		log.Printf("   Usando fallback (sem nome)")
+		// Fallback para prompt antigo se UnifiedRetrieval falhar
+		instructions = gemini.BuildSystemPrompt(currentType, lacanState, medicalContext, patterns, nil)
+	} else {
+		log.Printf("✅ [DEBUG] Prompt unificado gerado com sucesso (%d chars)", len(instructions))
+		// Mostrar primeiras 200 chars para debug
+		preview := instructions
+		if len(preview) > 200 {
+			preview = preview[:200] + "..."
+		}
+		log.Printf("   Início: %s", preview)
+	}
 
 	log.Printf("🚀 Iniciando sessão Gemini (Co-Intelligence Mode)...")
 	// Passamos nil em memories e instructions antiga porque tudo agora está no System Prompt unificado

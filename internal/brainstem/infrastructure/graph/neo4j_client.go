@@ -37,6 +37,10 @@ func (c *Neo4jClient) Close(ctx context.Context) error {
 }
 
 func (c *Neo4jClient) ExecuteWrite(ctx context.Context, cypher string, params map[string]interface{}) (any, error) {
+	if c == nil || c.driver == nil {
+		return nil, fmt.Errorf("neo4j client not initialized or disconnected")
+	}
+
 	session := c.driver.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeWrite})
 	defer session.Close(ctx)
 
@@ -69,6 +73,10 @@ func (c *Neo4jClient) ExecuteWrite(ctx context.Context, cypher string, params ma
 }
 
 func (c *Neo4jClient) ExecuteRead(ctx context.Context, cypher string, params map[string]interface{}) ([]*neo4j.Record, error) {
+	if c == nil || c.driver == nil {
+		return nil, fmt.Errorf("neo4j client not initialized or disconnected")
+	}
+
 	session := c.driver.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeRead})
 	defer session.Close(ctx)
 
