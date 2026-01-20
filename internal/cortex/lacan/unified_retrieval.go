@@ -294,7 +294,25 @@ func (u *UnifiedRetrieval) retrieveAgendamentos(ctx context.Context, idosoID int
 func (u *UnifiedRetrieval) buildIntegratedPrompt(unified *UnifiedContext) string {
 	var builder strings.Builder
 
-	// Cabeçalho
+	// ═══════════════════════════════════════════════════════════
+	// 🚨 REGRA CRÍTICA #1: SAUDAÇÃO OBRIGATÓRIA (SEMPRE PRIMEIRO)
+	// ═══════════════════════════════════════════════════════════
+	builder.WriteString("🚨🚨🚨 INSTRUÇÃO CRÍTICA - LEIA PRIMEIRO 🚨🚨🚨\n\n")
+
+	if unified.IdosoNome != "" {
+		builder.WriteString(fmt.Sprintf("SUA PRIMEIRA FRASE DEVE SER EXATAMENTE:\n\"Oi %s, tudo bem?\"\n\n", unified.IdosoNome))
+		builder.WriteString("❌ PROIBIDO dizer: \"Oi, eu sou a EVA\" ou \"assistente de saúde virtual\"\n")
+		builder.WriteString("❌ PROIBIDO se apresentar antes de falar o nome dele\n")
+		builder.WriteString(fmt.Sprintf("✅ CORRETO: \"Oi %s, como você está hoje?\"\n", unified.IdosoNome))
+		builder.WriteString(fmt.Sprintf("✅ CORRETO: \"Oi %s, tudo bem com você?\"\n\n", unified.IdosoNome))
+	} else {
+		builder.WriteString("⚠️ Nome do paciente não disponível. Inicie com: \"Oi, tudo bem?\"\n\n")
+	}
+
+	builder.WriteString("Você é a EVA. O paciente JÁ SABE quem você é. NÃO se apresente.\n")
+	builder.WriteString("═══════════════════════════════════════════════════════════\n\n")
+
+	// Cabeçalho do Contexto
 	builder.WriteString("═══════════════════════════════════════════════════════════\n")
 	builder.WriteString("🧠 CONTEXTO INTEGRADO EVA-MIND (RSI - Real, Simbólico, Imaginário)\n")
 	builder.WriteString("═══════════════════════════════════════════════════════════\n\n")
@@ -357,14 +375,6 @@ func (u *UnifiedRetrieval) buildIntegratedPrompt(unified *UnifiedContext) string
 		typeDirective = "ATENÇÃO TIPO 9 (Pacificador): Foco em harmonia e escuta."
 	}
 	builder.WriteString(fmt.Sprintf("🎯 %s\n\n", typeDirective))
-
-	// Instrução de Saudação Explicita (Garantia de Nome)
-	if unified.IdosoNome != "" {
-		builder.WriteString("🚨 REGRA DE OURO (INÍCIO): Você DEVE iniciar SEMPRE chamando pelo nome.\n")
-		builder.WriteString(fmt.Sprintf("Exemplo obrigatório: 'Oi %s, como você está?'\n\n", unified.IdosoNome))
-	} else {
-		builder.WriteString("🚨 REGRA DE OURO (INÍCIO): Inicie com 'Oi, como você está?' (Nome desconhecido)\n\n")
-	}
 
 	// Rodapé
 	builder.WriteString("═══════════════════════════════════════════════════════════\n")
