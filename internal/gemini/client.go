@@ -95,9 +95,8 @@ func (c *Client) SendSetup(instructions string, voiceSettings map[string]interfa
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	parsedMemories := []interface{}{}
-	for _, m := range memories {
-		parsedMemories = append(parsedMemories, m)
+	if voiceSettings == nil {
+		voiceSettings = map[string]interface{}{"voiceName": "Aoede"}
 	}
 
 	setup := map[string]interface{}{

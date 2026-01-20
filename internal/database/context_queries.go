@@ -3,6 +3,7 @@ package database
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"time"
 )
 
@@ -29,6 +30,8 @@ func (db *DB) CreateGeminiAnalysis(idosoID int64, tipo string, conteudo interfac
 	if err != nil {
 		return fmt.Errorf("erro ao salvar analise gemini: %w", err)
 	}
+
+	log.Printf("📥 [POSTGRES] Análise salva: Idoso=%d, Tipo=%s, Tamanho=%d bytes", idosoID, tipo, len(conteudoJSON))
 	return nil
 }
 

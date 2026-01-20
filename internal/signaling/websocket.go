@@ -776,7 +776,7 @@ func (s *SignalingServer) createSession(sessionID, cpf string, idosoID int64, no
 	memories := s.GetRecentMemories(idosoID)
 	log.Printf("🧠 Carregando %d memórias episódicas para o contexto", len(memories))
 
-	instructions := BuildInstructions(idosoID, nome, s.db)
+	instructions := BuildInstructions(idosoID, s.db)
 
 	// ✅ FASE 3: Injetar Memória Factual (Contexto de Análises Passadas)
 	if s.context != nil {
@@ -1076,7 +1076,8 @@ func (s *SignalingServer) sendError(conn *websocket.Conn, errMsg string) {
 	})
 }
 
-func BuildInstructions(idosoID int64, nomeDefault string, db *sql.DB) string {
+func BuildInstructions(idosoID int64, db *sql.DB) string {
+	nomeDefault := "Paciente"
 	// 1. QUERY RESILIENTE: Buscar apenas o essencial primeiro
 	query := `
 		SELECT 

@@ -54,7 +54,15 @@ func (c *Neo4jClient) ExecuteWrite(ctx context.Context, cypher string, params ma
 		}
 
 		// Consumir para garantir execução
-		return result.Consume(ctx)
+		summary, err := result.Consume(ctx)
+		if err == nil {
+			preview := cypher
+			if len(preview) > 100 {
+				preview = preview[:100] + "..."
+			}
+			log.Printf("📥 [NEO4J] Escrita concluída: Query=\"%s\", Params=%v", preview, params)
+		}
+		return summary, err
 	})
 
 	return result, err
