@@ -153,68 +153,71 @@ func (u *UnifiedRetrieval) BuildUnifiedContext(
 }
 
 // getMedicalContextAndName recupera contexto médico e nome do paciente
+// NOME vem do POSTGRES (tabela agendamentos), NÃO do Neo4j!
 func (u *UnifiedRetrieval) getMedicalContextAndName(ctx context.Context, idosoID int64) (string, string) {
-	if u.neo4j == nil {
-		return "", ""
+	var name string
+
+	// 1. BUSCAR NOME DO POSTGRES (tabela agendamentos) - PRIORIDADE
+	nameQuery := `SELECT nome_idoso FROM agendamentos WHERE idoso_id = $1 LIMIT 1`
+	err := u.db.QueryRowContext(ctx, nameQuery, idosoID).Scan(&name)
+	if err != nil {
+		log.Printf("⚠️ [UnifiedRetrieval] Nome não encontrado no Postgres agendamentos: %v", err)
+		name = ""
+	} else {
+		log.Printf("✅ [UnifiedRetrieval] Nome encontrado: '%s'", name)
 	}
 
-	query := `
-		MATCH (p:Person {id: $idosoId})
-		OPTIONAL MATCH (p)-[:HAS_CONDITION]->(c:Condition)
-		OPTIONAL MATCH (p)-[:TAKES_MEDICATION]->(m:Medication)
-		OPTIONAL MATCH (p)-[:EXPERIENCED]->(s:Symptom)
-		WHERE s.timestamp > datetime() - duration('P7D')
-		RETURN 
-			p.name as name,
-			collect(DISTINCT c.name) as conditions,
-			collect(DISTINCT m.name) as medications,
-			collect(DISTINCT s.description) as recent_symptoms
-	`
+	// 2. BUSCAR CONTEXTO MÉDICO DO NEO4J (opcional)
+	var medicalContext string
+	if u.neo4j != nil {
+		query := `
+			MATCH (p:Person {id: $idosoId})
+			OPTIONAL MATCH (p)-[:HAS_CONDITION]->(c:Condition)
+			OPTIONAL MATCH (p)-[:TAKES_MEDICATION]->(m:Medication)
+			OPTIONAL MATCH (p)-[:EXPERIENCED]->(s:Symptom)
+			WHERE s.timestamp > datetime() - duration('P7D')
+			RETURN 
+				collect(DISTINCT c.name) as conditions,
+				collect(DISTINCT m.name) as medications,
+				collect(DISTINCT s.description) as recent_symptoms
+		`
 
-	records, err := u.neo4j.ExecuteRead(ctx, query, map[string]interface{}{
-		"idosoId": idosoID,
-	})
+		records, err := u.neo4j.ExecuteRead(ctx, query, map[string]interface{}{
+			"idosoId": idosoID,
+		})
 
-	if err != nil || len(records) == 0 {
-		return "", ""
-	}
+		if err == nil && len(records) > 0 {
+			record := records[0]
+			conditions, _ := record.Get("conditions")
+			medications, _ := record.Get("medications")
+			symptoms, _ := record.Get("recent_symptoms")
 
-	record := records[0]
-	nameInterface, _ := record.Get("name")
-	name, _ := nameInterface.(string)
+			medicalContext = "\n🏥 CONTEXTO MÉDICO (GraphRAG):\n\n"
 
-	conditions, _ := record.Get("conditions")
-	medications, _ := record.Get("medications")
-	symptoms, _ := record.Get("recent_symptoms")
+			if conds, ok := conditions.([]interface{}); ok && len(conds) > 0 {
+				medicalContext += "\nCondições conhecidas:\n"
+				for _, c := range conds {
+					medicalContext += fmt.Sprintf("- %s\n", c)
+				}
+			}
 
-	context := "\n🏥 CONTEXTO MÉDICO (GraphRAG):\n\n"
+			if meds, ok := medications.([]interface{}); ok && len(meds) > 0 {
+				medicalContext += "\nMedicamentos em uso:\n"
+				for _, m := range meds {
+					medicalContext += fmt.Sprintf("- %s\n", m)
+				}
+			}
 
-	if name != "" {
-		context += fmt.Sprintf("Paciente: %s\n", name)
-	}
-
-	if conds, ok := conditions.([]interface{}); ok && len(conds) > 0 {
-		context += "\nCondições conhecidas:\n"
-		for _, c := range conds {
-			context += fmt.Sprintf("- %s\n", c)
+			if symps, ok := symptoms.([]interface{}); ok && len(symps) > 0 {
+				medicalContext += "\nSintomas recentes (última semana):\n"
+				for _, s := range symps {
+					medicalContext += fmt.Sprintf("- %s\n", s)
+				}
+			}
 		}
 	}
 
-	if meds, ok := medications.([]interface{}); ok && len(meds) > 0 {
-		context += "\nMedicamentos em uso:\n"
-		for _, m := range meds {
-			context += fmt.Sprintf("- %s\n", m)
-		}
-	}
-
-	if symps, ok := symptoms.([]interface{}); ok && len(symps) > 0 {
-		context += "\nSintomas recentes (última semana):\n"
-		for _, s := range symps {
-			context += fmt.Sprintf("- %s\n", s)
-		}
-	}
-
-	return context, name
+	return medicalContext, name
 }
 
 // getRecentMemories recupera memórias episódicas recentes
