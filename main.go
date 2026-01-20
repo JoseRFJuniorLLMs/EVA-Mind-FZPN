@@ -438,6 +438,17 @@ func main() {
 	router := mux.NewRouter()
 	router.HandleFunc("/wss", signalingServer.HandleWebSocket)
 	router.HandleFunc("/ws/pcm", signalingServer.HandleWebSocket)
+	
+	// 🎥 Video WebSocket Handler (WebRTC Signaling)
+	videoSessionManager := NewVideoSessionManager()
+	router.HandleFunc("/ws/video", func(w http.ResponseWriter, r *http.Request) {
+		conn, err := signalingServer.upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			log.Printf("❌ Video WS upgrade error: %v", err)
+			return
+		}
+		HandleVideoWebSocket(videoSessionManager)(conn)
+	})
 
 	api := router.PathPrefix("/api").Subrouter()
 	api.HandleFunc("/stats", statsHandler).Methods("GET")
