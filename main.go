@@ -107,9 +107,6 @@ var (
 	signalingServer *SignalingServer
 	startTime       time.Time
 
-	// Video Session Manager for admin notifications
-	videoSessionManager *VideoSessionManager
-
 	// 🔐 Developer whitelist for Google features (v17)
 	// Add your CPF here to enable Google Calendar/Gmail/Drive features
 	googleFeaturesWhitelist = map[string]bool{
@@ -428,13 +425,7 @@ func main() {
 		log.Println("✅ Qdrant Vector DB connected")
 	}
 
-	// Initialize Signaling Server
-	log.Printf("🔌 Initializing WebSocket Signaling Server...")
-	signalingServer = NewSignalingServer(cfg, db, neo44jClient, pushService, calService, qdrantClient)
-
-	// ✅ Initialize Video Session Manager for admin notifications
-	log.Printf("📹 Initializing Video Session Manager...")
-	videoSessionManager = NewVideoSessionManager() // ✅ Use = not := to assign to global variable
+	signalingServer = NewSignalingServer(cfg, db, neo4jClient, pushService, calService, qdrantClient)
 
 	sch, err := scheduler.NewScheduler(cfg, db.GetConnection())
 	if err != nil {
@@ -629,14 +620,6 @@ func (s *SignalingServer) handleClientMessages(client *PCMClient) {
 				}
 
 				log.Printf("✅ Sessão de vídeo criada: %s", sessionID)
-
-				// ✅ NOTIFY ADMINS VIA WEBSOCKET (INSTANT NOTIFICATION)
-				if videoSessionManager != nil {
-					log.Printf("📞 Notificando admins conectados...")
-					videoSessionManager.notifyIncomingCall(sessionID)
-				} else {
-					log.Printf("⚠️ VideoSessionManager não inicializado")
-				}
 
 				// Iniciar cascata de notificações em goroutine
 				go s.handleVideoCascade(client.IdosoID, sessionID)
