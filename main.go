@@ -646,15 +646,14 @@ func (s *SignalingServer) handleClientMessages(client *PCMClient) {
 					log.Printf("⚠️ VideoSessionManager é nil - não foi possível notificar admin")
 				}
 
-				// 🛑 2. family cascade (COMENTADO PARA ISOLAR ERRO)
-				// go s.handleVideoCascade(client.IdosoID, sessionID)
-				log.Printf("🛑 [LOGICA ISOLADA] Cascata de família DESATIVADA para teste")
+				// ✅ 2. START FAMILY CASCADE (Restored)
+				go s.handleVideoCascade(client.IdosoID, sessionID)
 
 				// Confirmar recebimento ao mobile
 				s.sendJSON(client, map[string]string{
 					"type":       "video_cascade_started",
 					"session_id": sessionID,
-					"status":     "calling_admin", // Alterado status para refletir realidade
+					"status":     "searching_caregivers", // Restored original status expectation
 				})
 
 			case "hangup":
