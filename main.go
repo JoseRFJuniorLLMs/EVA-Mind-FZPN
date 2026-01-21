@@ -493,7 +493,13 @@ func main() {
 	// api.HandleFunc("/video/session/{id}", signalingServer.handleGetVideoSession).Methods("GET")
 	// api.HandleFunc("/video/session/{id}/answer", signalingServer.handleSaveVideoAnswer).Methods("POST")
 	// api.HandleFunc("/video/session/{id}/candidates", signalingServer.handleGetMobileCandidates).Methods("GET")
-	// api.HandleFunc("/video/sessions/pending", signalingServer.handleGetPendingSessions).Methods("GET")
+
+	// ✅ PENDING SESSIONS ENDPOINT (Manual Dashboard)
+	api.HandleFunc("/video/sessions/pending", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		pending := signalingServer.videoSessionManager.GetPendingSessions()
+		json.NewEncoder(w).Encode(pending)
+	}).Methods("GET")
 	api.HandleFunc("/config", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
@@ -631,6 +637,9 @@ func (s *SignalingServer) handleClientMessages(client *PCMClient) {
 
 				// ✅ 1. PRIMEIRO: Notificar Admins (EVA-Front)
 				if s.videoSessionManager != nil {
+					// ✅ FIX: Registrar sessão com SDP Offer na memória para WebRTC
+					s.videoSessionManager.CreateSession(sessionID, sdpOffer)
+
 					log.Printf("📞 [LOGICA ISOLADA] Notificando Admins ANTES de qualquer outra coisa...")
 					s.videoSessionManager.notifyIncomingCall(sessionID)
 				} else {

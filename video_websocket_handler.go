@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -13,6 +14,7 @@ type VideoSession struct {
 	SessionID     string
 	MobileConn    *websocket.Conn
 	AttendantConn *websocket.Conn
+	SDPOffer      string // ✅ Store Offer for late-joining attendants
 	mu            sync.RWMutex
 }
 
@@ -96,6 +98,39 @@ func NewVideoSessionManager() *VideoSessionManager {
 	}
 }
 
+// CreateSession initializes a session with an SDP offer
+func (vsm *VideoSessionManager) CreateSession(sessionID, sdpOffer string) {
+	vsm.mu.Lock()
+	defer vsm.mu.Unlock()
+
+	vsm.sessions[sessionID] = &VideoSession{
+		SessionID: sessionID,
+		SDPOffer:  sdpOffer,
+	}
+	log.Printf("✅ Video Session created with SDP Offer: %s", sessionID)
+}
+
+// GetPendingSessions returns a list of active sessions waiting for an attendant
+func (vsm *VideoSessionManager) GetPendingSessions() []map[string]interface{} {
+	vsm.mu.RLock()
+	defer vsm.mu.RUnlock()
+
+	var pending []map[string]interface{}
+	for _, session := range vsm.sessions {
+		// If no attendant is connected, it's pending
+		if session.AttendantConn == nil {
+			pending = append(pending, map[string]interface{}{
+				"session_id": session.SessionID,
+				"patient_data": map[string]interface{}{
+					"nome": "Paciente Emergência",
+				},
+				"started_at": time.Now().UTC().Format(time.RFC3339),
+			})
+		}
+	}
+	return pending
+}
+
 // RegisterClient registers a WebSocket connection to a session
 func (vsm *VideoSessionManager) RegisterClient(sessionID string, conn *websocket.Conn, clientType string, userType string, userID string, userName string) error {
 	vsm.mu.Lock()
@@ -124,6 +159,19 @@ func (vsm *VideoSessionManager) RegisterClient(sessionID string, conn *websocket
 	if clientType == "web_attendant" {
 		session.AttendantConn = conn
 		log.Printf("✅ Web attendant registered for session: %s", sessionID)
+
+		// ✅ FIX: Send pending SDP Offer if available
+		if session.SDPOffer != "" {
+			log.Printf("📩 Forwarding pending SDP Offer to web attendant")
+			offerMsg := map[string]interface{}{
+				"type": "webrtc_signal",
+				"payload": map[string]interface{}{
+					"type": "offer",
+					"sdp":  session.SDPOffer,
+				},
+			}
+			conn.WriteJSON(offerMsg)
+		}
 	} else {
 		session.MobileConn = conn
 		log.Printf("✅ Mobile client registered for session: %s", sessionID)
