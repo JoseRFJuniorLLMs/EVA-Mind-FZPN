@@ -79,7 +79,7 @@ type SignalingServer struct {
 
 	// Fix 2: Qdrant Client
 	qdrantClient *vector.QdrantClient
-	
+
 	// Video session manager for admin notifications
 	videoSessionManager *VideoSessionManager
 
@@ -429,7 +429,7 @@ func main() {
 	}
 
 	signalingServer = NewSignalingServer(cfg, db, neo4jClient, pushService, calService, qdrantClient)
-	
+
 	// Initialize video session manager for admin notifications
 	signalingServer.videoSessionManager = NewVideoSessionManager()
 	log.Printf("📹 Video Session Manager initialized")
@@ -628,14 +628,23 @@ func (s *SignalingServer) handleClientMessages(client *PCMClient) {
 
 				log.Printf("✅ Sessão de vídeo criada: %s", sessionID)
 
-				// Iniciar cascata de notificações em goroutine
-				go s.handleVideoCascade(client.IdosoID, sessionID)
+				// ✅ 1. PRIMEIRO: Notificar Admins (EVA-Front)
+				if s.videoSessionManager != nil {
+					log.Printf("📞 [LOGICA ISOLADA] Notificando Admins ANTES de qualquer outra coisa...")
+					s.videoSessionManager.notifyIncomingCall(sessionID)
+				} else {
+					log.Printf("⚠️ VideoSessionManager é nil - não foi possível notificar admin")
+				}
+
+				// 🛑 2. family cascade (COMENTADO PARA ISOLAR ERRO)
+				// go s.handleVideoCascade(client.IdosoID, sessionID)
+				log.Printf("🛑 [LOGICA ISOLADA] Cascata de família DESATIVADA para teste")
 
 				// Confirmar recebimento ao mobile
 				s.sendJSON(client, map[string]string{
 					"type":       "video_cascade_started",
 					"session_id": sessionID,
-					"status":     "calling_family",
+					"status":     "calling_admin", // Alterado status para refletir realidade
 				})
 
 			case "hangup":
