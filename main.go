@@ -100,6 +100,7 @@ type PCMClient struct {
 	cancel       context.CancelFunc
 	lastActivity time.Time
 	audioCount   int64
+	mode         string                    // "audio", "video", or ""
 	LatentDesire *transnar.DesireInference // NEW: TransNAR desire context
 	CurrentStory *types.TherapeuticStory   // 📖 Zeta Engine Story
 }
@@ -581,6 +582,9 @@ func (s *SignalingServer) handleClientMessages(client *PCMClient) {
 				log.Printf("🆔 Session ID: %v", data["session_id"])
 				log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
+				// ✅ Set mode to audio
+				client.mode = "audio"
+
 				if client.CPF == "" {
 					log.Printf("❌ ERRO: Cliente não registrado!")
 					s.sendJSON(client, map[string]string{"type": "error", "message": "Register first"})
@@ -608,6 +612,9 @@ func (s *SignalingServer) handleClientMessages(client *PCMClient) {
 				log.Printf("👤 CPF: %s", client.CPF)
 				log.Printf("🆔 Session ID: %v", data["session_id"])
 				log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+				// ✅ Set mode to video
+				client.mode = "video"
 
 				if client.CPF == "" {
 					log.Printf("❌ ERRO: Cliente não registrado!")
@@ -658,6 +665,7 @@ func (s *SignalingServer) handleClientMessages(client *PCMClient) {
 
 			case "hangup":
 				log.Printf("🔴 Hangup from %s", client.CPF)
+				client.mode = "" // ✅ Reset mode
 				return
 
 			case "vision":
@@ -680,14 +688,17 @@ func (s *SignalingServer) handleClientMessages(client *PCMClient) {
 		}
 
 		if msgType == websocket.BinaryMessage && client.active {
-			client.audioCount++
-
-			// if client.audioCount%50 == 0 {
-			// 	log.Printf("🎤 [%s] Áudio chunk #%d (%d bytes)", client.CPF, client.audioCount, len(message))
-			// }
-
-			if client.GeminiClient != nil {
-				client.GeminiClient.SendAudio(message)
+			// ✅ Only send to Gemini if in audio mode
+			if client.mode == "audio" {
+				client.audioCount++
+				if client.GeminiClient != nil {
+					client.GeminiClient.SendAudio(message)
+				}
+			} else if client.mode == "video" {
+				// Ignore video data for Gemini
+				continue
+			} else {
+				log.Printf("⚠️ Binary data received without active mode (%d bytes) - ignoring", len(message))
 			}
 		}
 	}
