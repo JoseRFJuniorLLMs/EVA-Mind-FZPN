@@ -335,7 +335,7 @@ func (u *UnifiedRetrieval) buildIntegratedPrompt(unified *UnifiedContext) string
 	// ═══════════════════════════════════════════════════════════
 	// 🚨 REGRA CRÍTICA #1: SAUDAÇÃO OBRIGATÓRIA (SEMPRE PRIMEIRO)
 	// ═══════════════════════════════════════════════════════════
-	builder.WriteString("🚨🚨🚨 INSTRUÇÃO CRÍTICA - LEIA PRIMEIRO 🚨🚨🚨\n\n")
+	// builder.WriteString("🚨🚨🚨 INSTRUÇÃO CRÍTICA - LEIA PRIMEIRO 🚨🚨🚨\n\n")
 
 	if unified.IdosoNome != "" {
 		builder.WriteString(fmt.Sprintf("SUA PRIMEIRA FRASE DEVE SER EXATAMENTE:\n\"Oi %s, tudo bem?\"\n\n", unified.IdosoNome))
