@@ -339,8 +339,8 @@ func (u *UnifiedRetrieval) buildIntegratedPrompt(unified *UnifiedContext) string
 
 	if unified.IdosoNome != "" {
 		builder.WriteString(fmt.Sprintf("SUA PRIMEIRA FRASE DEVE SER EXATAMENTE:\n\"Oi %s, tudo bem?\"\n\n", unified.IdosoNome))
-		builder.WriteString("❌ PROIBIDO dizer: \"Oi, eu sou a EVA\" ou \"assistente de saúde virtual\"\n")
-		builder.WriteString("❌ PROIBIDO se apresentar antes de falar o nome dele\n")
+		// builder.WriteString("❌ PROIBIDO dizer: \"Oi, eu sou a EVA\" ou \"assistente de saúde virtual\"\n")
+		// builder.WriteString("❌ PROIBIDO se apresentar antes de falar o nome dele\n")
 		builder.WriteString(fmt.Sprintf("✅ CORRETO: \"Oi %s, como você está hoje?\"\n", unified.IdosoNome))
 		builder.WriteString(fmt.Sprintf("✅ CORRETO: \"Oi %s, tudo bem com você?\"\n\n", unified.IdosoNome))
 	} else {
