@@ -621,15 +621,21 @@ func (s *SignalingServer) handleClientMessages(client *PCMClient) {
 
 				log.Printf("✅ Sessão de vídeo criada: %s", sessionID)
 
-				// Iniciar cascata de notificações em goroutine
-				go s.handleVideoCascade(client.IdosoID, sessionID)
+			// ✅ PRIMEIRO: Notificar admins conectados via WebSocket (IMEDIATO)
+			if s.videoSessionManager != nil {
+				s.videoSessionManager.notifyIncomingCall(sessionID)
+				log.Printf("📞 Notificação WebSocket enviada para admins")
+			}
 
-				// Confirmar recebimento ao mobile
-				s.sendJSON(client, map[string]string{
-					"type":       "video_cascade_started",
-					"session_id": sessionID,
-					"status":     "calling_family",
-				})
+			// DEPOIS: Iniciar cascata de notificações para família (em background)
+			go s.handleVideoCascade(client.IdosoID, sessionID)
+
+			// Confirmar recebimento ao mobile
+			s.sendJSON(client, map[string]string{
+				"type":       "video_cascade_started",
+				"session_id": sessionID,
+				"status":     "calling_family",
+			})
 
 			case "hangup":
 				log.Printf("🔴 Hangup from %s", client.CPF)
