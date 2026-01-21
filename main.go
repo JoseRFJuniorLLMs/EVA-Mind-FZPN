@@ -685,6 +685,58 @@ func (s *SignalingServer) handleClientMessages(client *PCMClient) {
 					}
 				}
 
+			case "sentinela_alert":
+				log.Printf("🚨 ========================================")
+				log.Printf("🚨 SENTINELA ALERT RECEBIDO")
+				log.Printf("👤 CPF: %s", client.CPF)
+				log.Printf("🚨 ========================================")
+
+				sessionID, _ := data["session_id"].(string)
+				alertData, ok := data["alert_data"].(map[string]interface{})
+
+				if !ok || sessionID == "" {
+					log.Printf("⚠️ Invalid sentinela_alert payload")
+					continue
+				}
+
+				// Extract alert details
+				detectionSource, _ := alertData["detection_source"].(string)
+				detectionDetails, _ := alertData["detection_details"].(string)
+				latitude, _ := alertData["latitude"].(float64)
+				longitude, _ := alertData["longitude"].(float64)
+
+				log.Printf("📍 Detecção: %s - %s", detectionSource, detectionDetails)
+				log.Printf("🌍 Localização: %.6f, %.6f", latitude, longitude)
+
+				// ✅ Trigger emergency video cascade
+				if s.videoSessionManager != nil {
+					// Create emergency session (no SDP needed for alert-only)
+					s.videoSessionManager.CreateSession(sessionID, "")
+
+					// Notify all caregivers with EMERGENCY flag
+					s.videoSessionManager.notifyEmergencyCall(sessionID, map[string]interface{}{
+						"nome":              "EMERGÊNCIA - Possível Queda",
+						"detection_source":  detectionSource,
+						"detection_details": detectionDetails,
+						"latitude":          latitude,
+						"longitude":         longitude,
+						"timestamp":         alertData["timestamp"],
+						"cpf":               client.CPF,
+					})
+				}
+
+				// Start family cascade
+				go s.handleVideoCascade(client.IdosoID, sessionID)
+
+				// Confirm to mobile
+				s.sendJSON(client, map[string]string{
+					"type":       "sentinela_alert_received",
+					"session_id": sessionID,
+					"status":     "emergency_cascade_started",
+				})
+
+				log.Printf("✅ Sentinela alert processed, cascade initiated")
+
 			case "hangup":
 				log.Printf("🔴 Hangup from %s", client.CPF)
 				client.mode = "" // ✅ Reset mode
