@@ -447,14 +447,15 @@ func main() {
 	router.HandleFunc("/ws/pcm", signalingServer.HandleWebSocket)
 
 	// 🎥 Video WebSocket Handler (WebRTC Signaling)
-	videoSessionManager := NewVideoSessionManager()
+	// videoSessionManager := NewVideoSessionManager() // ❌ ERROR: Created a separate instance!
 	router.HandleFunc("/ws/video", func(w http.ResponseWriter, r *http.Request) {
 		conn, err := signalingServer.upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			log.Printf("❌ Video WS upgrade error: %v", err)
 			return
 		}
-		HandleVideoWebSocket(videoSessionManager)(conn)
+		// ✅ FIX: Use the SAME manager connected to SignalingServer
+		HandleVideoWebSocket(signalingServer.videoSessionManager)(conn)
 	})
 
 	api := router.PathPrefix("/api").Subrouter()
