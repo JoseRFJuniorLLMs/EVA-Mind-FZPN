@@ -430,11 +430,11 @@ func main() {
 
 	// Initialize Signaling Server
 	log.Printf("🔌 Initializing WebSocket Signaling Server...")
-	signalingServer = NewSignalingServer(cfg, db, neo4jClient, pushService, calService, qdrantClient)
+	signalingServer = NewSignalingServer(cfg, db, neo44jClient, pushService, calService, qdrantClient)
 
 	// ✅ Initialize Video Session Manager for admin notifications
 	log.Printf("📹 Initializing Video Session Manager...")
-	videoSessionManager := NewVideoSessionManager()
+	videoSessionManager = NewVideoSessionManager() // ✅ Use = not := to assign to global variable
 
 	sch, err := scheduler.NewScheduler(cfg, db.GetConnection())
 	if err != nil {
