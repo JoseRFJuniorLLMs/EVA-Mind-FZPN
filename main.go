@@ -642,12 +642,17 @@ func (s *SignalingServer) handleClientMessages(client *PCMClient) {
 
 				log.Printf("✅ Sessão de vídeo criada: %s", sessionID)
 
-				// ✅ 1. PRIMEIRO: Notificar Admins (EVA-Front)
+				// ✅ FIX P0: Registrar mobile no VideoSessionManager para relay WebSocket
 				if s.videoSessionManager != nil {
-					// ✅ FIX: Registrar sessão com SDP Offer na memória para WebRTC
 					s.videoSessionManager.CreateSession(sessionID, sdpOffer)
 
-					log.Printf("📞 [LOGICA ISOLADA] Notificando Admins ANTES de qualquer outra coisa...")
+					// ✅ Registrar conexão mobile para relay bidirecional
+					err := s.videoSessionManager.RegisterClient(sessionID, client.Conn, "mobile", "", "", "")
+					if err != nil {
+						log.Printf("❌ Erro ao registrar mobile: %v", err)
+					}
+
+					log.Printf("📞 [LOGICA ISOLADA] Notificando Admins...")
 					s.videoSessionManager.notifyIncomingCall(sessionID)
 				} else {
 					log.Printf("⚠️ VideoSessionManager é nil - não foi possível notificar admin")
@@ -660,8 +665,25 @@ func (s *SignalingServer) handleClientMessages(client *PCMClient) {
 				s.sendJSON(client, map[string]string{
 					"type":       "video_cascade_started",
 					"session_id": sessionID,
-					"status":     "searching_caregivers", // Restored original status expectation
+					"status":     "searching_caregivers",
 				})
+
+			case "webrtc_signal":
+				// ✅ FIX P0: Relay WebRTC signals via VideoSessionManager
+				sessionID, _ := data["session_id"].(string)
+				payload, ok := data["payload"].(map[string]interface{})
+
+				if !ok || sessionID == "" {
+					log.Printf("⚠️ Invalid webrtc_signal payload")
+					continue
+				}
+
+				if s.videoSessionManager != nil {
+					err := s.videoSessionManager.RouteSignal(sessionID, client.Conn, payload)
+					if err != nil {
+						log.Printf("❌ Erro ao rotear sinal: %v", err)
+					}
+				}
 
 			case "hangup":
 				log.Printf("🔴 Hangup from %s", client.CPF)
@@ -698,7 +720,11 @@ func (s *SignalingServer) handleClientMessages(client *PCMClient) {
 				// Ignore video data for Gemini
 				continue
 			} else {
-				log.Printf("⚠️ Binary data received without active mode (%d bytes) - ignoring", len(message))
+				// 🔇 Log minimalista para evitar flood no journalctl
+				if client.audioCount%100 == 0 {
+					log.Printf("⚠️ Dados binários ignorados (sem modo ativo) - Count: %d", client.audioCount)
+				}
+				client.audioCount++
 			}
 		}
 	}
