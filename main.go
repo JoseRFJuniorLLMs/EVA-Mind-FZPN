@@ -79,6 +79,9 @@ type SignalingServer struct {
 
 	// Fix 2: Qdrant Client
 	qdrantClient *vector.QdrantClient
+	
+	// Video session manager for admin notifications
+	videoSessionManager *VideoSessionManager
 
 	// 🧠 Brain (Core Logic)
 	brain *brain.Service
@@ -426,6 +429,10 @@ func main() {
 	}
 
 	signalingServer = NewSignalingServer(cfg, db, neo4jClient, pushService, calService, qdrantClient)
+	
+	// Initialize video session manager for admin notifications
+	signalingServer.videoSessionManager = NewVideoSessionManager()
+	log.Printf("📹 Video Session Manager initialized")
 
 	sch, err := scheduler.NewScheduler(cfg, db.GetConnection())
 	if err != nil {
