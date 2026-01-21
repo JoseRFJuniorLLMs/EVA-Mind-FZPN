@@ -309,6 +309,51 @@ func (s *SignalingServer) handleControlMessage(conn *websocket.Conn, message []b
 		log.Printf("📞 Chamada iniciada: %s", msg.CPF)
 		return session
 
+	case "create_scheduled_call":
+		log.Printf("╔══════════════════════════════════════════════════════╗")
+		log.Printf("📅 CRIAR AGENDAMENTO IMEDIATO (CHAMADA MANUAL)")
+		log.Printf("👤 CPF: %s", msg.CPF)
+		log.Printf("⏰ Horário: AGORA (immediate: %v)", msg.Payload)
+		log.Printf("╚══════════════════════════════════════════════════════╝")
+
+		// Buscar dados completos do idoso
+		idoso, err := s.getIdosoByCPF(msg.CPF)
+		if err != nil {
+			log.Printf("❌ ERRO: CPF não encontrado: %s", msg.CPF)
+			s.sendError(conn, "CPF não encontrado")
+			return currentSession
+		}
+
+		log.Printf("✅ Idoso encontrado: ID=%d, Nome=%s", idoso.ID, idoso.Nome)
+
+		// Criar session ID único
+		sessionID := fmt.Sprintf("manual-%d-%d", idoso.ID, time.Now().Unix())
+
+		// Criar sessão Gemini com contexto completo
+		session, err := s.createSession(sessionID, msg.CPF, idoso.ID, idoso.Nome, idoso.VoiceName, conn)
+		if err != nil {
+			log.Printf("❌ ERRO ao criar sessão: %v", err)
+			s.sendError(conn, "Erro ao criar sessão")
+			return currentSession
+		}
+
+		log.Printf("✅ Sessão criada: %s", sessionID)
+
+		// Iniciar fluxos de áudio
+		go s.audioClientToGemini(session)
+		go s.audioGeminiToClient(session)
+
+		// Confirmar para o app
+		s.sendMessage(conn, ControlMessage{
+			Type:      "session_created",
+			SessionID: sessionID,
+			Success:   true,
+		})
+
+		log.Printf("📞 Chamada manual iniciada para %s (ID: %d)", idoso.Nome, idoso.ID)
+		return session
+
+
 	case "hangup":
 		if currentSession != nil {
 			// ✅ NOVO: Enviar buffer restante antes de fechar
