@@ -243,7 +243,12 @@ func HandleVideoWebSocket(vsm *VideoSessionManager) func(*websocket.Conn) {
 			var msg map[string]interface{}
 			err := conn.ReadJSON(&msg)
 			if err != nil {
-				log.Printf("❌ WebSocket read error: %v", err)
+				// Ignore normal close codes (1001, 1005) or EOF to prevent log spam
+				if websocket.IsCloseError(err, websocket.CloseGoingAway, websocket.CloseNoStatusReceived, websocket.CloseNormalClosure) {
+					// Silent close
+				} else {
+					log.Printf("❌ WebSocket read error: %v", err)
+				}
 				break
 			}
 

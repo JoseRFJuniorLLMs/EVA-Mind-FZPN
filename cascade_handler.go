@@ -158,8 +158,8 @@ func (s *SignalingServer) escalateToEmergency(idosoID int64, sessionID, reason s
 
 	// Registrar no banco de dados
 	alertQuery := `
-		INSERT INTO alertas (idoso_id, tipo, severidade, mensagem, criado_em)
-		VALUES ($1, 'video_emergency', 'critica', $2, NOW())
+		INSERT INTO alertas (idoso_id, tipo, severidade, mensagem, destinatarios, criado_em)
+		VALUES ($1, 'video_emergency', 'critica', $2, '[]', NOW())
 	`
 	_, err := s.db.GetConnection().Exec(alertQuery, idosoID, fmt.Sprintf("Emergência de vídeo: %s (Sessão: %s)", reason, sessionID))
 	if err != nil {
