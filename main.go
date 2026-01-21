@@ -438,7 +438,7 @@ func main() {
 	router := mux.NewRouter()
 	router.HandleFunc("/wss", signalingServer.HandleWebSocket)
 	router.HandleFunc("/ws/pcm", signalingServer.HandleWebSocket)
-	
+
 	// 🎥 Video WebSocket Handler (WebRTC Signaling)
 	videoSessionManager := NewVideoSessionManager()
 	router.HandleFunc("/ws/video", func(w http.ResponseWriter, r *http.Request) {
@@ -621,21 +621,15 @@ func (s *SignalingServer) handleClientMessages(client *PCMClient) {
 
 				log.Printf("✅ Sessão de vídeo criada: %s", sessionID)
 
-			// ✅ PRIMEIRO: Notificar admins conectados via WebSocket (IMEDIATO)
-			if s.videoSessionManager != nil {
-				s.videoSessionManager.notifyIncomingCall(sessionID)
-				log.Printf("📞 Notificação WebSocket enviada para admins")
-			}
+				// Iniciar cascata de notificações em goroutine
+				go s.handleVideoCascade(client.IdosoID, sessionID)
 
-			// DEPOIS: Iniciar cascata de notificações para família (em background)
-			go s.handleVideoCascade(client.IdosoID, sessionID)
-
-			// Confirmar recebimento ao mobile
-			s.sendJSON(client, map[string]string{
-				"type":       "video_cascade_started",
-				"session_id": sessionID,
-				"status":     "calling_family",
-			})
+				// Confirmar recebimento ao mobile
+				s.sendJSON(client, map[string]string{
+					"type":       "video_cascade_started",
+					"session_id": sessionID,
+					"status":     "calling_family",
+				})
 
 			case "hangup":
 				log.Printf("🔴 Hangup from %s", client.CPF)
