@@ -708,14 +708,14 @@ func (s *SignalingServer) handleClientMessages(client *PCMClient) {
 				log.Printf("📍 Detecção: %s - %s", detectionSource, detectionDetails)
 				log.Printf("🌍 Localização: %.6f, %.6f", latitude, longitude)
 
-				// ✅ Trigger emergency video cascade
+				// ✅ Trigger emergency video cascade directly
 				if s.videoSessionManager != nil {
-					// Create emergency session (no SDP needed for alert-only)
+					// Create emergency session
 					s.videoSessionManager.CreateSession(sessionID, "")
 
-					// Notify all caregivers with EMERGENCY flag
+					// Notify all caregivers
 					s.videoSessionManager.notifyEmergencyCall(sessionID, map[string]interface{}{
-						"nome":              "EMERGÊNCIA - Possível Queda",
+						"nome":              "EMERGÊNCIA - Possível Queda/Socorro",
 						"detection_source":  detectionSource,
 						"detection_details": detectionDetails,
 						"latitude":          latitude,
@@ -735,7 +735,39 @@ func (s *SignalingServer) handleClientMessages(client *PCMClient) {
 					"status":     "emergency_cascade_started",
 				})
 
-				log.Printf("✅ Sentinela alert processed, cascade initiated")
+			case "whisper_alert":
+				log.Printf("🎙️ ========================================")
+				log.Printf("🎙️ WHISPER ALERT RECEBIDO")
+				log.Printf("👤 CPF: %s", client.CPF)
+				log.Printf("🎙️ ========================================")
+
+				keyword, _ := data["keyword"].(string)
+
+				log.Printf("🗣️ Keyword detectada: %s", keyword)
+
+				// 1. Iniciar chamada de voz automática (simulado)
+				// Na prática isso acionaria o Twilio/VAPI ou iniciaria uma chamada WebRTC P2P
+				// Para este MVP, vamos acionar o VIDEO CASCADE imediatamente como fallback seguro
+
+				sessionID := fmt.Sprintf("whisper-%d", time.Now().Unix())
+
+				if s.videoSessionManager != nil {
+					s.videoSessionManager.CreateSession(sessionID, "")
+
+					s.videoSessionManager.notifyEmergencyCall(sessionID, map[string]interface{}{
+						"nome":              "EMERGÊNCIA - Pedido de Socorro (Voz)",
+						"detection_source":  "whisper_voice",
+						"detection_details": fmt.Sprintf("Palavra-chave: %s", keyword),
+						"cpf":               client.CPF,
+						"timestamp":         time.Now().Format(time.RFC3339),
+					})
+				}
+
+				// Confirmar ao idoso
+				s.sendJSON(client, map[string]string{
+					"type":    "whisper_alert_ack",
+					"message": "Entendi! Estou chamando ajuda agora.",
+				})
 
 			case "hangup":
 				log.Printf("🔴 Hangup from %s", client.CPF)

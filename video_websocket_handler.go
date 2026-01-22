@@ -204,6 +204,20 @@ func (vsm *VideoSessionManager) notifyIncomingCall(sessionID string) {
 	log.Printf("📞 Incoming call notification sent for session: %s", sessionID)
 }
 
+// notifyEmergencyCall broadcasts a CRITICAL emergency alert to all attendants
+func (vsm *VideoSessionManager) notifyEmergencyCall(sessionID string, alertData map[string]interface{}) {
+	notification := map[string]interface{}{
+		"type":       "incoming_call",
+		"priority":   "CRITICAL",
+		"session_id": sessionID,
+		"alert_data": alertData,
+		"timestamp":  time.Now().Format(time.RFC3339),
+	}
+
+	vsm.attendantPool.Broadcast(notification)
+	log.Printf("🚨 EMERGENCY CALL notification sent for session: %s", sessionID)
+}
+
 // RouteSignal routes WebRTC signals between mobile and web attendant
 func (vsm *VideoSessionManager) RouteSignal(sessionID string, senderConn *websocket.Conn, payload map[string]interface{}) error {
 	vsm.mu.RLock()
