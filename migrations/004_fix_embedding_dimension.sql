@@ -43,7 +43,7 @@ RETURNS TABLE (
     timestamp TIMESTAMPTZ,
     emotion TEXT,
     importance FLOAT,
-    topics TEXT,
+    topics TEXT[], -- ✅ Alterado para TEXT[] para consistência com schema
     similarity FLOAT
 ) AS $$
 BEGIN
@@ -51,11 +51,11 @@ BEGIN
     SELECT 
         em.id,
         em.content,
-        em.speaker,
+        em.speaker::TEXT,
         em.timestamp,
-        em.emotion,
+        em.emotion::TEXT,
         em.importance,
-        em.topics::TEXT,
+        em.topics,
         1 - (em.embedding <=> p_query_embedding) AS similarity
     FROM episodic_memories em
     WHERE em.idoso_id = p_idoso_id

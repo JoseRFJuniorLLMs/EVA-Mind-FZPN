@@ -251,6 +251,7 @@ func (vsm *VideoSessionManager) RouteSignal(sessionID string, senderConn *websoc
 		"payload": payload,
 	}
 
+	log.Printf("➡️ Routing %s to target for session: %s", payload["type"], sessionID)
 	return targetConn.WriteJSON(message)
 }
 

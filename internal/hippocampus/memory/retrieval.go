@@ -6,6 +6,7 @@ import (
 	"eva-mind/internal/brainstem/infrastructure/vector"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/qdrant/go-client/qdrant"
 )
@@ -45,7 +46,8 @@ func (r *RetrievalService) Retrieve(ctx context.Context, idosoID int64, query st
 
 	// 2. BUSCA NO POSTGRES (pgvector)
 	sqlQuery := `
-		SELECT * FROM search_similar_memories(
+		SELECT id, content, speaker, timestamp, emotion, importance, topics, similarity 
+		FROM search_similar_memories(
 			$1,  -- idoso_id
 			$2,  -- query_embedding
 			$3,  -- limit
@@ -58,10 +60,12 @@ func (r *RetrievalService) Retrieve(ctx context.Context, idosoID int64, query st
 		log.Printf("🔍 [MEMORY] Postgres Search: Query=\"%s\"", query)
 		for rows.Next() {
 			var (
-				memoryID                     int64
-				content, speaker, ts, topics string
-				importance, similarity       float64
-				emotion                      sql.NullString
+				memoryID               int64
+				content, speaker       string
+				ts                     time.Time
+				topics                 string
+				importance, similarity float64
+				emotion                sql.NullString
 			)
 			// Nota: a função search_similar_memories deve retornar colunas compatíveis
 			err := rows.Scan(&memoryID, &content, &speaker, &ts, &emotion, &importance, &topics, &similarity)
@@ -69,13 +73,17 @@ func (r *RetrievalService) Retrieve(ctx context.Context, idosoID int64, query st
 				mem := &Memory{
 					ID:         memoryID,
 					IdosoID:    idosoID,
+					Timestamp:  ts,
 					Speaker:    speaker,
 					Content:    content,
+					Emotion:    emotion.String,
 					Importance: importance,
 					Topics:     parsePostgresArray(topics),
 				}
 				allResults = append(allResults, &SearchResult{Memory: mem, Similarity: similarity})
 				seenIDs[memoryID] = true
+			} else {
+				log.Printf("⚠️ [MEMORY] Erro ao escanear linha Postgres: %v", err)
 			}
 		}
 	} else {

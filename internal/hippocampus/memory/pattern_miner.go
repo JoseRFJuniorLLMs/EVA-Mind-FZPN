@@ -46,11 +46,14 @@ func (pm *PatternMiner) MineRecurrentPatterns(ctx context.Context, idosoID int64
             frequency,
             timestamps[0] as first_seen,
             timestamps[size(timestamps)-1] as last_seen,
-            reduce(sum = 0.0, x IN intervals | sum + x) / size(intervals) as avg_interval,
+            CASE 
+                WHEN size(intervals) > 0 THEN reduce(sum = 0.0, x IN intervals | sum + x) / size(intervals)
+                ELSE 0.0
+            END as avg_interval,
             emotions,
             CASE 
-                WHEN avg([d IN severity_deltas | d]) > 0.1 THEN 'increasing'
-                WHEN avg([d IN severity_deltas | d]) < -0.1 THEN 'decreasing'
+                WHEN size(severity_deltas) > 0 AND (reduce(sum = 0.0, d IN severity_deltas | sum + d) / size(severity_deltas)) > 0.1 THEN 'increasing'
+                WHEN size(severity_deltas) > 0 AND (reduce(sum = 0.0, d IN severity_deltas | sum + d) / size(severity_deltas)) < -0.1 THEN 'decreasing'
                 ELSE 'stable'
             END as severity_trend,
             toFloat(frequency) / 10.0 as confidence
