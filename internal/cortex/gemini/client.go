@@ -258,7 +258,12 @@ func (c *Client) HandleResponses(ctx context.Context) error {
 		default:
 			resp, err := c.ReadResponse()
 			if err != nil {
-				log.Printf("❌ Erro ao ler resposta: %v", err)
+				select {
+				case <-ctx.Done():
+					log.Printf("🛑 HandleResponses: Contexto finalizado (%v)", err)
+				default:
+					log.Printf("❌ Erro ao ler resposta Gemini: %v", err)
+				}
 				return err
 			}
 

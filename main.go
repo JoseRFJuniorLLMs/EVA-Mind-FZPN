@@ -103,6 +103,7 @@ type PCMClient struct {
 	mode         string                    // "audio", "video", or ""
 	LatentDesire *transnar.DesireInference // NEW: TransNAR desire context
 	CurrentStory *types.TherapeuticStory   // 📖 Zeta Engine Story
+	Registered   bool                      // ✅ Flag to prevent redundant registrations
 }
 
 var (
@@ -552,7 +553,31 @@ func (s *SignalingServer) HandleWebSocket(w http.ResponseWriter, r *http.Request
 
 	go s.handleClientSend(client)
 	go s.monitorClientActivity(client)
+	go s.heartbeatLoop(client)
 	s.handleClientMessages(client)
+}
+
+func (s *SignalingServer) heartbeatLoop(client *PCMClient) {
+	ticker := time.NewTicker(20 * time.Second)
+	defer ticker.Stop()
+
+	// 200ms de silêncio (PCM16, 8kHz Mono = 1600 bytes, 16kHz Mono = 3200 bytes)
+	// Como o app mobile usa 8kHz ou 16kHz, enviar 3200 bytes é seguro
+	silentChunk := make([]byte, 3200)
+
+	for {
+		select {
+		case <-client.ctx.Done():
+			return
+		case <-ticker.C:
+			if client.GeminiClient != nil && client.active && client.mode == "audio" {
+				// Se não houve atividade nos últimos 20 segundos, envia silêncio
+				if time.Since(client.lastActivity) > 20*time.Second {
+					client.GeminiClient.SendAudio(silentChunk)
+				}
+			}
+		}
+	}
 }
 
 func (s *SignalingServer) handleClientMessages(client *PCMClient) {
@@ -819,6 +844,11 @@ func (s *SignalingServer) handleClientMessages(client *PCMClient) {
 }
 
 func (s *SignalingServer) registerClient(client *PCMClient, data map[string]interface{}) {
+	if client.Registered {
+		log.Printf("ℹ️ Cliente já registrado no socket atual - Ignorando redundância")
+		return
+	}
+
 	cpf, _ := data["cpf"].(string)
 	log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	log.Printf("📝 REGISTRANDO CLIENTE")
@@ -870,6 +900,7 @@ func (s *SignalingServer) registerClient(client *PCMClient, data map[string]inte
 		"status": "ready",
 	})
 
+	client.Registered = true // ✅ Mark as registered
 	log.Printf("✅ Sessão completa para: %s", client.CPF)
 	log.Printf("✅ Gemini pronto e aguardando start_call...")
 }
@@ -1016,13 +1047,10 @@ func (s *SignalingServer) setupGeminiSession(client *PCMClient, voiceName string
 	}
 
 	// ⚡ BUILD FINAL PROMPT usando UnifiedRetrieval (RSI - Real, Simbólico, Imaginário)
-	// Isso inclui:
-	// - Nome do paciente (Neo4j/Postgres)
-	// - Agendamentos (Postgres)
-	// - Memórias (Qdrant)
-	// - Regra de ouro: "Oi [Nome], tudo bem?"
 	log.Printf("🧠 [DEBUG] Gerando prompt unificado para idoso %d", client.IdosoID)
+	promptStart := time.Now()
 	instructions, err := s.brain.GetSystemPrompt(client.ctx, client.IdosoID)
+	log.Printf("🧠 [DEBUG] Prompt RSI gerado em %v", time.Since(promptStart))
 	if err != nil {
 		log.Printf("❌ [CRÍTICO] Erro ao gerar prompt unificado: %v", err)
 		log.Printf("   Usando fallback (sem nome)")
