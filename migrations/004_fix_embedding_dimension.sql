@@ -40,7 +40,7 @@ RETURNS TABLE (
     id BIGINT,
     content TEXT,
     speaker TEXT,
-    timestamp TIMESTAMPTZ,
+    memory_timestamp TIMESTAMPTZ, -- ✅ Nome alterado para evitar palavra reservada
     emotion TEXT,
     importance FLOAT,
     topics TEXT[], -- ✅ Alterado para TEXT[] para consistência com schema

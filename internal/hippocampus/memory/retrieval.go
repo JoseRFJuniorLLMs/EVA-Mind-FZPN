@@ -46,7 +46,7 @@ func (r *RetrievalService) Retrieve(ctx context.Context, idosoID int64, query st
 
 	// 2. BUSCA NO POSTGRES (pgvector)
 	sqlQuery := `
-		SELECT id, content, speaker, timestamp, emotion, importance, topics, similarity 
+		SELECT id, content, speaker, memory_timestamp, emotion, importance, topics, similarity 
 		FROM search_similar_memories(
 			$1,  -- idoso_id
 			$2,  -- query_embedding
