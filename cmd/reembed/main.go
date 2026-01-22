@@ -12,6 +12,7 @@ import (
 	"eva-mind/internal/hippocampus/memory"
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	_ "github.com/lib/pq"
@@ -24,13 +25,15 @@ func main() {
 	// Carregar config
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("❌ Config error: %v", err)
+		log.Printf("❌ Config error: %v", err)
+		os.Exit(1)
 	}
 
 	// Conectar DB
 	db, err := sql.Open("postgres", cfg.DatabaseURL)
 	if err != nil {
-		log.Fatalf("❌ DB connection error: %v", err)
+		log.Printf("❌ DB connection error: %v", err)
+		os.Exit(1)
 	}
 	defer db.Close()
 
@@ -49,7 +52,8 @@ func main() {
 
 	rows, err := db.Query(query)
 	if err != nil {
-		log.Fatalf("❌ Query error: %v", err)
+		log.Printf("❌ Query error: %v", err)
+		os.Exit(1)
 	}
 	defer rows.Close()
 

@@ -8,6 +8,7 @@ import (
 	"eva-mind/pkg/types"
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	"github.com/qdrant/go-client/qdrant"
@@ -62,16 +63,19 @@ func main() {
 	// 1. Carregar Config
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("❌ Config error: %v", err)
+		log.Printf("❌ Config error: %v", err)
+		os.Exit(1)
 	}
 	if cfg.GoogleAPIKey == "" {
-		log.Fatal("❌ GoogleAPIKey não encontrada no .env")
+		log.Printf("❌ GoogleAPIKey não encontrada no .env")
+		os.Exit(1)
 	}
 
 	// 2. Inicializar Serviços
 	qdrantClient, err := vector.NewQdrantClient("localhost", 6334)
 	if err != nil {
-		log.Fatalf("❌ Erro ao conectar Qdrant: %v", err)
+		log.Printf("❌ Erro ao conectar Qdrant: %v", err)
+		os.Exit(1)
 	}
 
 	// Check embeddings.go for signature. Assuming NewEmbeddingService(apiKey)
@@ -143,7 +147,8 @@ func main() {
 	if len(points) > 0 {
 		err = qdrantClient.Upsert(ctx, "stories", points)
 		if err != nil {
-			log.Fatalf("❌ Erro no Upsert: %v", err)
+			log.Printf("❌ Erro no Upsert: %v", err)
+			os.Exit(1)
 		}
 		log.Printf("✅ Sucesso! %d histórias inseridas.", len(points))
 	} else {

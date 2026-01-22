@@ -21,7 +21,8 @@ func main() {
 
 	apiKey := strings.TrimSpace(os.Getenv("GOOGLE_API_KEY"))
 	if apiKey == "" {
-		log.Fatal("❌ GOOGLE_API_KEY não encontrada")
+		log.Printf("❌ GOOGLE_API_KEY não encontrada")
+		os.Exit(1)
 	}
 
 	maskedKey := "N/A"
@@ -49,7 +50,8 @@ func main() {
 		if resp != nil {
 			log.Printf("❌ Falha na conexão. Status Code: %d", resp.StatusCode)
 		}
-		log.Fatalf("❌ Erro ao conectar: %v", err)
+		log.Printf("❌ Erro ao conectar: %v", err)
+		os.Exit(1)
 	}
 	defer conn.Close()
 

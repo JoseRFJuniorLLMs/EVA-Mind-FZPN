@@ -396,7 +396,8 @@ func main() {
 
 	db, err = database.NewDB(cfg.DatabaseURL)
 	if err != nil {
-		log.Fatalf("❌ DB error: %v", err)
+		log.Printf("❌ DB error: %v", err)
+		os.Exit(1)
 	}
 	defer db.Close()
 
@@ -525,7 +526,10 @@ func main() {
 	log.Printf("   Built: %s", BuildTime)
 	log.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	log.Printf("✅ Server ready on port %s", port)
-	log.Fatal(http.ListenAndServe(":"+port, corsMiddleware(router)))
+	if err := http.ListenAndServe(":"+port, corsMiddleware(router)); err != nil {
+		log.Printf("❌ HTTP server error: %v", err)
+		os.Exit(1)
+	}
 }
 
 func (s *SignalingServer) HandleWebSocket(w http.ResponseWriter, r *http.Request) {

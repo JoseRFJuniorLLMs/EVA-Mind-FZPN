@@ -1,8 +1,9 @@
+// +build ignore
+
 package main
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,7 +29,7 @@ func main() {
 			return nil
 		}
 
-		content, err := ioutil.ReadFile(path)
+		content, err := os.ReadFile(path)
 		if err != nil {
 			return nil
 		}
@@ -36,7 +37,7 @@ func main() {
 		newContent := strings.ReplaceAll(string(content), target, replacement)
 
 		if newContent != string(content) {
-			err = ioutil.WriteFile(path, []byte(newContent), info.Mode())
+			err = os.WriteFile(path, []byte(newContent), info.Mode())
 			if err != nil {
 				fmt.Printf("Error writing %s: %v\n", path, err)
 			} else {

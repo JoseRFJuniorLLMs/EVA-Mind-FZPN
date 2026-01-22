@@ -14,7 +14,7 @@ credentials/
 
 # Go stuff
 vendor/
-go.sum
+# go.sum - REMOVED: Should be versioned for reproducible builds
 
 # Shell Scripts / Deploy (Contendo segredos)
 deploy.sh

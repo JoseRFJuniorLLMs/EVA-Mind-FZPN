@@ -116,6 +116,11 @@ type SignalingServer struct {
 	redis            *redis.Client
 	sessions         sync.Map
 	clients          sync.Map
+
+	// 🧠 Brain Service (Core Logic) - FIX ERRO #5
+	brain interface {
+		GetSystemPrompt(ctx context.Context, idosoID int64) (string, error)
+	}
 }
 
 func NewSignalingServer(
