@@ -49,8 +49,8 @@ import (
 // Version info - set at build time
 var (
 	Version   = "dev"
-	GitCommit = "unknown"
-	BuildTime = "unknown"
+	GitCommit = "03"
+	BuildTime = "03"
 )
 
 type SignalingServer struct {
@@ -171,7 +171,7 @@ func NewSignalingServer(
 
 	// 📊 STARTUP SUMMARY
 	log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	log.Printf("🚀 EVA-Mind V2 - Status Report")
+	log.Printf("🚀 EVA-Mind V3 - Status Report")
 	log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	log.Printf("✅ Services Status:")
 	log.Printf("  - Database: Connected (Postgres)")
@@ -1630,9 +1630,9 @@ func (s *SignalingServer) handleClientSend(client *PCMClient) {
 			}
 
 			// Debug DETALHADO: Loga a cada 10 pacotes
-			// if sentCount%10 == 0 {
-			// 	log.Printf(" [DEBUG-BIN] Enviado %d bytes (Chunk #%d). Status: OK", len(audio), sentCount)
-			// }
+			if sentCount%10 == 0 {
+				log.Printf(" [DEBUG-BIN] Enviado %d bytes (Chunk #%d). Status: OK", len(audio), sentCount)
+			}
 		}
 	}
 }

@@ -3,6 +3,7 @@ package gemini
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"eva-mind/internal/brainstem/config"
 	"eva-mind/internal/tools"
 	"fmt"
@@ -238,10 +239,21 @@ func (c *Client) SendMessage(msg interface{}) error {
 
 // ReadResponse lê resposta
 func (c *Client) ReadResponse() (map[string]interface{}, error) {
-	var response map[string]interface{}
-	err := c.conn.ReadJSON(&response)
+	_, message, err := c.conn.ReadMessage()
 	if err != nil {
 		return nil, err
+	}
+
+	// 🔍 DEBUG: Log raw response from Google
+	if len(message) < 1000 {
+		log.Printf("🔍 [GEMINI RAW] %s", string(message))
+	} else {
+		log.Printf("🔍 [GEMINI RAW] (Binary/Large Payload: %d bytes)", len(message))
+	}
+
+	var response map[string]interface{}
+	if err := json.Unmarshal(message, &response); err != nil {
+		return nil, fmt.Errorf("unmarshal error: %v", err)
 	}
 	return response, nil
 }

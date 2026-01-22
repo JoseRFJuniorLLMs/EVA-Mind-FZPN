@@ -46,7 +46,7 @@ func (r *RetrievalService) Retrieve(ctx context.Context, idosoID int64, query st
 
 	// 2. BUSCA NO POSTGRES (pgvector)
 	sqlQuery := `
-		SELECT id, content, speaker, memory_timestamp, emotion, importance, topics, similarity 
+		SELECT id, content, speaker, memory_timestamp, importance, topics, similarity 
 		FROM search_similar_memories(
 			$1,  -- idoso_id
 			$2,  -- query_embedding
@@ -65,10 +65,9 @@ func (r *RetrievalService) Retrieve(ctx context.Context, idosoID int64, query st
 				ts                     time.Time
 				topics                 string
 				importance, similarity float64
-				emotion                sql.NullString
 			)
 			// Nota: a função search_similar_memories deve retornar colunas compatíveis
-			err := rows.Scan(&memoryID, &content, &speaker, &ts, &emotion, &importance, &topics, &similarity)
+			err := rows.Scan(&memoryID, &content, &speaker, &ts, &importance, &topics, &similarity)
 			if err == nil {
 				mem := &Memory{
 					ID:         memoryID,
@@ -76,7 +75,7 @@ func (r *RetrievalService) Retrieve(ctx context.Context, idosoID int64, query st
 					Timestamp:  ts,
 					Speaker:    speaker,
 					Content:    content,
-					Emotion:    emotion.String,
+					Emotion:    "", // Emotion removed from search function
 					Importance: importance,
 					Topics:     parsePostgresArray(topics),
 				}
