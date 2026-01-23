@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"eva-mind/internal/brainstem/auth"
@@ -40,6 +41,7 @@ import (
 	"eva-mind/internal/motor/sheets"
 	"eva-mind/internal/motor/youtube"
 	"eva-mind/pkg/types"
+	"eva-mind/internal/security"
 
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
@@ -85,6 +87,10 @@ type SignalingServer struct {
 
 	// 🧠 Brain (Core Logic)
 	brain *brain.Service
+
+	// 🔒 Server-level context para controle de goroutines
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 type PCMClient struct {
@@ -95,7 +101,7 @@ type PCMClient struct {
 	ToolsClient  *gemini.ToolsClient // ✅ DUAL-MODEL
 	SendCh       chan []byte
 	mu           sync.Mutex
-	active       bool
+	active       atomic.Bool // 🔒 Thread-safe atomic boolean
 	ctx          context.Context
 	cancel       context.CancelFunc
 	lastActivity time.Time
@@ -113,10 +119,8 @@ var (
 	startTime       time.Time
 
 	// 🔐 Developer whitelist for Google features (v17)
-	// Add your CPF here to enable Google Calendar/Gmail/Drive features
-	googleFeaturesWhitelist = map[string]bool{
-		"64525430249": true, // Developer CPF
-	}
+	// Loaded from environment variable GOOGLE_FEATURES_WHITELIST (comma-separated CPFs)
+	googleFeaturesWhitelist = make(map[string]bool)
 )
 
 func NewSignalingServer(
@@ -127,6 +131,9 @@ func NewSignalingServer(
 	cal *calendar.Service,
 	qdrant *vector.QdrantClient,
 ) *SignalingServer {
+	// 🔐 Carregar whitelist de CPFs do ambiente
+	loadGoogleFeaturesWhitelist()
+
 	// Inicializar serviços de memória
 	embeddingService := memory.NewEmbeddingService(cfg.GoogleAPIKey)
 	memoryStore := memory.NewMemoryStore(db.GetConnection())
@@ -229,9 +236,17 @@ func NewSignalingServer(
 	}
 	log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
+	// 🔒 Criar context do servidor (controla todas as goroutines)
+	serverCtx, serverCancel := context.WithCancel(context.Background())
+
+	// 🔒 Configurar CORS seguro
+	corsConfig := security.DefaultCORSConfig()
+
 	server := &SignalingServer{
+		ctx:    serverCtx,
+		cancel: serverCancel,
 		upgrader: websocket.Upgrader{
-			CheckOrigin:     func(r *http.Request) bool { return true },
+			CheckOrigin:     security.CheckOriginWebSocket(corsConfig),
 			ReadBufferSize:  8192,
 			WriteBufferSize: 8192,
 		},
@@ -273,24 +288,56 @@ func NewSignalingServer(
 		embeddingService,
 	)
 
-	// 🧠 Iniciar Scheduler de Pattern Mining (Gap 1)
-	go server.startPatternMiningScheduler()
+	// 🧠 Iniciar Scheduler de Pattern Mining (Gap 1) com context do servidor
+	go server.startPatternMiningScheduler(serverCtx)
 
 	return server
 }
 
-func (s *SignalingServer) startPatternMiningScheduler() {
+// loadGoogleFeaturesWhitelist carrega CPFs autorizados do ambiente
+func loadGoogleFeaturesWhitelist() {
+	whitelistEnv := os.Getenv("GOOGLE_FEATURES_WHITELIST")
+	if whitelistEnv == "" {
+		log.Printf("⚠️ GOOGLE_FEATURES_WHITELIST não configurado. Features Google desabilitadas.")
+		return
+	}
+
+	cpfs := strings.Split(whitelistEnv, ",")
+	for _, cpf := range cpfs {
+		cpf = strings.TrimSpace(cpf)
+		if cpf != "" {
+			// Validar CPF antes de adicionar
+			if err := security.ValidateCPF(cpf); err == nil {
+				googleFeaturesWhitelist[cpf] = true
+				log.Printf("✅ CPF autorizado para Google Features: %s", cpf[:3]+"*****"+cpf[len(cpf)-2:])
+			} else {
+				log.Printf("⚠️ CPF inválido ignorado: %s", cpf)
+			}
+		}
+	}
+
+	log.Printf("🔐 Google Features Whitelist carregado: %d CPFs autorizados", len(googleFeaturesWhitelist))
+}
+
+func (s *SignalingServer) startPatternMiningScheduler(ctx context.Context) {
 	// Aguardar inicialização do sistema
 	time.Sleep(1 * time.Minute)
 
 	log.Printf("⛏️ [PATTERN_MINING] Scheduler iniciado (Intervalo: 1h)")
 	ticker := time.NewTicker(1 * time.Hour)
+	defer ticker.Stop()
 
 	// Rodar imediatamente na startup
 	go s.runPatternMining()
 
-	for range ticker.C {
-		s.runPatternMining()
+	for {
+		select {
+		case <-ctx.Done():
+			log.Printf("🛑 [PATTERN_MINING] Scheduler parado")
+			return
+		case <-ticker.C:
+			s.runPatternMining()
+		}
 	}
 }
 
@@ -528,7 +575,12 @@ func main() {
 	log.Printf("   Built: %s", BuildTime)
 	log.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	log.Printf("✅ Server ready on port %s", port)
-	if err := http.ListenAndServe(":"+port, corsMiddleware(router)); err != nil {
+
+	// 🔒 Aplicar middleware CORS seguro
+	corsConfig := security.DefaultCORSConfig()
+	corsHandler := security.CORSMiddleware(corsConfig)(router)
+
+	if err := http.ListenAndServe(":"+port, corsHandler); err != nil {
 		log.Printf("❌ HTTP server error: %v", err)
 		os.Exit(1)
 	}
@@ -571,7 +623,7 @@ func (s *SignalingServer) heartbeatLoop(client *PCMClient) {
 		case <-client.ctx.Done():
 			return
 		case <-ticker.C:
-			if client.GeminiClient != nil && client.active && client.mode == "audio" {
+			if client.GeminiClient != nil && client.active.Load() && client.mode == "audio" {
 				// Se não houve atividade nos últimos 20 segundos, envia silêncio
 				if time.Since(client.lastActivity) > 20*time.Second {
 					client.GeminiClient.SendAudio(silentChunk)
@@ -823,7 +875,7 @@ func (s *SignalingServer) handleClientMessages(client *PCMClient) {
 			}
 		}
 
-		if msgType == websocket.BinaryMessage && client.active {
+		if msgType == websocket.BinaryMessage && client.active.Load() {
 			// ✅ Only send to Gemini if in audio mode
 			if client.mode == "audio" {
 				client.audioCount++
@@ -1084,7 +1136,7 @@ func (s *SignalingServer) setupGeminiSession(client *PCMClient, voiceName string
 		// Não setamos active=false aqui pois pode ser um restart
 	}()
 
-	client.active = true
+	client.active.Store(true)
 	return nil
 }
 
@@ -1101,7 +1153,7 @@ func (s *SignalingServer) handleToolCall(client *PCMClient, name string, args ma
 		if err != nil {
 			return map[string]interface{}{
 				"success": false,
-				"error":   err.Error(),
+				"error":   security.SafeError(err, "Operation failed"),
 			}
 		}
 
@@ -1122,7 +1174,7 @@ func (s *SignalingServer) handleToolCall(client *PCMClient, name string, args ma
 			log.Printf("❌ Erro ao alertar família: %v", err)
 			return map[string]interface{}{
 				"success": false,
-				"error":   err.Error(),
+				"error":   security.SafeError(err, "Operation failed"),
 			}
 		}
 
@@ -1139,7 +1191,7 @@ func (s *SignalingServer) handleToolCall(client *PCMClient, name string, args ma
 			log.Printf("❌ Erro ao confirmar medicamento: %v", err)
 			return map[string]interface{}{
 				"success": false,
-				"error":   err.Error(),
+				"error":   security.SafeError(err, "Operation failed"),
 			}
 		}
 
@@ -1158,7 +1210,7 @@ func (s *SignalingServer) handleToolCall(client *PCMClient, name string, args ma
 			log.Printf("❌ Erro ao agendar: %v", err)
 			return map[string]interface{}{
 				"success": false,
-				"error":   err.Error(),
+				"error":   security.SafeError(err, "Operation failed"),
 			}
 		}
 
@@ -1441,57 +1493,14 @@ func (s *SignalingServer) handleToolCall(client *PCMClient, name string, args ma
 		return map[string]interface{}{"success": false, "error": "WhatsApp integration pending configuration"}
 
 	case "run_sql_select":
-		query, _ := args["query"].(string)
-
-		// 🛡️ Segurança básica
-		if query == "" {
-			return map[string]interface{}{"success": false, "error": "Empty query"}
+		// 🚫 VULNERABILIDADE CRÍTICA: SQL Injection
+		// Este endpoint foi DESABILITADO por segurança
+		// Use endpoints específicos como get_vitals, get_agendamentos, etc.
+		log.Printf("🚫 Tentativa de uso de run_sql_select bloqueada (CPF: %s)", client.CPF)
+		return map[string]interface{}{
+			"success": false,
+			"error":   "Dynamic SQL queries are disabled for security reasons. Use specific endpoints instead.",
 		}
-
-		// ⚠️ Apenas SELECT
-		// (Idealmente parsear a query, mas string check simples serve para MVP)
-		// Nota: Em produção, usar um usuário DB com permissões Read-Only
-		if len(query) < 6 || query[:6] != "SELECT" && query[:6] != "select" {
-			return map[string]interface{}{"success": false, "error": "Only SELECT queries allowed"}
-		}
-
-		log.Printf("🔍 Executando SQL: %s", query)
-
-		rows, err := s.db.GetConnection().Query(query)
-		if err != nil {
-			return map[string]interface{}{"success": false, "error": err.Error()}
-		}
-		defer rows.Close()
-
-		cols, _ := rows.Columns()
-		var result []map[string]interface{}
-
-		for rows.Next() {
-			columns := make([]interface{}, len(cols))
-			columnPointers := make([]interface{}, len(cols))
-			for i := range columns {
-				columnPointers[i] = &columns[i]
-			}
-
-			if err := rows.Scan(columnPointers...); err != nil {
-				return map[string]interface{}{"success": false, "error": err.Error()}
-			}
-
-			m := make(map[string]interface{})
-			for i, colName := range cols {
-				val := columnPointers[i].(*interface{})
-
-				// Handle bytes (DB text can come as bytes)
-				if b, ok := (*val).([]byte); ok {
-					m[colName] = string(b)
-				} else {
-					m[colName] = *val
-				}
-			}
-			result = append(result, m)
-		}
-
-		return map[string]interface{}{"success": true, "data": result}
 
 	case "list_voices":
 		return s.getAvailableVoices()
@@ -1508,10 +1517,10 @@ func (s *SignalingServer) handleToolCall(client *PCMClient, name string, args ma
 func (s *SignalingServer) listenGemini(client *PCMClient) {
 	log.Printf("👂 Listener iniciado: %s", client.CPF)
 
-	for client.active {
+	for client.active.Load() {
 		resp, err := client.GeminiClient.ReadResponse()
 		if err != nil {
-			if client.active {
+			if client.active.Load() {
 				log.Printf("⚠️ Gemini read error: %v", err)
 			}
 			return
@@ -1701,20 +1710,9 @@ func (s *SignalingServer) GetActiveClientsCount() int {
 
 // --- API HANDLERS ---
 
-func corsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-
-		next.ServeHTTP(w, r)
-	})
-}
+// corsMiddleware foi REMOVIDO e substituído por security.CORSMiddleware
+// ⚠️ A versão anterior usava "*" (wildcard) que é uma vulnerabilidade de segurança
+// ✅ Agora usa whitelist de origens configurada em internal/security/cors.go
 
 func (s *SignalingServer) enrichedMemoriesHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
@@ -1842,7 +1840,7 @@ func syncGoogleFitHandler(w http.ResponseWriter, r *http.Request) {
 	healthData, err := fitSvc.GetAllHealthData(accessToken)
 	if err != nil {
 		log.Printf("❌ Erro ao buscar dados do Fit: %v", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Failed to fetch health data", http.StatusInternalServerError)
 		return
 	}
 
@@ -1850,7 +1848,7 @@ func syncGoogleFitHandler(w http.ResponseWriter, r *http.Request) {
 	err = db.SaveDeviceHealthData(idosoID, int(healthData.HeartRate), int(healthData.Steps))
 	if err != nil {
 		log.Printf("❌ Erro ao salvar dados de saúde: %v", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Failed to save health data", http.StatusInternalServerError)
 		return
 	}
 

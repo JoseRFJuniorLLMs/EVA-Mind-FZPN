@@ -91,11 +91,18 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	refreshToken, err := GenerateRefreshToken(user.ID, h.Config.JWTSecret)
+	if err != nil {
+		http.Error(w, "Failed to generate refresh token", http.StatusInternalServerError)
+		return
+	}
+
 	// Update last login
 	h.DB.UpdateLastLogin(user.ID)
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"token": token,
+		"token":         token,
+		"refresh_token": refreshToken,
 		"user": map[string]interface{}{
 			"id":    user.ID,
 			"name":  user.Name,
@@ -120,4 +127,55 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(user)
+}
+
+type RefreshTokenRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
+// RefreshTokenHandler renova o access token usando o refresh token
+func (h *Handler) RefreshTokenHandler(w http.ResponseWriter, r *http.Request) {
+	var req RefreshTokenRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.RefreshToken == "" {
+		http.Error(w, "Refresh token is required", http.StatusBadRequest)
+		return
+	}
+
+	// Validar refresh token
+	claims, err := ValidateRefreshToken(req.RefreshToken, h.Config.JWTSecret)
+	if err != nil {
+		http.Error(w, "Invalid refresh token", http.StatusUnauthorized)
+		return
+	}
+
+	// Buscar usuário
+	user, err := h.DB.GetUserByID(claims.UserID)
+	if err != nil || user == nil {
+		http.Error(w, "User not found", http.StatusNotFound)
+		return
+	}
+
+	// Gerar novo access token
+	newToken, err := GenerateToken(user.ID, user.Role, h.Config.JWTSecret)
+	if err != nil {
+		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
+		return
+	}
+
+	// Gerar novo refresh token (optional - rotation)
+	newRefreshToken, err := GenerateRefreshToken(user.ID, h.Config.JWTSecret)
+	if err != nil {
+		http.Error(w, "Failed to generate refresh token", http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"token":         newToken,
+		"refresh_token": newRefreshToken,
+	})
 }
