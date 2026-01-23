@@ -165,7 +165,7 @@ func (c *Client) SendSetup(instructions string, voiceSettings map[string]interfa
 
 // StartSession é alias depreciado
 func (c *Client) StartSession(instructions string, tools []interface{}, memories []string, voiceName string) error {
-	return c.SendSetup(instructions, nil, memories, "", nil)
+	return c.SendSetup(instructions, map[string]interface{}{"voiceName": voiceName}, memories, "", nil)
 }
 
 // SendAudio envia áudio PCM
