@@ -475,6 +475,7 @@ func main() {
 	protected := api.PathPrefix("/").Subrouter()
 	protected.Use(auth.AuthMiddleware(cfg.JWTSecret))
 	protected.HandleFunc("/auth/me", authHandler.Me).Methods("GET")
+	protected.HandleFunc("/idosos/{id:[0-9]+}/memories/enriched", signalingServer.enrichedMemoriesHandler).Methods("GET")
 
 	// 🔐 OAuth Routes (v17)
 	oauthService := oauth.NewService(
@@ -1712,6 +1713,60 @@ func corsMiddleware(next http.Handler) http.Handler {
 		}
 
 		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *SignalingServer) enrichedMemoriesHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	idosoIDStr := vars["id"]
+	idosoID, _ := strconv.ParseInt(idosoIDStr, 10, 64)
+
+	// 1. Obter memórias mais recentes para servir de semente contextuall
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	memories, err := s.memoryStore.GetRecent(ctx, idosoID, 10)
+	if err != nil {
+		log.Printf("❌ [ENRICHED_MEMORIES] Erro ao buscar memórias: %v", err)
+		http.Error(w, "Erro ao buscar memórias", http.StatusInternalServerError)
+		return
+	}
+
+	// 2. Extrair tópicos/keywords das memórias para ativar o Grafo (Neo4j)
+	topicMap := make(map[string]bool)
+	for _, m := range memories {
+		for _, t := range m.Topics {
+			if len(t) > 2 {
+				topicMap[strings.ToLower(t)] = true
+			}
+		}
+	}
+
+	var keywords []string
+	for k := range topicMap {
+		keywords = append(keywords, k)
+	}
+
+	// 3. Buscar insights do Grafo via FDPN (Neo4j Spreading Activation)
+	graphInsights := make(map[string]interface{})
+	if s.fdpnEngine != nil && len(keywords) > 0 {
+		// Limitar a 5 keywords mais relevantes para performance
+		if len(keywords) > 5 {
+			keywords = keywords[:5]
+		}
+		insights := s.fdpnEngine.GetContext(ctx, idosoIDStr, keywords)
+		for k, v := range insights {
+			graphInsights[k] = v
+		}
+	}
+
+	// 4. Retornar resposta unificada
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"idoso_id":       idosoID,
+		"memories":       memories,
+		"graph_insights": graphInsights,
+		"timestamp":      time.Now().Format(time.RFC3339),
 	})
 }
 
