@@ -1710,9 +1710,26 @@ func (s *SignalingServer) GetActiveClientsCount() int {
 
 // --- API HANDLERS ---
 
+<<<<<<< HEAD
 // corsMiddleware foi REMOVIDO e substituído por security.CORSMiddleware
 // ⚠️ A versão anterior usava "*" (wildcard) que é uma vulnerabilidade de segurança
 // ✅ Agora usa whitelist de origens configurada em internal/security/cors.go
+=======
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+>>>>>>> b7c79cd2796d634ce29d478c8a196272f21253bd
 
 func (s *SignalingServer) enrichedMemoriesHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
