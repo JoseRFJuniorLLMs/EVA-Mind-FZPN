@@ -9,6 +9,7 @@ import (
 	"eva-mind/internal/brainstem/push"
 	"fmt"
 	"log"
+	"time"
 )
 
 type ToolsHandler struct {
@@ -92,6 +93,33 @@ func (h *ToolsHandler) ExecuteTool(name string, args map[string]interface{}, ido
 		}
 		return h.handleGetAgendamentos(idosoID, limit)
 
+	case "scan_medication_visual":
+		reason, _ := args["reason"].(string)
+		timeOfDay, _ := args["time_of_day"].(string)
+		return h.handleScanMedicationVisual(idosoID, reason, timeOfDay)
+
+	case "analyze_voice_prosody":
+		analysisType, _ := args["analysis_type"].(string)
+		audioSegmentFloat, _ := args["audio_segment_seconds"].(float64)
+		audioSegment := int(audioSegmentFloat)
+		if audioSegment == 0 {
+			audioSegment = 30
+		}
+		return h.handleAnalyzeVoiceProsody(idosoID, analysisType, audioSegment)
+
+	case "apply_phq9":
+		startAssessment, _ := args["start_assessment"].(bool)
+		return h.handleApplyPHQ9(idosoID, startAssessment)
+
+	case "apply_gad7":
+		startAssessment, _ := args["start_assessment"].(bool)
+		return h.handleApplyGAD7(idosoID, startAssessment)
+
+	case "apply_cssrs":
+		triggerPhrase, _ := args["trigger_phrase"].(string)
+		startAssessment, _ := args["start_assessment"].(bool)
+		return h.handleApplyCSSRS(idosoID, triggerPhrase, startAssessment)
+
 	default:
 		return nil, fmt.Errorf("ferramenta desconhecida: %s", name)
 	}
@@ -162,5 +190,251 @@ func (h *ToolsHandler) handleGetAgendamentos(idosoID int64, limit int) (map[stri
 
 	return map[string]interface{}{
 		"agendamentos": resultList,
+	}, nil
+}
+
+func (h *ToolsHandler) handleScanMedicationVisual(idosoID int64, reason string, timeOfDay string) (map[string]interface{}, error) {
+	log.Printf("🔍 [MEDICATION SCANNER] Iniciando scan para Idoso %d (motivo: %s, horário: %s)", idosoID, reason, timeOfDay)
+
+	// 1. Buscar medicamentos candidatos do banco baseado no horário
+	candidateMeds, err := h.db.GetMedicationsBySchedule(idosoID, timeOfDay)
+	if err != nil {
+		log.Printf("❌ [MEDICATION SCANNER] Erro ao buscar medicamentos: %v", err)
+		return map[string]interface{}{"error": "Falha ao buscar medicamentos programados"}, nil
+	}
+
+	// Se não encontrou medicamentos para esse horário, buscar todos ativos
+	if len(candidateMeds) == 0 {
+		log.Printf("⚠️ [MEDICATION SCANNER] Nenhum medicamento programado para %s, buscando todos ativos", timeOfDay)
+		candidateMeds, err = h.db.GetActiveMedications(idosoID)
+		if err != nil {
+			return map[string]interface{}{"error": "Falha ao buscar medicamentos ativos"}, nil
+		}
+	}
+
+	// 2. Preparar payload para enviar ao mobile via WebSocket
+	if h.NotifyFunc != nil {
+		sessionID := fmt.Sprintf("med-scan-%d-%d", idosoID, time.Now().Unix())
+
+		// Converter medicamentos para formato simples
+		var candidateList []map[string]interface{}
+		for _, med := range candidateMeds {
+			candidateList = append(candidateList, map[string]interface{}{
+				"id":           med.ID,
+				"name":         med.Nome,
+				"dosage":       med.Dosagem,
+				"color":        med.CorEmbalagem,
+				"manufacturer": med.Fabricante,
+			})
+		}
+
+		// Sinalizar mobile para abrir scanner
+		h.NotifyFunc(idosoID, "open_medication_scanner", map[string]interface{}{
+			"session_id":             sessionID,
+			"candidate_medications":  candidateList,
+			"instructions":           "Aponte a câmera para os frascos de medicamento",
+			"timeout":                60,
+			"reason":                 reason,
+		})
+
+		log.Printf("✅ [MEDICATION SCANNER] Scanner iniciado. Session ID: %s, Candidatos: %d", sessionID, len(candidateList))
+
+		return map[string]interface{}{
+			"status":           "scanner_iniciado",
+			"session_id":       sessionID,
+			"candidates_count": len(candidateList),
+			"reason":           reason,
+		}, nil
+	}
+
+	return map[string]interface{}{"error": "Serviço de sinalização WebSocket não disponível"}, nil
+}
+
+func (h *ToolsHandler) handleAnalyzeVoiceProsody(idosoID int64, analysisType string, audioSegment int) (map[string]interface{}, error) {
+	log.Printf("🎤 [VOICE PROSODY] Iniciando análise para Idoso %d (tipo: %s, duração: %d seg)", idosoID, analysisType, audioSegment)
+
+	// Sinalizar mobile para capturar áudio via WebSocket
+	if h.NotifyFunc != nil {
+		sessionID := fmt.Sprintf("voice-prosody-%d-%d", idosoID, time.Now().Unix())
+
+		h.NotifyFunc(idosoID, "start_voice_recording", map[string]interface{}{
+			"session_id":      sessionID,
+			"analysis_type":   analysisType,
+			"duration":        audioSegment,
+			"instructions":    "Vou analisar sua voz. Por favor, continue conversando naturalmente.",
+		})
+
+		log.Printf("✅ [VOICE PROSODY] Captura de áudio iniciada. Session ID: %s", sessionID)
+
+		return map[string]interface{}{
+			"status":        "recording_started",
+			"session_id":    sessionID,
+			"analysis_type": analysisType,
+			"duration":      audioSegment,
+			"message":       fmt.Sprintf("Gravação de voz iniciada para análise de %s", analysisType),
+		}, nil
+	}
+
+	return map[string]interface{}{"error": "Serviço de sinalização WebSocket não disponível"}, nil
+}
+
+func (h *ToolsHandler) handleApplyPHQ9(idosoID int64, startAssessment bool) (map[string]interface{}, error) {
+	log.Printf("📋 [PHQ-9] Iniciando aplicação da escala PHQ-9 para Idoso %d", idosoID)
+
+	if !startAssessment {
+		return map[string]interface{}{
+			"error": "start_assessment deve ser true para iniciar a avaliação",
+		}, nil
+	}
+
+	// Criar sessão de avaliação no banco
+	sessionID := fmt.Sprintf("phq9-%d-%d", idosoID, time.Now().Unix())
+
+	query := `
+		INSERT INTO clinical_assessments (
+			patient_id, assessment_type, session_id, status, created_at
+		) VALUES ($1, 'PHQ-9', $2, 'in_progress', NOW())
+		RETURNING id
+	`
+
+	var assessmentID int64
+	err := h.db.Conn.QueryRow(query, idosoID, sessionID).Scan(&assessmentID)
+	if err != nil {
+		log.Printf("❌ [PHQ-9] Erro ao criar sessão: %v", err)
+		return map[string]interface{}{"error": "Erro ao iniciar avaliação"}, nil
+	}
+
+	log.Printf("✅ [PHQ-9] Sessão criada. Assessment ID: %d, Session ID: %s", assessmentID, sessionID)
+
+	// Retornar primeira pergunta
+	return map[string]interface{}{
+		"status":        "assessment_started",
+		"session_id":    sessionID,
+		"assessment_id": assessmentID,
+		"scale":         "PHQ-9",
+		"total_questions": 9,
+		"message": "Vou fazer algumas perguntas para entender melhor como você tem se sentido nas últimas 2 semanas. Não há respostas certas ou erradas.",
+		"first_question": map[string]interface{}{
+			"number": 1,
+			"text":   "Pouco interesse ou prazer em fazer as coisas?",
+			"options": []string{
+				"Nenhuma vez",
+				"Vários dias",
+				"Mais da metade dos dias",
+				"Quase todos os dias",
+			},
+		},
+	}, nil
+}
+
+func (h *ToolsHandler) handleApplyGAD7(idosoID int64, startAssessment bool) (map[string]interface{}, error) {
+	log.Printf("📋 [GAD-7] Iniciando aplicação da escala GAD-7 para Idoso %d", idosoID)
+
+	if !startAssessment {
+		return map[string]interface{}{
+			"error": "start_assessment deve ser true para iniciar a avaliação",
+		}, nil
+	}
+
+	// Criar sessão de avaliação no banco
+	sessionID := fmt.Sprintf("gad7-%d-%d", idosoID, time.Now().Unix())
+
+	query := `
+		INSERT INTO clinical_assessments (
+			patient_id, assessment_type, session_id, status, created_at
+		) VALUES ($1, 'GAD-7', $2, 'in_progress', NOW())
+		RETURNING id
+	`
+
+	var assessmentID int64
+	err := h.db.Conn.QueryRow(query, idosoID, sessionID).Scan(&assessmentID)
+	if err != nil {
+		log.Printf("❌ [GAD-7] Erro ao criar sessão: %v", err)
+		return map[string]interface{}{"error": "Erro ao iniciar avaliação"}, nil
+	}
+
+	log.Printf("✅ [GAD-7] Sessão criada. Assessment ID: %d, Session ID: %s", assessmentID, sessionID)
+
+	// Retornar primeira pergunta
+	return map[string]interface{}{
+		"status":        "assessment_started",
+		"session_id":    sessionID,
+		"assessment_id": assessmentID,
+		"scale":         "GAD-7",
+		"total_questions": 7,
+		"message": "Vou fazer algumas perguntas sobre ansiedade e nervosismo nas últimas 2 semanas.",
+		"first_question": map[string]interface{}{
+			"number": 1,
+			"text":   "Sentir-se nervoso(a), ansioso(a) ou muito tenso(a)?",
+			"options": []string{
+				"Nenhuma vez",
+				"Vários dias",
+				"Mais da metade dos dias",
+				"Quase todos os dias",
+			},
+		},
+	}, nil
+}
+
+func (h *ToolsHandler) handleApplyCSSRS(idosoID int64, triggerPhrase string, startAssessment bool) (map[string]interface{}, error) {
+	log.Printf("🚨 [C-SSRS] ALERTA CRÍTICO - Avaliação de risco suicida iniciada para Idoso %d. Trigger: '%s'", idosoID, triggerPhrase)
+
+	if !startAssessment {
+		return map[string]interface{}{
+			"error": "start_assessment deve ser true para iniciar a avaliação",
+		}, nil
+	}
+
+	// Criar sessão CRÍTICA de avaliação no banco
+	sessionID := fmt.Sprintf("cssrs-%d-%d", idosoID, time.Now().Unix())
+
+	query := `
+		INSERT INTO clinical_assessments (
+			patient_id, assessment_type, session_id, status, trigger_phrase, priority, created_at
+		) VALUES ($1, 'C-SSRS', $2, 'in_progress', $3, 'CRITICAL', NOW())
+		RETURNING id
+	`
+
+	var assessmentID int64
+	err := h.db.Conn.QueryRow(query, idosoID, sessionID, triggerPhrase).Scan(&assessmentID)
+	if err != nil {
+		log.Printf("❌ [C-SSRS] Erro ao criar sessão: %v", err)
+		return map[string]interface{}{"error": "Erro ao iniciar avaliação"}, nil
+	}
+
+	// 🚨 ALERTA IMEDIATO PARA FAMÍLIA/EQUIPE
+	if h.NotifyFunc != nil {
+		h.NotifyFunc(idosoID, "critical_alert", map[string]interface{}{
+			"type":           "suicide_risk_assessment",
+			"trigger_phrase": triggerPhrase,
+			"session_id":     sessionID,
+			"priority":       "CRITICAL",
+		})
+	}
+
+	// Também alertar via sistema de alertas
+	_ = actions.AlertFamilyWithSeverity(h.db.Conn, h.pushService, h.emailService, idosoID,
+		fmt.Sprintf("🚨 ALERTA CRÍTICO: Avaliação de risco suicida iniciada. Frase: '%s'", triggerPhrase),
+		"critica")
+
+	log.Printf("✅ [C-SSRS] Sessão CRÍTICA criada. Assessment ID: %d, Session ID: %s", assessmentID, sessionID)
+
+	// Retornar primeira pergunta com extremo cuidado
+	return map[string]interface{}{
+		"status":        "assessment_started",
+		"session_id":    sessionID,
+		"assessment_id": assessmentID,
+		"scale":         "C-SSRS",
+		"total_questions": 6,
+		"priority":      "CRITICAL",
+		"message": "Entendo que você está passando por um momento difícil. Vou fazer algumas perguntas importantes para entender melhor como posso ajudar.",
+		"first_question": map[string]interface{}{
+			"number": 1,
+			"text":   "Você desejou estar morto(a) ou desejou poder dormir e não acordar mais?",
+			"options": []string{
+				"Sim",
+				"Não",
+			},
+		},
 	}, nil
 }

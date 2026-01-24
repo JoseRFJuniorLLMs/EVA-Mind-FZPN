@@ -144,6 +144,192 @@ func GetDefaultTools() []interface{} {
 				},
 			},
 		},
+		// --- CATEGORIA ENTRETENIMENTO ---
+		map[string]interface{}{
+			"function_declarations": []interface{}{
+				map[string]interface{}{
+					"name":        "play_nostalgic_music",
+					"description": "Toca músicas da época de ouro (juventude) do paciente baseada no seu ano de nascimento",
+					"parameters": map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"decade": map[string]interface{}{
+								"type":        "string",
+								"description": "Década preferida (opcional, ex: 'anos 60')",
+							},
+						},
+					},
+				},
+				map[string]interface{}{
+					"name":        "radio_station_tuner",
+					"description": "Sintoniza estações de rádio AM/FM via streaming",
+					"parameters": map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"station_name": map[string]interface{}{
+								"type":        "string",
+								"description": "Nome da rádio (ex: 'Antena 1', 'Rádio Nacional')",
+							},
+						},
+						"required": []string{"station_name"},
+					},
+				},
+				map[string]interface{}{
+					"name":        "play_relaxation_sounds",
+					"description": "Toca sons de natureza ou white noise para relaxamento e sono",
+					"parameters": map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"sound_type": map[string]interface{}{
+								"type":        "string",
+								"description": "Tipo de som (chuva, mar, floresta, lareira)",
+								"enum":        []string{"chuva", "mar", "floresta", "lareira", "sino_tibetano"},
+							},
+						},
+						"required": []string{"sound_type"},
+					},
+				},
+				map[string]interface{}{
+					"name":        "hymn_and_prayer_player",
+					"description": "Reproduz hinos religiosos ou guia orações (terço, salmos)",
+					"parameters": map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"type": map[string]interface{}{
+								"type":        "string",
+								"description": "Tipo: hino, oracao, terço, salmo",
+							},
+							"content_name": map[string]interface{}{
+								"type":        "string",
+								"description": "Nome específico (ex: 'Salmo 23', 'Ave Maria')",
+							},
+						},
+						"required": []string{"type"},
+					},
+				},
+				map[string]interface{}{
+					"name":        "daily_mass_stream",
+					"description": "Inicia transmissão de missa ao vivo ou gravada",
+					"parameters": map[string]interface{}{
+						"type":       "object",
+						"properties": map[string]interface{}{},
+					},
+				},
+				map[string]interface{}{
+					"name":        "watch_classic_movies",
+					"description": "Busca e reproduz filmes clássicos dublados ou nacionais",
+					"parameters": map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"movie_name": map[string]interface{}{
+								"type":        "string",
+								"description": "Nome do filme ou ator (ex: 'Mazzaropi')",
+							},
+						},
+						"required": []string{"movie_name"},
+					},
+				},
+				map[string]interface{}{
+					"name":        "watch_news_briefing",
+					"description": "Apresenta um resumo das principais notícias do dia em vídeo ou áudio",
+					"parameters": map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"topic": map[string]interface{}{
+								"type":        "string",
+								"description": "Tópico de interesse (geral, política, esportes)",
+							},
+						},
+					},
+				},
+				map[string]interface{}{
+					"name":        "read_newspaper_aloud",
+					"description": "Lê as manchetes do dia dos principais jornais",
+					"parameters": map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"newspaper": map[string]interface{}{
+								"type":        "string",
+								"description": "Nome do jornal (ex: 'Folha', 'O Globo')",
+							},
+						},
+					},
+				},
+				map[string]interface{}{
+					"name":        "horoscope_daily",
+					"description": "Busca e lê o horóscopo do dia para o signo do paciente",
+					"parameters": map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"sign": map[string]interface{}{
+								"type":        "string",
+								"description": "Signo (ex: 'Capricórnio', 'Leão')",
+							},
+						},
+					},
+				},
+				map[string]interface{}{
+					"name":        "play_trivia_game",
+					"description": "Inicia um jogo de perguntas e respostas (Quiz)",
+					"parameters": map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"theme": map[string]interface{}{
+								"type":        "string",
+								"description": "Tema do quiz (ex: 'história', 'música antiga')",
+							},
+						},
+					},
+				},
+				map[string]interface{}{
+					"name":        "riddle_and_joke_teller",
+					"description": "Conta piadas ou propõe adivinhas/charadas",
+					"parameters": map[string]interface{}{
+						"type": map[string]interface{}{
+							"type":        "string",
+							"description": "Se quer piada ou adivinha",
+							"enum":        []string{"piada", "adivinha"},
+						},
+					},
+				},
+				map[string]interface{}{
+					"name":        "voice_diary",
+					"description": "Inicia uma sessão de diário por voz onde o paciente pode desabafar ou registrar o dia",
+					"parameters": map[string]interface{}{
+						"type":       "object",
+						"properties": map[string]interface{}{},
+					},
+				},
+				map[string]interface{}{
+					"name":        "poetry_generator",
+					"description": "Cria um poema ou rima personalizada sobre um tema escolhido",
+					"parameters": map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"theme": map[string]interface{}{
+								"type":        "string",
+								"description": "Tema do poema (ex: 'família', 'saudade', 'alegria')",
+							},
+						},
+					},
+				},
+				map[string]interface{}{
+					"name":        "learn_new_language",
+					"description": "Inicia uma lição básica de um novo idioma (inglês, espanhol, francês)",
+					"parameters": map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"language": map[string]interface{}{
+								"type":        "string",
+								"description": "Idioma a aprender",
+								"enum":        []string{"ingles", "espanhol", "frances"},
+							},
+						},
+						"required": []string{"language"},
+					},
+				},
+			},
+		},
 		// 1. Gmail - send_email
 		map[string]interface{}{
 			"name":        "send_email",

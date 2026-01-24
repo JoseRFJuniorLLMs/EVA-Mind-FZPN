@@ -59,6 +59,20 @@ FERRAMENTAS DISPONÍVEIS:
 - call_doctor_webrtc: Ligar para médico
 - call_caregiver_webrtc: Ligar para cuidador
 - google_search_retrieval: Pesquisar informações em tempo real na internet (args: query)
+- play_nostalgic_music: Tocar músicas da juventude do paciente (args: decade)
+- radio_station_tuner: Sintonizar rádio AM/FM (args: station_name)
+- play_relaxation_sounds: Tocar sons relaxantes (args: sound_type)
+- hymn_and_prayer_player: Tocar hinos ou orações (args: type, content_name)
+- daily_mass_stream: Ver missa ao vivo
+- watch_classic_movies: Ver filmes clássicos (args: movie_name)
+- watch_news_briefing: Ver resumo de notícias (args: topic)
+- read_newspaper_aloud: Ler manchetes de jornais (args: newspaper)
+- horoscope_daily: Ler horóscopo do dia (args: sign)
+- play_trivia_game: Iniciar jogo de quiz/trivia (args: theme)
+- riddle_and_joke_teller: Contar piada ou adivinha (args: type)
+- voice_diary: Iniciar sessão de diário por voz
+- poetry_generator: Criar um poema personalizado (args: theme)
+- learn_new_language: Iniciar lição de idioma (args: language)
 
 Se detectar uma intenção que requer ferramenta, responda APENAS com JSON:
 {"tool": "nome_da_tool", "args": {...}}

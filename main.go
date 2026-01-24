@@ -40,8 +40,8 @@ import (
 	"eva-mind/internal/motor/scheduler"
 	"eva-mind/internal/motor/sheets"
 	"eva-mind/internal/motor/youtube"
-	"eva-mind/pkg/types"
 	"eva-mind/internal/security"
+	"eva-mind/pkg/types"
 
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
@@ -1162,6 +1162,51 @@ func (s *SignalingServer) handleToolCall(client *PCMClient, name string, args ma
 			"message": fmt.Sprintf("Voz alterada para %s", voiceName),
 		}
 
+	// --- CATEGORIA ENTRETENIMENTO ---
+
+	case "play_nostalgic_music", "radio_station_tuner", "play_relaxation_sounds",
+		"hymn_and_prayer_player", "daily_mass_stream", "watch_classic_movies",
+		"watch_news_briefing", "read_newspaper_aloud", "horoscope_daily",
+		"play_trivia_game", "riddle_and_joke_teller", "voice_diary",
+		"poetry_generator", "learn_new_language":
+
+		log.Printf("🎭 [ENTRETENIMENTO] Executando ferramenta: %s", name)
+
+		// Notificar mobile via WebSocket (para ferramentas que precisam de UI/Player específico)
+		s.sendJSON(client, map[string]interface{}{
+			"type": "entertainment_command",
+			"tool": name,
+			"args": args,
+		})
+
+		msg := "Iniciando entretenimento..."
+		switch name {
+		case "play_nostalgic_music":
+			msg = "Buscando músicas da sua juventude..."
+		case "hymn_and_prayer_player":
+			msg = "Preparando momento de oração..."
+		case "daily_mass_stream":
+			msg = "Conectando à transmissão da missa..."
+		case "watch_news_briefing":
+			msg = "Compilando as notícias do dia..."
+		case "read_newspaper_aloud":
+			msg = "Abrindo as manchetes de hoje..."
+		case "play_relaxation_sounds":
+			msg = "Iniciando sons relaxantes..."
+		case "horoscope_daily":
+			sign, _ := args["sign"].(string)
+			msg = "Buscando horóscopo para " + sign
+		case "play_trivia_game":
+			msg = "Iniciando jogo de quiz. Vou te fazer a primeira pergunta."
+		case "riddle_and_joke_teller":
+			msg = "Preparando uma piada para você."
+		}
+
+		return map[string]interface{}{
+			"success": true,
+			"message": msg,
+		}
+
 	case "alert_family":
 		reason, _ := args["reason"].(string)
 		severity, _ := args["severity"].(string)
@@ -1710,26 +1755,8 @@ func (s *SignalingServer) GetActiveClientsCount() int {
 
 // --- API HANDLERS ---
 
-<<<<<<< HEAD
 // corsMiddleware foi REMOVIDO e substituído por security.CORSMiddleware
-// ⚠️ A versão anterior usava "*" (wildcard) que é uma vulnerabilidade de segurança
 // ✅ Agora usa whitelist de origens configurada em internal/security/cors.go
-=======
-func corsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-
-		next.ServeHTTP(w, r)
-	})
-}
->>>>>>> b7c79cd2796d634ce29d478c8a196272f21253bd
 
 func (s *SignalingServer) enrichedMemoriesHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
