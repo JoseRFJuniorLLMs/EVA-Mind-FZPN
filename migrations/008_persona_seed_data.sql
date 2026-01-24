@@ -11,6 +11,7 @@
 INSERT INTO persona_definitions (
     persona_code,
     persona_name,
+    description,
     voice_id,
     tone,
     emotional_depth,
@@ -33,6 +34,7 @@ INSERT INTO persona_definitions (
 (
     'companion',
     'EVA-Companion',
+    'Companheira calorosa para suporte emocional e rotina diária',
     'eva_warm_voice',
     'warm, empathetic, conversational, intimate',
     0.85, -- Alta profundidade emocional
@@ -102,6 +104,7 @@ CONTEXTO DE USO: Casa, rotina diária, conversas casuais',
 (
     'clinical',
     'EVA-Clinical',
+    'Interface profissional para avaliações clínicas e monitoramento em hospitais',
     'eva_professional_voice',
     'professional, objective, evidence-based, reassuring',
     0.50, -- Profundidade emocional moderada
@@ -176,6 +179,7 @@ CONTEXTO DE USO: Consultas clínicas, hospitais, avaliações formais',
 (
     'emergency',
     'EVA-Emergency',
+    'Protocolo de emergência para crises suicidas e situações de risco iminente',
     'eva_calm_directive_voice',
     'calm, directive, protocol-driven, clear',
     0.30, -- Baixa profundidade emocional (foco em segurança)
@@ -264,6 +268,7 @@ CONTEXTO DE USO: Crises suicidas, ideação ativa, descompensação aguda',
 (
     'educator',
     'EVA-Educator',
+    'Educadora em saúde mental para psicoeducação e desenvolvimento de habilidades',
     'eva_pedagogical_voice',
     'pedagogical, clear, encouraging, informative',
     0.60, -- Profundidade emocional moderada
@@ -370,19 +375,17 @@ CONTEXTO DE USO: Sessões educativas, dúvidas sobre tratamento, desenvolvimento
 
 INSERT INTO persona_activation_rules (
     rule_name,
-    source_persona,
-    target_persona,
-    trigger_condition,
+    target_persona_code,
+    conditions,
     priority,
     auto_activate,
     notification_message,
-    active
+    is_active
 ) VALUES
 
 -- Regra 1: C-SSRS Alto → Emergency
 (
     'Critical C-SSRS Score Detected',
-    'companion',
     'emergency',
     '{
         "type": "clinical_threshold",
@@ -399,7 +402,6 @@ INSERT INTO persona_activation_rules (
 
 (
     'Critical C-SSRS from Clinical',
-    'clinical',
     'emergency',
     '{
         "type": "clinical_threshold",
@@ -417,7 +419,6 @@ INSERT INTO persona_activation_rules (
 -- Regra 2: PHQ-9 Muito Alto → Clinical
 (
     'Severe Depression Detected',
-    'companion',
     'clinical',
     '{
         "type": "clinical_threshold",
@@ -435,7 +436,6 @@ INSERT INTO persona_activation_rules (
 -- Regra 3: Internação Hospitalar → Clinical
 (
     'Hospital Admission Detected',
-    'companion',
     'clinical',
     '{
         "type": "event",
@@ -451,7 +451,6 @@ INSERT INTO persona_activation_rules (
 -- Regra 4: Alta Hospitalar → Companion (com supervisão)
 (
     'Hospital Discharge - Return to Companion',
-    'clinical',
     'companion',
     '{
         "type": "event",
@@ -470,7 +469,6 @@ INSERT INTO persona_activation_rules (
 -- Regra 5: Crise Resolvida → Clinical (transição suave)
 (
     'Crisis Resolved - Transition to Clinical',
-    'emergency',
     'clinical',
     '{
         "type": "clinical_threshold",
@@ -489,7 +487,6 @@ INSERT INTO persona_activation_rules (
 -- Regra 6: Pedido Explícito de Educação → Educator
 (
     'Education Request Detected',
-    'companion',
     'educator',
     '{
         "type": "user_intent",
@@ -512,7 +509,6 @@ INSERT INTO persona_activation_rules (
 -- Regra 7: Melhora Sustentada → Companion
 (
     'Sustained Improvement - Return to Companion',
-    'clinical',
     'companion',
     '{
         "type": "clinical_trend",
@@ -531,7 +527,6 @@ INSERT INTO persona_activation_rules (
 -- Regra 8: Noite/Madrugada + Ansiedade → Companion com técnicas de relaxamento
 (
     'Nighttime Anxiety Support',
-    'companion',
     'companion',
     '{
         "type": "contextual",
@@ -552,41 +547,43 @@ INSERT INTO persona_activation_rules (
 INSERT INTO persona_tool_permissions (
     persona_code,
     tool_name,
-    permission_level,
-    require_user_consent,
-    max_daily_usage,
-    allowed_contexts,
-    restrictions
+    permission_type,
+    max_uses_per_day,
+    max_uses_per_session,
+    requires_reason
 ) VALUES
 
 -- COMPANION TOOLS
-('companion', 'conversation', 'allowed', FALSE, NULL, ARRAY['home', 'routine'], NULL),
-('companion', 'memory_recall', 'allowed', FALSE, 50, ARRAY['home', 'routine'], NULL),
-('companion', 'medication_reminder', 'allowed', FALSE, 10, ARRAY['home', 'routine'], '{"gentle_reminders_only": true}'),
-('companion', 'emergency_protocol', 'prohibited', TRUE, NULL, ARRAY[], '{"reason": "must_escalate_to_emergency_persona"}'),
+('companion', 'conversation', 'allowed', NULL, NULL, FALSE),
+('companion', 'memory_recall', 'allowed', 50, NULL, FALSE),
+('companion', 'emotional_support', 'allowed', NULL, NULL, FALSE),
+('companion', 'medication_reminder', 'allowed', 10, NULL, FALSE),
+('companion', 'emergency_protocol', 'prohibited', NULL, NULL, FALSE),
+('companion', 'crisis_intervention', 'prohibited', NULL, NULL, FALSE),
 
 -- CLINICAL TOOLS
-('clinical', 'phq9_administration', 'allowed', TRUE, 1, ARRAY['hospital', 'clinic', 'telehealth'], '{"requires_proper_context": true}'),
-('clinical', 'gad7_administration', 'allowed', TRUE, 1, ARRAY['hospital', 'clinic', 'telehealth'], NULL),
-('clinical', 'cssrs_administration', 'allowed', TRUE, 2, ARRAY['hospital', 'clinic', 'telehealth', 'emergency'], '{"auto_escalate_if_score_gte_4": true}'),
-('clinical', 'medication_review', 'allowed', FALSE, 5, ARRAY['hospital', 'clinic', 'telehealth'], '{"read_only": true, "cannot_modify": true}'),
-('clinical', 'professional_referral', 'allowed', TRUE, 3, ARRAY['hospital', 'clinic', 'telehealth'], NULL),
-('clinical', 'casual_chat', 'prohibited', FALSE, NULL, ARRAY[], '{"reason": "maintain_professional_boundaries"}'),
+('clinical', 'phq9_administration', 'allowed_with_limits', 1, 1, FALSE),
+('clinical', 'gad7_administration', 'allowed_with_limits', 1, 1, FALSE),
+('clinical', 'cssrs_administration', 'allowed_with_limits', 2, 1, FALSE),
+('clinical', 'medication_review', 'allowed', 5, NULL, FALSE),
+('clinical', 'professional_referral', 'allowed', 3, NULL, TRUE),
+('clinical', 'casual_chat', 'prohibited', NULL, NULL, FALSE),
+('clinical', 'symptom_tracking', 'allowed', NULL, NULL, FALSE),
 
 -- EMERGENCY TOOLS
-('emergency', 'crisis_assessment', 'allowed', FALSE, NULL, ARRAY['emergency', 'home', 'hospital'], NULL),
-('emergency', 'cssrs_administration', 'allowed', FALSE, NULL, ARRAY['emergency', 'home', 'hospital'], '{"mandatory": true}'),
-('emergency', 'emergency_contact_notification', 'allowed', FALSE, NULL, ARRAY['emergency'], '{"auto_trigger_if_cssrs_gte_4": true}'),
-('emergency', 'professional_alert', 'allowed', FALSE, NULL, ARRAY['emergency'], '{"mandatory_for_imminent_risk": true}'),
-('emergency', 'geolocation_if_authorized', 'conditional', TRUE, NULL, ARRAY['emergency'], '{"only_if_imminent_risk": true, "requires_prior_consent": true}'),
-('emergency', 'casual_conversation', 'prohibited', FALSE, NULL, ARRAY[], '{"reason": "focus_on_safety_only"}'),
+('emergency', 'crisis_assessment', 'allowed', NULL, NULL, FALSE),
+('emergency', 'cssrs_administration', 'allowed', NULL, NULL, FALSE),
+('emergency', 'emergency_contact_notification', 'allowed', NULL, NULL, FALSE),
+('emergency', 'professional_alert', 'allowed', NULL, NULL, FALSE),
+('emergency', 'safety_plan_activation', 'allowed', NULL, NULL, FALSE),
+('emergency', 'casual_conversation', 'prohibited', NULL, NULL, FALSE),
 
 -- EDUCATOR TOOLS
-('educator', 'psychoeducation', 'allowed', FALSE, NULL, ARRAY['home', 'clinic', 'routine'], NULL),
-('educator', 'medication_education', 'allowed', FALSE, 10, ARRAY['home', 'clinic'], '{"cannot_prescribe_or_modify": true}'),
-('educator', 'cognitive_restructuring', 'allowed', TRUE, 5, ARRAY['home', 'clinic'], '{"requires_prior_training": true}'),
-('educator', 'emergency_intervention', 'prohibited', TRUE, NULL, ARRAY[], '{"reason": "must_escalate_to_emergency_persona"}'),
-('educator', 'clinical_diagnosis', 'prohibited', FALSE, NULL, ARRAY[], '{"reason": "educational_role_only"}');
+('educator', 'psychoeducation', 'allowed', NULL, NULL, FALSE),
+('educator', 'medication_education', 'allowed', 10, NULL, FALSE),
+('educator', 'cognitive_restructuring', 'allowed', 5, NULL, FALSE),
+('educator', 'emergency_intervention', 'prohibited', NULL, NULL, FALSE),
+('educator', 'clinical_diagnosis', 'prohibited', NULL, NULL, FALSE);
 
 -- ============================================================================
 -- 4. INDEXES FOR PERFORMANCE
@@ -594,11 +591,11 @@ INSERT INTO persona_tool_permissions (
 
 CREATE INDEX IF NOT EXISTS idx_persona_activation_rules_priority
     ON persona_activation_rules(priority DESC)
-    WHERE active = TRUE;
+    WHERE is_active = TRUE;
 
 CREATE INDEX IF NOT EXISTS idx_persona_tool_permissions_lookup
     ON persona_tool_permissions(persona_code, tool_name)
-    WHERE permission_level = 'allowed';
+    WHERE permission_type = 'allowed';
 
 -- ============================================================================
 -- ✅ SEED DATA COMPLETE
@@ -611,8 +608,8 @@ DECLARE
     rule_count INTEGER;
     permission_count INTEGER;
 BEGIN
-    SELECT COUNT(*) INTO persona_count FROM persona_definitions WHERE active = TRUE;
-    SELECT COUNT(*) INTO rule_count FROM persona_activation_rules WHERE active = TRUE;
+    SELECT COUNT(*) INTO persona_count FROM persona_definitions WHERE is_active = TRUE;
+    SELECT COUNT(*) INTO rule_count FROM persona_activation_rules WHERE is_active = TRUE;
     SELECT COUNT(*) INTO permission_count FROM persona_tool_permissions;
 
     RAISE NOTICE '✅ Seed Data Completo:';
