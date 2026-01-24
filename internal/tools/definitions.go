@@ -164,6 +164,96 @@ func ApplyCSSRSDefinition() FunctionDeclaration {
 	}
 }
 
+// SubmitPHQ9ResponseDefinition returns the schema for submitting PHQ-9 question responses
+func SubmitPHQ9ResponseDefinition() FunctionDeclaration {
+	return FunctionDeclaration{
+		Name:        "submit_phq9_response",
+		Description: "Submete a resposta do paciente a uma pergunta específica da escala PHQ-9. Use este tool após aplicar o PHQ-9 e receber a resposta do paciente para cada uma das 9 perguntas.",
+		Parameters: &FunctionParameters{
+			Type: "OBJECT",
+			Properties: map[string]*Property{
+				"session_id": {
+					Type:        "STRING",
+					Description: "ID da sessão de avaliação (retornado ao iniciar o PHQ-9)",
+				},
+				"question_number": {
+					Type:        "INTEGER",
+					Description: "Número da pergunta (1-9)",
+				},
+				"response_value": {
+					Type:        "INTEGER",
+					Description: "Valor numérico da resposta: 0=Nenhuma vez, 1=Vários dias, 2=Mais da metade dos dias, 3=Quase todos os dias",
+				},
+				"response_text": {
+					Type:        "STRING",
+					Description: "Texto exato da resposta do paciente para contexto clínico",
+				},
+			},
+			Required: []string{"session_id", "question_number", "response_value", "response_text"},
+		},
+	}
+}
+
+// SubmitGAD7ResponseDefinition returns the schema for submitting GAD-7 question responses
+func SubmitGAD7ResponseDefinition() FunctionDeclaration {
+	return FunctionDeclaration{
+		Name:        "submit_gad7_response",
+		Description: "Submete a resposta do paciente a uma pergunta específica da escala GAD-7. Use este tool após aplicar o GAD-7 e receber a resposta do paciente para cada uma das 7 perguntas.",
+		Parameters: &FunctionParameters{
+			Type: "OBJECT",
+			Properties: map[string]*Property{
+				"session_id": {
+					Type:        "STRING",
+					Description: "ID da sessão de avaliação (retornado ao iniciar o GAD-7)",
+				},
+				"question_number": {
+					Type:        "INTEGER",
+					Description: "Número da pergunta (1-7)",
+				},
+				"response_value": {
+					Type:        "INTEGER",
+					Description: "Valor numérico da resposta: 0=Nenhuma vez, 1=Vários dias, 2=Mais da metade dos dias, 3=Quase todos os dias",
+				},
+				"response_text": {
+					Type:        "STRING",
+					Description: "Texto exato da resposta do paciente para contexto clínico",
+				},
+			},
+			Required: []string{"session_id", "question_number", "response_value", "response_text"},
+		},
+	}
+}
+
+// SubmitCSSRSResponseDefinition returns the schema for submitting C-SSRS question responses
+func SubmitCSSRSResponseDefinition() FunctionDeclaration {
+	return FunctionDeclaration{
+		Name:        "submit_cssrs_response",
+		Description: "🚨 CRÍTICO: Submete a resposta do paciente a uma pergunta da escala C-SSRS de avaliação de risco suicida. ATENÇÃO: Qualquer resposta positiva (Sim) aciona alerta crítico imediato para família e equipe médica.",
+		Parameters: &FunctionParameters{
+			Type: "OBJECT",
+			Properties: map[string]*Property{
+				"session_id": {
+					Type:        "STRING",
+					Description: "ID da sessão de avaliação (retornado ao iniciar o C-SSRS)",
+				},
+				"question_number": {
+					Type:        "INTEGER",
+					Description: "Número da pergunta (1-6)",
+				},
+				"response_value": {
+					Type:        "INTEGER",
+					Description: "Resposta binária: 0=Não, 1=Sim",
+				},
+				"response_text": {
+					Type:        "STRING",
+					Description: "Texto exato da resposta do paciente e contexto da conversa",
+				},
+			},
+			Required: []string{"session_id", "question_number", "response_value", "response_text"},
+		},
+	}
+}
+
 // GetToolDefinitions returns all available tool definitions
 func GetToolDefinitions() []FunctionDeclaration {
 	return []FunctionDeclaration{
@@ -174,5 +264,8 @@ func GetToolDefinitions() []FunctionDeclaration {
 		ApplyPHQ9Definition(),
 		ApplyGAD7Definition(),
 		ApplyCSSRSDefinition(),
+		SubmitPHQ9ResponseDefinition(),
+		SubmitGAD7ResponseDefinition(),
+		SubmitCSSRSResponseDefinition(),
 	}
 }

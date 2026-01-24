@@ -120,6 +120,27 @@ func (h *ToolsHandler) ExecuteTool(name string, args map[string]interface{}, ido
 		startAssessment, _ := args["start_assessment"].(bool)
 		return h.handleApplyCSSRS(idosoID, triggerPhrase, startAssessment)
 
+	case "submit_phq9_response":
+		sessionID, _ := args["session_id"].(string)
+		questionNumber, _ := args["question_number"].(float64)
+		responseValue, _ := args["response_value"].(float64)
+		responseText, _ := args["response_text"].(string)
+		return h.handleSubmitPHQ9Response(idosoID, sessionID, int(questionNumber), int(responseValue), responseText)
+
+	case "submit_gad7_response":
+		sessionID, _ := args["session_id"].(string)
+		questionNumber, _ := args["question_number"].(float64)
+		responseValue, _ := args["response_value"].(float64)
+		responseText, _ := args["response_text"].(string)
+		return h.handleSubmitGAD7Response(idosoID, sessionID, int(questionNumber), int(responseValue), responseText)
+
+	case "submit_cssrs_response":
+		sessionID, _ := args["session_id"].(string)
+		questionNumber, _ := args["question_number"].(float64)
+		responseValue, _ := args["response_value"].(float64)
+		responseText, _ := args["response_text"].(string)
+		return h.handleSubmitCSSRSResponse(idosoID, sessionID, int(questionNumber), int(responseValue), responseText)
+
 	default:
 		return nil, fmt.Errorf("ferramenta desconhecida: %s", name)
 	}
