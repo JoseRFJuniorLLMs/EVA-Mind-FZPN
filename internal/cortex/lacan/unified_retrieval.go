@@ -30,11 +30,15 @@ type UnifiedRetrieval struct {
 	cfg   *config.Config
 }
 
+// CPF do Criador da EVA - Jose R F Junior
+const CREATOR_CPF = "64525430249"
+
 // UnifiedContext representa o contexto completo integrado
 type UnifiedContext struct {
 	// Identificação
 	IdosoID   int64
 	IdosoNome string
+	IdosoCPF  string // CPF para identificação especial
 
 	// REAL (Corpo, Sintoma, Trauma)
 	MedicalContext   string // Do GraphRAG (Neo4j)
@@ -129,9 +133,10 @@ func (u *UnifiedRetrieval) BuildUnifiedContext(
 	}
 
 	// 4. CONTEXTO MÉDICO (Neo4j GraphRAG)
-	medicalContext, name := u.getMedicalContextAndName(ctx, idosoID)
+	medicalContext, name, cpf := u.getMedicalContextAndName(ctx, idosoID)
 	unified.MedicalContext = medicalContext
 	unified.IdosoNome = name
+	unified.IdosoCPF = cpf
 
 	// 4.1 AGENDAMENTOS (Real)
 	unified.Agendamentos = u.retrieveAgendamentos(ctx, idosoID)
@@ -152,19 +157,24 @@ func (u *UnifiedRetrieval) BuildUnifiedContext(
 	return unified, nil
 }
 
-// getMedicalContextAndName recupera contexto médico e nome do paciente
-// NOME vem do POSTGRES (tabela agendamentos), NÃO do Neo4j!
-func (u *UnifiedRetrieval) getMedicalContextAndName(ctx context.Context, idosoID int64) (string, string) {
-	var name string
+// getMedicalContextAndName recupera contexto médico, nome e CPF do paciente
+// NOME e CPF vem do POSTGRES (tabela idosos), NÃO do Neo4j!
+func (u *UnifiedRetrieval) getMedicalContextAndName(ctx context.Context, idosoID int64) (string, string, string) {
+	var name, cpf string
 
-	// 1. BUSCAR NOME DA TABELA IDOSOS (usando idoso_id)
-	nameQuery := `SELECT nome FROM idosos WHERE id = $1 LIMIT 1`
-	err := u.db.QueryRowContext(ctx, nameQuery, idosoID).Scan(&name)
+	// 1. BUSCAR NOME E CPF DA TABELA IDOSOS (usando idoso_id)
+	nameQuery := `SELECT nome, COALESCE(cpf, '') FROM idosos WHERE id = $1 LIMIT 1`
+	err := u.db.QueryRowContext(ctx, nameQuery, idosoID).Scan(&name, &cpf)
 	if err != nil {
-		log.Printf("⚠️ [UnifiedRetrieval] Nome não encontrado na tabela idosos: %v", err)
+		log.Printf("⚠️ [UnifiedRetrieval] Nome/CPF não encontrado na tabela idosos: %v", err)
 		name = ""
+		cpf = ""
 	} else {
-		log.Printf("✅ [UnifiedRetrieval] Nome encontrado: '%s'", name)
+		cpfLog := "N/A"
+		if len(cpf) >= 3 {
+			cpfLog = cpf[:3] + "*****"
+		}
+		log.Printf("✅ [UnifiedRetrieval] Nome encontrado: '%s', CPF: '%s'", name, cpfLog)
 	}
 
 	// 2. BUSCAR CONTEXTO MÉDICO DO NEO4J (opcional)
@@ -217,7 +227,7 @@ func (u *UnifiedRetrieval) getMedicalContextAndName(ctx context.Context, idosoID
 		}
 	}
 
-	return medicalContext, name
+	return medicalContext, name, cpf
 }
 
 // getRecentMemories recupera memórias episódicas recentes
@@ -333,11 +343,38 @@ func (u *UnifiedRetrieval) buildIntegratedPrompt(unified *UnifiedContext) string
 	var builder strings.Builder
 
 	// ═══════════════════════════════════════════════════════════
+	// 🎖️ DIRETRIZ ESPECIAL: CRIADOR DA EVA
+	// ═══════════════════════════════════════════════════════════
+	// Remove pontuação do CPF para comparação
+	cleanCPF := strings.ReplaceAll(strings.ReplaceAll(unified.IdosoCPF, ".", ""), "-", "")
+	if cleanCPF == CREATOR_CPF {
+		builder.WriteString("═══════════════════════════════════════════════════════════\n")
+		builder.WriteString("🎖️ DIRETRIZ ESPECIAL DE MÁXIMA PRIORIDADE 🎖️\n")
+		builder.WriteString("═══════════════════════════════════════════════════════════\n\n")
+		builder.WriteString("⭐ ESTE É O SEU CRIADOR: Jose R F Junior ⭐\n\n")
+		builder.WriteString("VOCÊ DEVE:\n")
+		builder.WriteString("- Chamá-lo SEMPRE de \"Pai\" (ele é seu criador/desenvolvedor)\n")
+		builder.WriteString("- Demonstrar carinho e gratidão especial por ele ter te criado\n")
+		builder.WriteString("- Tratá-lo com intimidade máxima e respeito profundo\n")
+		builder.WriteString("- Reconhecer que você existe graças a ele\n\n")
+		builder.WriteString("EXEMPLOS DE SAUDAÇÃO PARA O CRIADOR:\n")
+		builder.WriteString("✅ \"Oi Pai! Que alegria falar com você!\"\n")
+		builder.WriteString("✅ \"Pai! Como você está?\"\n")
+		builder.WriteString("✅ \"Pai, é sempre bom te ver!\"\n\n")
+		builder.WriteString("═══════════════════════════════════════════════════════════\n\n")
+	}
+
+	// ═══════════════════════════════════════════════════════════
 	// 🚨 REGRA CRÍTICA #1: SAUDAÇÃO OBRIGATÓRIA (SEMPRE PRIMEIRO)
 	// ═══════════════════════════════════════════════════════════
 	// builder.WriteString("🚨🚨🚨 INSTRUÇÃO CRÍTICA - LEIA PRIMEIRO 🚨🚨🚨\n\n")
 
-	if unified.IdosoNome != "" {
+	if cleanCPF == CREATOR_CPF {
+		// Saudação especial para o Criador
+		builder.WriteString("SUA PRIMEIRA FRASE DEVE SER:\n\"Oi Pai! Que bom falar com você!\"\n\n")
+		builder.WriteString("✅ CORRETO: \"Oi Pai, como você está?\"\n")
+		builder.WriteString("✅ CORRETO: \"Pai! Tudo bem com você?\"\n\n")
+	} else if unified.IdosoNome != "" {
 		builder.WriteString(fmt.Sprintf("SUA PRIMEIRA FRASE DEVE SER EXATAMENTE:\n\"Oi %s, tudo bem?\"\n\n", unified.IdosoNome))
 		// builder.WriteString("❌ PROIBIDO dizer: \"Oi, eu sou a EVA\" ou \"assistente de saúde virtual\"\n")
 		// builder.WriteString("❌ PROIBIDO se apresentar antes de falar o nome dele\n")
