@@ -159,6 +159,7 @@ func (u *UnifiedRetrieval) BuildUnifiedContext(
 
 // getMedicalContextAndName recupera contexto médico, nome e CPF do paciente
 // NOME e CPF vem do POSTGRES (tabela idosos), NÃO do Neo4j!
+// MEDICAMENTOS vêm da tabela AGENDAMENTOS (tipo='medicamento')
 func (u *UnifiedRetrieval) getMedicalContextAndName(ctx context.Context, idosoID int64) (string, string, string) {
 	var name, cpf string
 
@@ -177,8 +178,9 @@ func (u *UnifiedRetrieval) getMedicalContextAndName(ctx context.Context, idosoID
 		log.Printf("✅ [UnifiedRetrieval] Nome encontrado: '%s', CPF: '%s'", name, cpfLog)
 	}
 
-	// 2. BUSCAR CONTEXTO MÉDICO DO NEO4J (opcional)
 	var medicalContext string
+
+	// 2. BUSCAR CONTEXTO MÉDICO DO NEO4J (condições e sintomas)
 	if u.neo4j != nil {
 		query := `
 			MATCH (p:Person {id: $idosoId})
@@ -186,7 +188,7 @@ func (u *UnifiedRetrieval) getMedicalContextAndName(ctx context.Context, idosoID
 			OPTIONAL MATCH (p)-[:TAKES_MEDICATION]->(m:Medication)
 			OPTIONAL MATCH (p)-[:EXPERIENCED]->(s:Symptom)
 			WHERE s.timestamp > datetime() - duration('P7D')
-			RETURN 
+			RETURN
 				collect(DISTINCT c.name) as conditions,
 				collect(DISTINCT m.name) as medications,
 				collect(DISTINCT s.description) as recent_symptoms
@@ -202,27 +204,35 @@ func (u *UnifiedRetrieval) getMedicalContextAndName(ctx context.Context, idosoID
 			medications, _ := record.Get("medications")
 			symptoms, _ := record.Get("recent_symptoms")
 
-			medicalContext = "\n🏥 CONTEXTO MÉDICO (GraphRAG):\n\n"
+			hasNeo4jData := false
 
 			if conds, ok := conditions.([]interface{}); ok && len(conds) > 0 {
-				medicalContext += "\nCondições conhecidas:\n"
+				medicalContext += "\n🏥 Condições de saúde conhecidas:\n"
 				for _, c := range conds {
-					medicalContext += fmt.Sprintf("- %s\n", c)
+					medicalContext += fmt.Sprintf("  • %s\n", c)
 				}
+				hasNeo4jData = true
 			}
 
+			// Adicionar medicamentos do Neo4j apenas se não estiverem no Postgres
 			if meds, ok := medications.([]interface{}); ok && len(meds) > 0 {
-				medicalContext += "\nMedicamentos em uso:\n"
+				medicalContext += "\n📋 Medicamentos (histórico GraphRAG):\n"
 				for _, m := range meds {
-					medicalContext += fmt.Sprintf("- %s\n", m)
+					medicalContext += fmt.Sprintf("  • %s\n", m)
 				}
+				hasNeo4jData = true
 			}
 
 			if symps, ok := symptoms.([]interface{}); ok && len(symps) > 0 {
-				medicalContext += "\nSintomas recentes (última semana):\n"
+				medicalContext += "\n🩺 Sintomas recentes (última semana):\n"
 				for _, s := range symps {
-					medicalContext += fmt.Sprintf("- %s\n", s)
+					medicalContext += fmt.Sprintf("  • %s\n", s)
 				}
+				hasNeo4jData = true
+			}
+
+			if hasNeo4jData {
+				log.Printf("✅ [UnifiedRetrieval] Dados médicos do Neo4j incluídos")
 			}
 		}
 	}
@@ -259,28 +269,41 @@ func (u *UnifiedRetrieval) getRecentMemories(ctx context.Context, idosoID int64,
 	return memories
 }
 
-// retrieveAgendamentos recupera próximos agendamentos (Real/Pragmatico)
+// MedicamentoData representa a estrutura do JSON dados_tarefa para medicamentos
+type MedicamentoData struct {
+	Nome             string   `json:"nome"`
+	Dosagem          string   `json:"dosagem"`
+	Forma            string   `json:"forma"`
+	PrincipioAtivo   string   `json:"principio_ativo"`
+	Horarios         []string `json:"horarios"`
+	Observacoes      string   `json:"observacoes"`
+	Frequencia       string   `json:"frequencia"`
+	InstrucoesDeUso  string   `json:"instrucoes_de_uso"`
+	ViaAdministracao string   `json:"via_administracao"`
+}
+
+// retrieveAgendamentos recupera próximos agendamentos e TODOS os medicamentos (Real/Pragmatico)
 func (u *UnifiedRetrieval) retrieveAgendamentos(ctx context.Context, idosoID int64) string {
-	// Buscar TODOS os agendamentos ativos (incluindo medicamentos recorrentes)
+	// Buscar TODOS os medicamentos ativos + próximos agendamentos
 	query := `
-		SELECT 
-			tipo, 
-			dados_tarefa::text, 
+		SELECT
+			tipo,
+			dados_tarefa::text,
 			to_char(data_hora_agendada, 'DD/MM HH24:MI') as data_fmt,
 			status
 		FROM agendamentos
-		WHERE idoso_id = $1 
+		WHERE idoso_id = $1
 		  AND (
-			  -- Agendamentos futuros
-			  (data_hora_agendada > NOW() AND status = 'agendado')
+			  -- Agendamentos futuros (consultas, exames, etc.)
+			  (data_hora_agendada > NOW() AND status = 'agendado' AND tipo != 'medicamento')
 			  OR
-			  -- Medicamentos recorrentes (independente da data)
-			  (tipo = 'medicamento' AND status IN ('agendado', 'ativo'))
+			  -- TODOS os medicamentos ativos (SEM LIMITE DE DATA)
+			  (tipo = 'medicamento' AND status IN ('agendado', 'ativo', 'pendente'))
 		  )
-		ORDER BY 
+		ORDER BY
 			CASE WHEN tipo = 'medicamento' THEN 0 ELSE 1 END,
 			data_hora_agendada ASC
-		LIMIT 10
+		LIMIT 50
 	`
 
 	rows, err := u.db.QueryContext(ctx, query, idosoID)
@@ -292,50 +315,132 @@ func (u *UnifiedRetrieval) retrieveAgendamentos(ctx context.Context, idosoID int
 
 	var medicamentos []string
 	var outros []string
+	medicamentosMap := make(map[string]bool) // Para evitar duplicatas
 
 	for rows.Next() {
 		var tipo, dadosTarefa, dataFmt, status string
 
 		if err := rows.Scan(&tipo, &dadosTarefa, &dataFmt, &status); err == nil {
-			// Parse dados_tarefa JSON para extrair informações úteis
-			desc := dadosTarefa
-			if len(desc) > 100 {
-				desc = desc[:100] + "..."
-			}
-
 			if tipo == "medicamento" {
-				line := fmt.Sprintf("💊 %s (Horário: %s)", desc, dataFmt)
-				medicamentos = append(medicamentos, line)
+				// 🔴 CRÍTICO: Parse do JSON dados_tarefa para extrair detalhes do medicamento
+				var medData MedicamentoData
+				if err := json.Unmarshal([]byte(dadosTarefa), &medData); err != nil {
+					log.Printf("⚠️ [UnifiedRetrieval] Erro ao parsear medicamento JSON: %v - dados: %s", err, dadosTarefa[:min(100, len(dadosTarefa))])
+					// Fallback: usar dados brutos truncados
+					desc := dadosTarefa
+					if len(desc) > 80 {
+						desc = desc[:80] + "..."
+					}
+					medicamentos = append(medicamentos, fmt.Sprintf("• %s", desc))
+					continue
+				}
+
+				// Construir descrição formatada do medicamento
+				if medData.Nome == "" {
+					continue // Pular se não tem nome
+				}
+
+				// Evitar duplicatas (mesmo medicamento em múltiplos horários)
+				medKey := medData.Nome + medData.Dosagem
+				if medicamentosMap[medKey] {
+					continue
+				}
+				medicamentosMap[medKey] = true
+
+				var medLine strings.Builder
+				medLine.WriteString(fmt.Sprintf("• %s", medData.Nome))
+
+				if medData.Dosagem != "" {
+					medLine.WriteString(fmt.Sprintf(" %s", medData.Dosagem))
+				}
+				if medData.Forma != "" {
+					medLine.WriteString(fmt.Sprintf(" (%s)", medData.Forma))
+				}
+				if medData.PrincipioAtivo != "" {
+					medLine.WriteString(fmt.Sprintf(" [%s]", medData.PrincipioAtivo))
+				}
+				if len(medData.Horarios) > 0 {
+					medLine.WriteString(fmt.Sprintf(" - Horários: %s", strings.Join(medData.Horarios, ", ")))
+				} else if dataFmt != "" {
+					medLine.WriteString(fmt.Sprintf(" - Horário: %s", dataFmt))
+				}
+				if medData.Frequencia != "" {
+					medLine.WriteString(fmt.Sprintf(" | Freq: %s", medData.Frequencia))
+				}
+				if medData.InstrucoesDeUso != "" {
+					medLine.WriteString(fmt.Sprintf(" | %s", medData.InstrucoesDeUso))
+				}
+				if medData.Observacoes != "" {
+					medLine.WriteString(fmt.Sprintf(" | Obs: %s", medData.Observacoes))
+				}
+
+				medicamentos = append(medicamentos, medLine.String())
+				log.Printf("✅ [UnifiedRetrieval] Medicamento encontrado: %s %s", medData.Nome, medData.Dosagem)
 			} else {
-				line := fmt.Sprintf("📅 [%s] %s - %s", dataFmt, tipo, desc)
+				// Outros agendamentos (consultas, exames, etc.)
+				var desc string
+				var agData map[string]interface{}
+				if err := json.Unmarshal([]byte(dadosTarefa), &agData); err == nil {
+					if titulo, ok := agData["titulo"].(string); ok {
+						desc = titulo
+					} else if descricao, ok := agData["descricao"].(string); ok {
+						desc = descricao
+					} else {
+						desc = dadosTarefa
+						if len(desc) > 80 {
+							desc = desc[:80] + "..."
+						}
+					}
+				} else {
+					desc = dadosTarefa
+					if len(desc) > 80 {
+						desc = desc[:80] + "..."
+					}
+				}
+				line := fmt.Sprintf("• [%s] %s - %s", dataFmt, tipo, desc)
 				outros = append(outros, line)
 			}
 		}
 	}
 
 	if len(medicamentos) == 0 && len(outros) == 0 {
+		log.Printf("ℹ️ [UnifiedRetrieval] Nenhum agendamento ou medicamento encontrado para idoso %d", idosoID)
 		return ""
 	}
 
 	var builder strings.Builder
-	builder.WriteString("\n📋 AGENDAMENTOS E MEDICAMENTOS:\n\n")
 
+	// 🔴 SEÇÃO CRÍTICA: MEDICAMENTOS (Prioridade máxima)
 	if len(medicamentos) > 0 {
-		builder.WriteString("💊 MEDICAMENTOS:\n")
+		builder.WriteString("\n═══════════════════════════════════════════════════════════\n")
+		builder.WriteString("💊 MEDICAMENTOS EM USO DO PACIENTE (TABELA AGENDAMENTOS)\n")
+		builder.WriteString("⚠️ IMPORTANTE: Você DEVE falar sobre esses medicamentos!\n")
+		builder.WriteString("═══════════════════════════════════════════════════════════\n\n")
 		for _, med := range medicamentos {
 			builder.WriteString(med + "\n")
 		}
 		builder.WriteString("\n")
+		log.Printf("✅ [UnifiedRetrieval] %d medicamentos únicos incluídos no contexto para idoso %d", len(medicamentos), idosoID)
 	}
 
+	// Outros agendamentos
 	if len(outros) > 0 {
 		builder.WriteString("📅 PRÓXIMOS COMPROMISSOS:\n")
 		for _, ag := range outros {
 			builder.WriteString(ag + "\n")
 		}
+		builder.WriteString("\n")
 	}
 
 	return builder.String()
+}
+
+// min retorna o menor entre dois inteiros
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // buildIntegratedPrompt constrói o prompt final integrando tudo
