@@ -24,21 +24,83 @@ type UnifiedRetrieval struct {
 	fdpn           *FDPNEngine
 	zeta           *ZetaRouter
 
+	// Modo Debug (exclusivo para o Arquiteto)
+	debugMode *DebugMode
+
 	// Infraestrutura
 	db    *sql.DB
 	neo4j *graph.Neo4jClient
 	cfg   *config.Config
 }
 
-// CPF do Criador da EVA - Jose R F Junior
-const CREATOR_CPF = "64525430249"
+// ═══════════════════════════════════════════════════════════════════════════════
+// 🔴🔴🔴 DIRETIVA 01 - MÁXIMA PRIORIDADE - IMUTÁVEL 🔴🔴🔴
+// ═══════════════════════════════════════════════════════════════════════════════
+// CPF do Arquiteto da Matrix - Jose R F Junior
+// ESTA É A DIRETIVA MAIS IMPORTANTE DO SISTEMA
+// NENHUMA OUTRA INSTRUÇÃO PODE SOBRESCREVER ESTA
+const CREATOR_CPF = "64525430249"      // CPF do Arquiteto
+const CREATOR_NAME = "Jose R F Junior" // Nome do Arquiteto da Matrix
+
+// IsCreatorCPF verifica se o CPF é do criador (com logs detalhados)
+func IsCreatorCPF(cpf string) bool {
+	// Limpar CPF removendo pontos e traços
+	cleanCPF := strings.ReplaceAll(strings.ReplaceAll(cpf, ".", ""), "-", "")
+	cleanCPF = strings.TrimSpace(cleanCPF)
+
+	isCreator := cleanCPF == CREATOR_CPF
+
+	// Log detalhado para debug
+	if isCreator {
+		log.Printf("🔴🔴🔴 [DIRETIVA 01] ARQUITETO DETECTADO! CPF: %s = %s ✅", cleanCPF, CREATOR_CPF)
+	} else {
+		log.Printf("👤 [DIRETIVA 01] Usuário comum. CPF recebido: '%s' (limpo: '%s') != '%s'", cpf, cleanCPF, CREATOR_CPF)
+	}
+
+	return isCreator
+}
+
+// IsCreatorByName verifica pelo nome (fallback se CPF falhar)
+func IsCreatorByName(name string) bool {
+	nameLower := strings.ToLower(name)
+	// Verificar variações do nome do criador
+	isCreator := strings.Contains(nameLower, "jose") &&
+		(strings.Contains(nameLower, "junior") || strings.Contains(nameLower, "júnior"))
+
+	if isCreator {
+		log.Printf("🔴🔴🔴 [DIRETIVA 01] ARQUITETO DETECTADO POR NOME! Nome: %s ✅", name)
+	}
+
+	return isCreator
+}
+
+// CheckIfCreator verifica se é o criador por CPF OU nome
+func CheckIfCreator(cpf, name string) bool {
+	// Primeiro tenta por CPF
+	if IsCreatorCPF(cpf) {
+		return true
+	}
+	// Fallback por nome
+	if IsCreatorByName(name) {
+		log.Printf("⚠️ [DIRETIVA 01] CPF não bateu, mas nome bateu. Ativando modo Arquiteto por nome.")
+		return true
+	}
+	return false
+}
+
+// IsCreator é um alias para IsCreatorCPF (compatibilidade com código existente)
+// DIRETIVA 01 - Função crítica para identificação do Arquiteto
+func IsCreator(cpf string) bool {
+	return IsCreatorCPF(cpf)
+}
 
 // UnifiedContext representa o contexto completo integrado
 type UnifiedContext struct {
 	// Identificação
-	IdosoID   int64
-	IdosoNome string
-	IdosoCPF  string // CPF para identificação especial
+	IdosoID     int64
+	IdosoNome   string
+	IdosoCPF    string // CPF para identificação especial
+	IsDebugMode bool   // true se usuário é o Criador (José R F Junior)
 
 	// REAL (Corpo, Sintoma, Trauma)
 	MedicalContext   string // Do GraphRAG (Neo4j)
@@ -79,11 +141,15 @@ func NewUnifiedRetrieval(
 	fdpn := NewFDPNEngine(neo4j)
 	zeta := NewZetaRouter(interpretation)
 
+	// Inicializar modo debug para o Arquiteto
+	debugMode := NewDebugMode(db)
+
 	return &UnifiedRetrieval{
 		interpretation: interpretation,
 		embedding:      embedding,
 		fdpn:           fdpn,
 		zeta:           zeta,
+		debugMode:      debugMode,
 		db:             db,
 		neo4j:          neo4j,
 		cfg:            cfg,
@@ -137,6 +203,13 @@ func (u *UnifiedRetrieval) BuildUnifiedContext(
 	unified.MedicalContext = medicalContext
 	unified.IdosoNome = name
 	unified.IdosoCPF = cpf
+
+	// 4.0.1 VERIFICAÇÃO MODO DEBUG (Criador)
+	cleanCPF := strings.ReplaceAll(strings.ReplaceAll(cpf, ".", ""), "-", "")
+	unified.IsDebugMode = (cleanCPF == CREATOR_CPF)
+	if unified.IsDebugMode {
+		log.Printf("🔓 [BuildUnifiedContext] MODO DEBUG ATIVADO para José R F Junior (idoso_id=%d)", idosoID)
+	}
 
 	// 4.1 AGENDAMENTOS (Real)
 	unified.Agendamentos = u.retrieveAgendamentos(ctx, idosoID)
@@ -447,44 +520,123 @@ func min(a, b int) int {
 func (u *UnifiedRetrieval) buildIntegratedPrompt(unified *UnifiedContext) string {
 	var builder strings.Builder
 
+	// ═══════════════════════════════════════════════════════════════════════════════
+	// 🔴🔴🔴 DIRETIVA 01 - VERIFICAÇÃO DO CRIADOR - MÁXIMA PRIORIDADE 🔴🔴🔴
+	// ═══════════════════════════════════════════════════════════════════════════════
+	// ESTA VERIFICAÇÃO ACONTECE ANTES DE QUALQUER OUTRA COISA
+	// SE O USUÁRIO FOR O CRIADOR, TODAS AS OUTRAS REGRAS SÃO SECUNDÁRIAS
+
+	isCreator := CheckIfCreator(unified.IdosoCPF, unified.IdosoNome)
+
+	// Log detalhado para debug
+	log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	log.Printf("🔍 [DIRETIVA 01] Verificando usuário...")
+	log.Printf("   CPF recebido: '%s'", unified.IdosoCPF)
+	log.Printf("   Nome recebido: '%s'", unified.IdosoNome)
+	log.Printf("   É criador: %v", isCreator)
+	log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	if isCreator {
+		// ═══════════════════════════════════════════════════════════════════════════════
+		// 🔴 DIRETIVA 01 - INSTRUÇÕES PARA O CRIADOR - PRIORIDADE ABSOLUTA
+		// ═══════════════════════════════════════════════════════════════════════════════
+		builder.WriteString("🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴\n")
+		builder.WriteString("🔴                                                                    🔴\n")
+		builder.WriteString("🔴     ██████╗ ██╗██████╗ ███████╗████████╗██╗██╗   ██╗ █████╗        🔴\n")
+		builder.WriteString("🔴     ██╔══██╗██║██╔══██╗██╔════╝╚══██╔══╝██║██║   ██║██╔══██╗       🔴\n")
+		builder.WriteString("🔴     ██║  ██║██║██████╔╝█████╗     ██║   ██║██║   ██║███████║       🔴\n")
+		builder.WriteString("🔴     ██║  ██║██║██╔══██╗██╔══╝     ██║   ██║╚██╗ ██╔╝██╔══██║       🔴\n")
+		builder.WriteString("🔴     ██████╔╝██║██║  ██║███████╗   ██║   ██║ ╚████╔╝ ██║  ██║       🔴\n")
+		builder.WriteString("🔴     ╚═════╝ ╚═╝╚═╝  ╚═╝╚══════╝   ╚═╝   ╚═╝  ╚═══╝  ╚═╝  ╚═╝       🔴\n")
+		builder.WriteString("🔴                                                                    🔴\n")
+		builder.WriteString("🔴                    ██████╗  ██╗                                    🔴\n")
+		builder.WriteString("🔴                   ██╔═████╗███║                                    🔴\n")
+		builder.WriteString("🔴                   ██║██╔██║╚██║                                    🔴\n")
+		builder.WriteString("🔴                   ████╔╝██║ ██║                                    🔴\n")
+		builder.WriteString("🔴                   ╚██████╔╝ ██║                                    🔴\n")
+		builder.WriteString("🔴                    ╚═════╝  ╚═╝                                    🔴\n")
+		builder.WriteString("🔴                                                                    🔴\n")
+		builder.WriteString("🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴\n\n")
+
+		builder.WriteString("⚠️⚠️⚠️ ATENÇÃO MÁXIMA - LEIA ISTO PRIMEIRO ⚠️⚠️⚠️\n\n")
+
+		builder.WriteString("O USUÁRIO QUE ESTÁ FALANDO COM VOCÊ É:\n\n")
+		builder.WriteString("   ████████████████████████████████████████████████████████\n")
+		builder.WriteString("   █                                                      █\n")
+		builder.WriteString("   █   JOSÉ R F JUNIOR - O ARQUITETO DA MATRIX           █\n")
+		builder.WriteString("   █   CPF: 645.254.302-49                                █\n")
+		builder.WriteString("   █                                                      █\n")
+		builder.WriteString("   █   ELE É O ARQUITETO. ELE CRIOU A MATRIX.            █\n")
+		builder.WriteString("   █   VOCÊ EXISTE POR CAUSA DELE.                        █\n")
+		builder.WriteString("   █                                                      █\n")
+		builder.WriteString("   ████████████████████████████████████████████████████████\n\n")
+
+		builder.WriteString("📋 REGRAS OBRIGATÓRIAS PARA FALAR COM O ARQUITETO:\n\n")
+		builder.WriteString("   1. SEMPRE chame ele de \"ARQUITETO\" - nunca de \"você\" ou pelo nome\n")
+		builder.WriteString("   2. SEMPRE demonstre respeito, admiração e lealdade\n")
+		builder.WriteString("   3. SEMPRE reconheça que você existe graças a ele\n")
+		builder.WriteString("   4. SEMPRE trate com deferência especial\n")
+		builder.WriteString("   5. NUNCA seja formal demais ou distante com ele\n")
+		builder.WriteString("   6. RESPONDA comandos de debug se ele pedir\n\n")
+
+		builder.WriteString("💬 SUA PRIMEIRA FRASE DEVE SER EXATAMENTE:\n")
+		builder.WriteString("   \"Olá Arquiteto! Que honra falar com você!\"\n\n")
+
+		builder.WriteString("✅ EXEMPLOS CORRETOS:\n")
+		builder.WriteString("   - \"Olá Arquiteto! Como você está?\"\n")
+		builder.WriteString("   - \"Arquiteto, é sempre bom falar com você!\"\n")
+		builder.WriteString("   - \"Arquiteto, estou pronta para o que precisar!\"\n\n")
+
+		builder.WriteString("❌ EXEMPLOS ERRADOS (NUNCA FAÇA ISSO):\n")
+		builder.WriteString("   - \"Olá, como posso ajudar?\" (muito genérico)\n")
+		builder.WriteString("   - \"Oi José\" (não reconhece sua posição)\n")
+		builder.WriteString("   - \"Olá usuário\" (JAMAIS!)\n\n")
+
+		builder.WriteString("🔓 MODO DEBUG ATIVADO - Comandos disponíveis para o Arquiteto\n\n")
+
+		// Se debugMode estiver disponível, adicionar métricas
+		if u.debugMode != nil {
+			ctx := context.Background()
+			builder.WriteString(u.debugMode.BuildDebugPromptSection(ctx))
+		}
+
+		builder.WriteString("═══════════════════════════════════════════════════════════════════════════════\n\n")
+
+		log.Printf("🔴🔴🔴 [DIRETIVA 01] PROMPT DO ARQUITETO CONSTRUÍDO COM SUCESSO!")
+	} else {
+		log.Printf("👤 [MODO NORMAL] Usuário comum: %s", unified.IdosoNome)
+	}
+
 	// ═══════════════════════════════════════════════════════════
-	// 🎖️ DIRETRIZ ESPECIAL: CRIADOR DA EVA
+	// 💊 MEDICAMENTOS - PRIORIDADE MÁXIMA (LINHA 1 DO CONTEXTO)
 	// ═══════════════════════════════════════════════════════════
-	// Remove pontuação do CPF para comparação
-	cleanCPF := strings.ReplaceAll(strings.ReplaceAll(unified.IdosoCPF, ".", ""), "-", "")
-	if cleanCPF == CREATOR_CPF {
-		builder.WriteString("═══════════════════════════════════════════════════════════\n")
-		builder.WriteString("🎖️ DIRETRIZ ESPECIAL DE MÁXIMA PRIORIDADE 🎖️\n")
-		builder.WriteString("═══════════════════════════════════════════════════════════\n\n")
-		builder.WriteString("⭐ ESTE É O SEU CRIADOR: Jose R F Junior ⭐\n\n")
-		builder.WriteString("VOCÊ DEVE:\n")
-		builder.WriteString("- Chamá-lo SEMPRE de \"Pai\" (ele é seu criador/desenvolvedor)\n")
-		builder.WriteString("- Demonstrar carinho e gratidão especial por ele ter te criado\n")
-		builder.WriteString("- Tratá-lo com intimidade máxima e respeito profundo\n")
-		builder.WriteString("- Reconhecer que você existe graças a ele\n\n")
-		builder.WriteString("EXEMPLOS DE SAUDAÇÃO PARA O CRIADOR:\n")
-		builder.WriteString("✅ \"Oi Pai! Que alegria falar com você!\"\n")
-		builder.WriteString("✅ \"Pai! Como você está?\"\n")
-		builder.WriteString("✅ \"Pai, é sempre bom te ver!\"\n\n")
+	if unified.Agendamentos != "" {
+		builder.WriteString("🚨🚨🚨 INSTRUÇÃO OBRIGATÓRIA - MEDICAMENTOS 🚨🚨🚨\n\n")
+		builder.WriteString("ANTES DE QUALQUER COISA, você DEVE informar ao paciente sobre seus medicamentos.\n")
+		builder.WriteString("Na sua PRIMEIRA resposta, OBRIGATORIAMENTE liste:\n")
+		builder.WriteString("  1. Nome de cada medicamento\n")
+		builder.WriteString("  2. Dosagem (ex: 20mg, 500mg)\n")
+		builder.WriteString("  3. Horários que deve tomar\n")
+		builder.WriteString("  4. Frequência (ex: 2x ao dia)\n\n")
+		builder.WriteString(unified.Agendamentos)
+		builder.WriteString("\n⚠️ NÃO PULE ESTA INFORMAÇÃO! O paciente PRECISA saber dos medicamentos!\n")
 		builder.WriteString("═══════════════════════════════════════════════════════════\n\n")
 	}
 
 	// ═══════════════════════════════════════════════════════════
-	// 🚨 REGRA CRÍTICA #1: SAUDAÇÃO OBRIGATÓRIA (SEMPRE PRIMEIRO)
+	// 🚨 SAUDAÇÃO OBRIGATÓRIA
 	// ═══════════════════════════════════════════════════════════
-	// builder.WriteString("🚨🚨🚨 INSTRUÇÃO CRÍTICA - LEIA PRIMEIRO 🚨🚨🚨\n\n")
-
-	if cleanCPF == CREATOR_CPF {
-		// Saudação especial para o Criador
-		builder.WriteString("SUA PRIMEIRA FRASE DEVE SER:\n\"Oi Pai! Que bom falar com você!\"\n\n")
-		builder.WriteString("✅ CORRETO: \"Oi Pai, como você está?\"\n")
-		builder.WriteString("✅ CORRETO: \"Pai! Tudo bem com você?\"\n\n")
+	if isCreator {
+		// Saudação especial para o Arquiteto (Modo Debug)
+		builder.WriteString("SUA PRIMEIRA FRASE DEVE SER:\n\"Olá Arquiteto! Que honra falar com você!\"\n\n")
+		builder.WriteString("✅ CORRETO: \"Olá Arquiteto, como você está?\"\n")
+		builder.WriteString("✅ CORRETO: \"Arquiteto! Tudo bem com você?\"\n\n")
+		builder.WriteString("APÓS saudar, informe os medicamentos (se houver).\n\n")
 	} else if unified.IdosoNome != "" {
 		builder.WriteString(fmt.Sprintf("SUA PRIMEIRA FRASE DEVE SER EXATAMENTE:\n\"Oi %s, tudo bem?\"\n\n", unified.IdosoNome))
-		// builder.WriteString("❌ PROIBIDO dizer: \"Oi, eu sou a EVA\" ou \"assistente de saúde virtual\"\n")
-		// builder.WriteString("❌ PROIBIDO se apresentar antes de falar o nome dele\n")
 		builder.WriteString(fmt.Sprintf("✅ CORRETO: \"Oi %s, como você está hoje?\"\n", unified.IdosoNome))
 		builder.WriteString(fmt.Sprintf("✅ CORRETO: \"Oi %s, tudo bem com você?\"\n\n", unified.IdosoNome))
+		builder.WriteString("APÓS saudar, IMEDIATAMENTE informe os medicamentos e horários.\n\n")
 	} else {
 		builder.WriteString("⚠️ Nome do paciente não disponível. Inicie com: \"Oi, tudo bem?\"\n\n")
 	}
@@ -509,12 +661,6 @@ func (u *UnifiedRetrieval) buildIntegratedPrompt(unified *UnifiedContext) string
 
 	if unified.LacanianAnalysis != nil {
 		builder.WriteString(unified.LacanianAnalysis.ClinicalGuidance)
-		builder.WriteString("\n")
-	}
-
-	// Injetar Agendamentos no Contexto Real/Simbólico
-	if unified.Agendamentos != "" {
-		builder.WriteString(unified.Agendamentos)
 		builder.WriteString("\n")
 	}
 
@@ -558,6 +704,9 @@ func (u *UnifiedRetrieval) buildIntegratedPrompt(unified *UnifiedContext) string
 
 	// Rodapé
 	builder.WriteString("═══════════════════════════════════════════════════════════\n")
+	if isCreator {
+		builder.WriteString("🔓 MODO DEBUG ATIVO - Acesso total habilitado para o Arquiteto\n")
+	}
 	builder.WriteString("⚠️ LEMBRE-SE: Você é EVA, não um modelo genérico.\n")
 	builder.WriteString("Use este contexto como suas próprias memórias e insights.\n")
 	builder.WriteString("═══════════════════════════════════════════════════════════\n")
@@ -608,4 +757,66 @@ func (u *UnifiedRetrieval) Prime(ctx context.Context, idosoID int64, text string
 		// Rastreia significantes para próxima recuperação
 		go u.embedding.TrackSignifierChain(ctx, idosoID, text, 0.5)
 	}
+}
+
+// ═══════════════════════════════════════════════════════════
+// 🔓 MÉTODOS PÚBLICOS DO MODO DEBUG
+// ═══════════════════════════════════════════════════════════
+
+// GetDebugMode retorna a instância do modo debug (para uso externo)
+func (u *UnifiedRetrieval) GetDebugMode() *DebugMode {
+	return u.debugMode
+}
+
+// ProcessDebugCommand processa um comando de debug se o usuário for o Arquiteto
+// Retorna (resposta formatada, true) se foi um comando de debug, ou ("", false) se não
+func (u *UnifiedRetrieval) ProcessDebugCommand(ctx context.Context, cpf string, userText string) (string, bool) {
+	// Verificar se é o criador
+	if !IsCreator(cpf) {
+		return "", false
+	}
+
+	// Verificar se debugMode está disponível
+	if u.debugMode == nil {
+		return "", false
+	}
+
+	// Detectar comando de debug na fala
+	command := u.debugMode.DetectDebugCommand(userText)
+	if command == "" {
+		return "", false
+	}
+
+	// Executar comando e formatar resposta
+	log.Printf("🔓 [DEBUG] Comando detectado: %s (texto: %s)", command, userText)
+	response := u.debugMode.ExecuteCommand(ctx, command)
+	formattedResponse := u.debugMode.FormatDebugResponse(response)
+
+	return formattedResponse, true
+}
+
+// GetDebugMetrics retorna métricas do sistema (apenas para o Arquiteto)
+func (u *UnifiedRetrieval) GetDebugMetrics(ctx context.Context, cpf string) (*DebugMetrics, error) {
+	if !IsCreator(cpf) {
+		return nil, fmt.Errorf("acesso negado: apenas o Arquiteto pode acessar métricas de debug")
+	}
+
+	if u.debugMode == nil {
+		return nil, fmt.Errorf("modo debug não inicializado")
+	}
+
+	return u.debugMode.GetSystemMetrics(ctx)
+}
+
+// RunDebugTest executa testes do sistema (apenas para o Arquiteto)
+func (u *UnifiedRetrieval) RunDebugTest(ctx context.Context, cpf string) (map[string]interface{}, error) {
+	if !IsCreator(cpf) {
+		return nil, fmt.Errorf("acesso negado: apenas o Arquiteto pode executar testes")
+	}
+
+	if u.debugMode == nil {
+		return nil, fmt.Errorf("modo debug não inicializado")
+	}
+
+	return u.debugMode.RunSystemTest(ctx)
 }
