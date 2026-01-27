@@ -103,6 +103,9 @@ type SignalingServer struct {
 	tools         *tools.ToolsHandler             // ✅ NOVO: Read-Only Tools
 	emailService  *email.EmailService             // ✅ NOVO: Phase 9 Fallback
 
+	// 🔧 Dynamic Tools Discovery Service
+	toolDiscovery *tools.ToolDiscoveryService // ✅ NOVO: Ferramentas dinâmicas do banco
+
 	// Zeta / Gap 2 components
 	zetaRouter         *personality.ZetaRouter
 	storiesRepo        *stories.Repository
@@ -139,6 +142,10 @@ func NewSignalingServer(
 	}
 
 	log.Printf("🚀 Signaling Server em modo VOZ PURA (Tools desabilitadas)")
+
+	// ✅ NOVO: Inicializar serviço de descoberta dinâmica de ferramentas
+	server.toolDiscovery = tools.NewToolDiscoveryService(db)
+	log.Printf("✅ Tool Discovery Service inicializado (dynamic=%v)", db != nil)
 
 	// Inicializar Email Service para Phase 9 (Antes de iniciar o ToolsHandler que depende dele)
 	if cfg.EnableEmailFallback {
@@ -873,8 +880,8 @@ func (s *SignalingServer) createSession(sessionID, cpf string, idosoID int64, no
 	}
 	log.Printf("   - Início do prompt: %s", preview)
 
-	// ✅ FASE 4.2: Configurar Tools
-	toolDefs := tools.GetToolDefinitions()
+	// ✅ FASE 4.2: Configurar Tools (DINÂMICO - busca do banco ou fallback para código)
+	toolDefs := s.toolDiscovery.GetToolDefinitions(ctx)
 
 	voiceSettings := map[string]interface{}{
 		"voiceName": voiceName,

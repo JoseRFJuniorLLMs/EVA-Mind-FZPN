@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"eva-mind-fzpn/internal/brainstem/push"
-	"eva-mind-fzpn/internal/motor/email"
-	"eva-mind-fzpn/internal/motor/sms"
+	"eva-mind/internal/brainstem/push"
+	"eva-mind/internal/motor/email"
+	"eva-mind/internal/motor/sms"
 )
 
 // AlertPriority defines the urgency level of an alert
