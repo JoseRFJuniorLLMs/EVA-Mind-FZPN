@@ -3,6 +3,7 @@ package brain
 import (
 	"context"
 	"database/sql"
+	"eva-mind/internal/brainstem/infrastructure/graph"
 	"eva-mind/internal/brainstem/infrastructure/vector"
 	"eva-mind/internal/brainstem/push"
 	"eva-mind/internal/cortex/lacan"
@@ -13,44 +14,48 @@ import (
 )
 
 // Service encapsulates the cognitive functions of EVA
+// AUDIT FIX 2026-01-27: Adicionado neo4jClient e graphStore para salvar no Neo4j
 type Service struct {
 	db                 *sql.DB
 	qdrantClient       *vector.QdrantClient
-	fdpnEngine         *lacan.FDPNEngine // Updated type
+	neo4jClient        *graph.Neo4jClient  // AUDIT FIX: Adicionado para salvar no Neo4j
+	graphStore         *memory.GraphStore  // AUDIT FIX: Store para Neo4j
+	fdpnEngine         *lacan.FDPNEngine
 	personalityService *ps.PersonalityService
 	zetaRouter         *ps.ZetaRouter
 	pushService        *push.FirebaseService
-	embeddingService   *memory.EmbeddingService // This one keeps using memory package for now as I created embedding_service in hippocampus/knowledge but service.go uses memory.EmbeddingService?
-	// Wait, I created internal/hippocampus/knowledge/embedding_service.go
-	// But existing service.go has `*memory.EmbeddingService`.
-	// I should update it to `*knowledge.EmbeddingService` if I want to use the new one.
-	// The previous refactoring moved `internal/memory` to `internal/hippocampus/memory`.
-	// So `embeddingService` in service.go is likely referring to `internal/hippocampus/memory`.
-	// The new one is in `internal/hippocampus/knowledge`.
-	// I will add unifiedRetrieval and potentially update existing fields if they are redundant.
+	embeddingService   *memory.EmbeddingService
 
-	knowledgeEmbedder *knowledge.EmbeddingService // New one
+	knowledgeEmbedder *knowledge.EmbeddingService
 	unifiedRetrieval  *lacan.UnifiedRetrieval
 }
 
 // NewService creates a new Brain service
+// AUDIT FIX 2026-01-27: Adicionado neo4jClient para salvar no grafo
 func NewService(
 	db *sql.DB,
 	qdrant *vector.QdrantClient,
-	// fdpn *memory.FDPNEngine, // Replaced
+	neo4j *graph.Neo4jClient, // AUDIT FIX: Adicionado
 	unified *lacan.UnifiedRetrieval,
 	personalitySvc *ps.PersonalityService,
 	zeta *ps.ZetaRouter,
 	push *push.FirebaseService,
-	embedder *memory.EmbeddingService, // Restored
+	embedder *memory.EmbeddingService,
 ) *Service {
+	var graphStore *memory.GraphStore
+	if neo4j != nil {
+		graphStore = memory.NewGraphStore(neo4j, nil)
+	}
+
 	return &Service{
 		db:                 db,
 		qdrantClient:       qdrant,
+		neo4jClient:        neo4j,       // AUDIT FIX
+		graphStore:         graphStore,  // AUDIT FIX
 		personalityService: personalitySvc,
 		zetaRouter:         zeta,
 		pushService:        push,
-		embeddingService:   embedder, // Restored
+		embeddingService:   embedder,
 		unifiedRetrieval:   unified,
 	}
 }

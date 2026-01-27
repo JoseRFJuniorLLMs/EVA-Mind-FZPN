@@ -2,6 +2,7 @@ package brain
 
 import (
 	"context"
+	"eva-mind/internal/hippocampus/memory"
 	"eva-mind/pkg/types"
 	"fmt"
 	"log"
@@ -11,6 +12,11 @@ import (
 	"github.com/pgvector/pgvector-go"
 	"github.com/qdrant/go-client/qdrant"
 )
+
+// ========================================
+// MEMORY SAVE AUDIT - 2026-01-27
+// Corrigido para salvar em TODOS os datastores
+// ========================================
 
 // ProcessUserSpeech handles user transcription in real-time (FDPN Hook)
 func (s *Service) ProcessUserSpeech(ctx context.Context, idosoID int64, text string) {
@@ -32,30 +38,66 @@ func (s *Service) ProcessUserSpeech(ctx context.Context, idosoID int64, text str
 	go s.SaveEpisodicMemory(idosoID, "user", text)
 }
 
-// SaveEpisodicMemory saves memory to Postgres and Qdrant
+// SaveEpisodicMemory saves memory to Postgres, Qdrant, and Neo4j
+// AUDIT FIX: 2026-01-27 - Agora salva em TODOS os datastores
 func (s *Service) SaveEpisodicMemory(idosoID int64, role, content string) {
 	ctx := context.Background()
 
-	// 1. Generate Embedding
-	embedding, err := s.embeddingService.GenerateEmbedding(ctx, content)
-	if err != nil {
-		log.Printf("⚠️ [MEMORY] Erro ao gerar embedding: %v", err)
+	log.Printf("🧠 [MEMORY] Iniciando salvamento - Idoso: %d, Role: %s, Tamanho: %d chars", idosoID, role, len(content))
+
+	// Validação básica
+	if len(content) < 5 {
+		log.Printf("⚠️ [MEMORY] Conteúdo muito curto, ignorando: '%s'", content)
 		return
 	}
 
-	// 2. Save to Postgres
+	if s.db == nil {
+		log.Printf("❌ [MEMORY] Database connection is nil!")
+		return
+	}
+
+	// 1. Tentar gerar Embedding (não bloqueia se falhar)
+	var embedding []float32
+	var embeddingErr error
+
+	if s.embeddingService != nil {
+		embedding, embeddingErr = s.embeddingService.GenerateEmbedding(ctx, content)
+		if embeddingErr != nil {
+			log.Printf("⚠️ [MEMORY] Erro ao gerar embedding (continuando sem): %v", embeddingErr)
+			// Criar embedding zerado para não bloquear salvamento
+			embedding = make([]float32, 768) // Dimensão padrão do Gemini
+		}
+	} else {
+		log.Printf("⚠️ [MEMORY] EmbeddingService é nil, usando embedding zerado")
+		embedding = make([]float32, 768)
+	}
+
+	// 2. Salvar no Postgres (SEMPRE tenta)
+	var memoryID int64
 	query := `
 		INSERT INTO episodic_memories (idoso_id, speaker, content, embedding, created_at)
 		VALUES ($1, $2, $3, $4, NOW())
 		RETURNING id
 	`
-	var memoryID int64
-	err = s.db.QueryRow(query, idosoID, role, content, pgvector.NewVector(embedding)).Scan(&memoryID)
+	err := s.db.QueryRow(query, idosoID, role, content, pgvector.NewVector(embedding)).Scan(&memoryID)
 	if err != nil {
 		log.Printf("❌ [POSTGRES] Erro ao salvar memória: %v", err)
-		return
+
+		// Tentar salvar SEM embedding como fallback
+		queryNoEmbed := `
+			INSERT INTO episodic_memories (idoso_id, speaker, content, created_at)
+			VALUES ($1, $2, $3, NOW())
+			RETURNING id
+		`
+		err2 := s.db.QueryRow(queryNoEmbed, idosoID, role, content).Scan(&memoryID)
+		if err2 != nil {
+			log.Printf("❌ [POSTGRES] Fallback também falhou: %v", err2)
+			return
+		}
+		log.Printf("✅ [POSTGRES] Memory saved (sem embedding): ID=%d", memoryID)
+	} else {
+		log.Printf("✅ [POSTGRES] Memory saved: ID=%d, Speaker=%s", memoryID, role)
 	}
-	log.Printf("✅ [POSTGRES] Memory saved: ID=%d, Speaker=%s", memoryID, role)
 
 	// 3. Upsert to Qdrant (Retry Logic)
 	if s.qdrantClient != nil {
@@ -106,7 +148,39 @@ func (s *Service) SaveEpisodicMemory(idosoID int64, role, content string) {
 				break
 			}
 		}()
+	} else {
+		log.Printf("⚠️ [QDRANT] Cliente não disponível, pulando indexação vetorial")
 	}
+
+	// 5. AUDIT FIX: Salvar no Neo4j (Graph Store)
+	if s.graphStore != nil {
+		go func() {
+			neo4jCtx, neo4jCancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer neo4jCancel()
+
+			graphMemory := &memory.Memory{
+				ID:         memoryID,
+				IdosoID:    idosoID,
+				Content:    content,
+				Speaker:    role,
+				Emotion:    "neutral",
+				Importance: 0.5,
+				SessionID:  fmt.Sprintf("session-%d", time.Now().Unix()),
+				Timestamp:  time.Now(),
+				Topics:     extractKeywords(content),
+			}
+
+			if err := s.graphStore.StoreCausalMemory(neo4jCtx, graphMemory); err != nil {
+				log.Printf("⚠️ [NEO4J] Erro ao salvar no grafo: %v", err)
+			} else {
+				log.Printf("✅ [NEO4J] Memory %d salva no grafo", memoryID)
+			}
+		}()
+	} else {
+		log.Printf("⚠️ [NEO4J] GraphStore não disponível, pulando salvamento no grafo")
+	}
+
+	log.Printf("🧠 [MEMORY] Salvamento completo para idoso %d", idosoID)
 }
 
 // Helper to extract keywords

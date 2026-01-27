@@ -100,8 +100,8 @@ func Load() (*Config, error) {
 	}
 
 	return &Config{
-		// Server
-		Port:        getEnvWithDefault("PORT", "8080"),
+		// Server (porta interna 8091 - nginx faz proxy SSL na 8090)
+		Port:        getEnvWithDefault("PORT", "8091"),
 		Environment: getEnvWithDefault("ENVIRONMENT", "development"),
 		MetricsPort: getEnvWithDefault("METRICS_PORT", "9090"),
 

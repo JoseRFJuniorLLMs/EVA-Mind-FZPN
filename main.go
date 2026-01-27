@@ -278,9 +278,11 @@ func NewSignalingServer(
 	unifiedRetrieval := lacan.NewUnifiedRetrieval(db.GetConnection(), neo4jClient, qdrantClient, cfg)
 
 	// 🧠 Initialize Brain
+	// AUDIT FIX 2026-01-27: Adicionado neo4jClient para salvar conversas no grafo
 	server.brain = brain.NewService(
 		db.GetConnection(),
 		qdrant,
+		neo4jClient, // AUDIT FIX: Passando Neo4j para salvar conversas
 		unifiedRetrieval,
 		personalityService,
 		zetaRouter,
