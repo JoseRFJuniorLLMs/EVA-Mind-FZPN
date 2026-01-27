@@ -60,14 +60,14 @@ func (h *ToolsHandler) handleSubmitPHQ9Response(idosoID int64, sessionID string,
 	nextQuestion := questionNumber + 1
 	if nextQuestion <= len(questions) {
 		return map[string]interface{}{
-			"status":          "in_progress",
-			"session_id":      sessionID,
+			"status":             "in_progress",
+			"session_id":         sessionID,
 			"questions_answered": responsesCount,
-			"total_questions": 9,
+			"total_questions":    9,
 			"next_question": map[string]interface{}{
 				"number":  nextQuestion,
 				"text":    questions[nextQuestion-1].Text,
-				"options": questions[nextQuestion-1].Options,
+				"options": []string{"Nenhuma vez", "Vários dias", "Mais da metade dos dias", "Quase todos os dias"},
 			},
 		}, nil
 	}
@@ -99,14 +99,14 @@ func (h *ToolsHandler) finalizePHQ9Assessment(idosoID int64, assessmentID int64,
 		var value int
 		rows.Scan(&value)
 		responses = append(responses, scales.PHQ9Response{
-			QuestionNumber: questionNum,
-			Value:          value,
+			Question: questionNum,
+			Score:    value,
 		})
 		questionNum++
 	}
 
 	// 2. Calcular score
-	scalesManager := scales.NewClinicalScalesManager(h.db.Conn)
+	scalesManager := scales.NewClinicalScalesManager(h.db)
 	result := scalesManager.CalculatePHQ9Score(responses)
 
 	// 3. Atualizar assessment com resultado
@@ -120,7 +120,8 @@ func (h *ToolsHandler) finalizePHQ9Assessment(idosoID int64, assessmentID int64,
 		WHERE id = $4
 	`
 
-	_, err = h.db.Conn.Exec(queryUpdate, result.TotalScore, result.Severity, result.Interpretation, assessmentID)
+	interpretation := fmt.Sprintf("PHQ-9 Score: %d - %s", result.TotalScore, result.SeverityLevel)
+	_, err = h.db.Conn.Exec(queryUpdate, result.TotalScore, result.SeverityLevel, interpretation, assessmentID)
 	if err != nil {
 		log.Printf("❌ [PHQ-9] Erro ao atualizar assessment: %v", err)
 		return nil, err
@@ -132,29 +133,29 @@ func (h *ToolsHandler) finalizePHQ9Assessment(idosoID int64, assessmentID int64,
 
 	if result.SuicideRisk {
 		shouldAlert = true
-		alertMessage = fmt.Sprintf("🚨 ALERTA: Paciente indicou pensamentos suicidas (Q9). Score PHQ-9: %d (%s)", result.TotalScore, result.Severity)
+		alertMessage = fmt.Sprintf("🚨 ALERTA: Paciente indicou pensamentos suicidas (Q9). Score PHQ-9: %d (%s)", result.TotalScore, result.SeverityLevel)
 
 		// Alerta crítico para família/equipe
 		if h.NotifyFunc != nil {
 			h.NotifyFunc(idosoID, "suicide_risk_detected", map[string]interface{}{
-				"phq9_score":     result.TotalScore,
-				"severity":       result.Severity,
-				"session_id":     sessionID,
-				"q9_response":    "positive",
+				"phq9_score":      result.TotalScore,
+				"severity":        result.SeverityLevel,
+				"session_id":      sessionID,
+				"q9_response":     "positive",
 				"requires_c_ssrs": true,
 			})
 		}
 
 		// Recomendar C-SSRS imediato
 		log.Printf("🚨 [PHQ-9] Risco suicida detectado. Recomendando C-SSRS para paciente %d", idosoID)
-	} else if result.Severity == "severe" || result.Severity == "moderately_severe" {
+	} else if result.SeverityLevel == "severe" || result.SeverityLevel == "moderately_severe" {
 		shouldAlert = true
-		alertMessage = fmt.Sprintf("⚠️ ATENÇÃO: Depressão %s detectada. Score PHQ-9: %d", result.Severity, result.TotalScore)
+		alertMessage = fmt.Sprintf("⚠️ ATENÇÃO: Depressão %s detectada. Score PHQ-9: %d", result.SeverityLevel, result.TotalScore)
 
 		if h.NotifyFunc != nil {
 			h.NotifyFunc(idosoID, "high_depression_score", map[string]interface{}{
 				"phq9_score": result.TotalScore,
-				"severity":   result.Severity,
+				"severity":   result.SeverityLevel,
 				"session_id": sessionID,
 			})
 		}
@@ -166,8 +167,8 @@ func (h *ToolsHandler) finalizePHQ9Assessment(idosoID int64, assessmentID int64,
 		"session_id":      sessionID,
 		"assessment_type": "PHQ-9",
 		"total_score":     result.TotalScore,
-		"severity":        result.Severity,
-		"interpretation":  result.Interpretation,
+		"severity":        result.SeverityLevel,
+		"interpretation":  interpretation,
 		"suicide_risk":    result.SuicideRisk,
 		"recommendations": result.Recommendations,
 	}
@@ -177,7 +178,7 @@ func (h *ToolsHandler) finalizePHQ9Assessment(idosoID int64, assessmentID int64,
 		response["alert_message"] = alertMessage
 	}
 
-	log.Printf("✅ [PHQ-9] Assessment completado. Score: %d, Severidade: %s", result.TotalScore, result.Severity)
+	log.Printf("✅ [PHQ-9] Assessment completado. Score: %d, Severidade: %s", result.TotalScore, result.SeverityLevel)
 
 	return response, nil
 }
@@ -242,7 +243,7 @@ func (h *ToolsHandler) handleSubmitGAD7Response(idosoID int64, sessionID string,
 			"next_question": map[string]interface{}{
 				"number":  nextQuestion,
 				"text":    questions[nextQuestion-1].Text,
-				"options": questions[nextQuestion-1].Options,
+				"options": []string{"Nenhuma vez", "Vários dias", "Mais da metade dos dias", "Quase todos os dias"},
 			},
 		}, nil
 	}
@@ -274,14 +275,14 @@ func (h *ToolsHandler) finalizeGAD7Assessment(idosoID int64, assessmentID int64,
 		var value int
 		rows.Scan(&value)
 		responses = append(responses, scales.GAD7Response{
-			QuestionNumber: questionNum,
-			Value:          value,
+			Question: questionNum,
+			Score:    value,
 		})
 		questionNum++
 	}
 
 	// 2. Calcular score
-	scalesManager := scales.NewClinicalScalesManager(h.db.Conn)
+	scalesManager := scales.NewClinicalScalesManager(h.db)
 	result := scalesManager.CalculateGAD7Score(responses)
 
 	// 3. Atualizar assessment com resultado
@@ -295,7 +296,8 @@ func (h *ToolsHandler) finalizeGAD7Assessment(idosoID int64, assessmentID int64,
 		WHERE id = $4
 	`
 
-	_, err = h.db.Conn.Exec(queryUpdate, result.TotalScore, result.Severity, result.Interpretation, assessmentID)
+	interpretationGAD := fmt.Sprintf("GAD-7 Score: %d - %s", result.TotalScore, result.SeverityLevel)
+	_, err = h.db.Conn.Exec(queryUpdate, result.TotalScore, result.SeverityLevel, interpretationGAD, assessmentID)
 	if err != nil {
 		log.Printf("❌ [GAD-7] Erro ao atualizar assessment: %v", err)
 		return nil, err
@@ -305,14 +307,14 @@ func (h *ToolsHandler) finalizeGAD7Assessment(idosoID int64, assessmentID int64,
 	shouldAlert := false
 	alertMessage := ""
 
-	if result.Severity == "severe" {
+	if result.SeverityLevel == "severe" {
 		shouldAlert = true
 		alertMessage = fmt.Sprintf("⚠️ ATENÇÃO: Ansiedade severa detectada. Score GAD-7: %d", result.TotalScore)
 
 		if h.NotifyFunc != nil {
 			h.NotifyFunc(idosoID, "high_anxiety_score", map[string]interface{}{
 				"gad7_score": result.TotalScore,
-				"severity":   result.Severity,
+				"severity":   result.SeverityLevel,
 				"session_id": sessionID,
 			})
 		}
@@ -324,8 +326,8 @@ func (h *ToolsHandler) finalizeGAD7Assessment(idosoID int64, assessmentID int64,
 		"session_id":      sessionID,
 		"assessment_type": "GAD-7",
 		"total_score":     result.TotalScore,
-		"severity":        result.Severity,
-		"interpretation":  result.Interpretation,
+		"severity":        result.SeverityLevel,
+		"interpretation":  interpretationGAD,
 		"recommendations": result.Recommendations,
 	}
 
@@ -334,7 +336,7 @@ func (h *ToolsHandler) finalizeGAD7Assessment(idosoID int64, assessmentID int64,
 		response["alert_message"] = alertMessage
 	}
 
-	log.Printf("✅ [GAD-7] Assessment completado. Score: %d, Severidade: %s", result.TotalScore, result.Severity)
+	log.Printf("✅ [GAD-7] Assessment completado. Score: %d, Severidade: %s", result.TotalScore, result.SeverityLevel)
 
 	return response, nil
 }
@@ -459,14 +461,14 @@ func (h *ToolsHandler) finalizeCSSRSAssessment(idosoID int64, assessmentID int64
 		}
 
 		responses = append(responses, scales.CSSRSResponse{
-			QuestionNumber: questionNum,
-			Value:          value,
+			Question: questionNum,
+			Answer:   value == 1,
 		})
 		questionNum++
 	}
 
 	// 2. Calcular score e risco
-	scalesManager := scales.NewClinicalScalesManager(h.db.Conn)
+	scalesManager := scales.NewClinicalScalesManager(h.db)
 	result := scalesManager.CalculateCSSRSScore(responses)
 
 	// 3. Atualizar assessment com resultado
@@ -481,7 +483,8 @@ func (h *ToolsHandler) finalizeCSSRSAssessment(idosoID int64, assessmentID int64
 		WHERE id = $4
 	`
 
-	_, err = h.db.Conn.Exec(queryUpdate, positiveCount, result.RiskLevel, result.Interpretation, assessmentID)
+	interpretationCSSRS := fmt.Sprintf("C-SSRS Risk Level: %s - %d positive responses", result.RiskLevel, positiveCount)
+	_, err = h.db.Conn.Exec(queryUpdate, positiveCount, result.RiskLevel, interpretationCSSRS, assessmentID)
 	if err != nil {
 		log.Printf("❌ [C-SSRS] Erro ao atualizar assessment: %v", err)
 		return nil, err
@@ -510,16 +513,16 @@ func (h *ToolsHandler) finalizeCSSRSAssessment(idosoID int64, assessmentID int64
 
 	// 5. Retornar resultado
 	response := map[string]interface{}{
-		"status":              "completed",
-		"session_id":          sessionID,
-		"assessment_type":     "C-SSRS",
-		"risk_level":          result.RiskLevel,
-		"positive_responses":  positiveCount,
-		"interpretation":      result.Interpretation,
-		"recommendations":     result.Recommendations,
-		"alert":               true,
-		"alert_message":       alertMessage,
-		"priority":            "CRITICAL",
+		"status":             "completed",
+		"session_id":         sessionID,
+		"assessment_type":    "C-SSRS",
+		"risk_level":         result.RiskLevel,
+		"positive_responses": positiveCount,
+		"interpretation":     interpretationCSSRS,
+		"interventions":      result.Interventions,
+		"alert":              true,
+		"alert_message":      alertMessage,
+		"priority":           "CRITICAL",
 	}
 
 	// Se risco alto/crítico, adicionar instruções de emergência

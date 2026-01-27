@@ -556,7 +556,7 @@ func main() {
 	api.HandleFunc("/config", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
-			"wsUrl": "ws://localhost:8080/ws/pcm",
+			"wsUrl": "wss://eva-ia.org:8090/ws/pcm",
 		})
 	}).Methods("GET")
 

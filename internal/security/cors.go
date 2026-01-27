@@ -19,6 +19,8 @@ func DefaultCORSConfig() *CORSConfig {
 			"http://localhost:3000",
 			"http://localhost:5173",
 			"http://localhost:8080",
+			"https://eva-ia.org",
+			"https://www.eva-ia.org",
 			"https://eva-mind.app",
 			"https://www.eva-mind.app",
 		},

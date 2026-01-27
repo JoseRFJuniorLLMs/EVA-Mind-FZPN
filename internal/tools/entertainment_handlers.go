@@ -646,12 +646,13 @@ func (h *ToolsHandler) handleReminiscenceTherapy(idosoID int64, args map[string]
 	}
 
 	return map[string]interface{}{
-		"status":          "started",
-		"theme":           theme,
+		"status":           "started",
+		"theme":            theme,
 		"opening_question": questions[0],
 		"related_memories": memories,
 		"song_suggestion":  songSuggestion,
-		"message":         questions[0],
+		"use_photos":       usePhotos,
+		"message":          questions[0],
 	}, nil
 }
 
