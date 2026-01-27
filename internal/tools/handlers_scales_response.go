@@ -1,8 +1,8 @@
 package tools
 
 import (
-	"database/sql"
 	"eva-mind/internal/cortex/scales"
+	"eva-mind/internal/motor/actions"
 	"fmt"
 	"log"
 )
