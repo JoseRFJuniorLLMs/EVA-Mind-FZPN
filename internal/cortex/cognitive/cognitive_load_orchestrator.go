@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
+	"github.com/lib/pq"
 )
 
 // CognitiveLoadOrchestrator gerencia carga cognitiva do paciente
@@ -543,8 +544,3 @@ func (clo *CognitiveLoadOrchestrator) updateRedisCache(patientID int64) error {
 	cacheKey := fmt.Sprintf("cognitive_load:%d:state", patientID)
 	return clo.redis.Set(clo.ctx, cacheKey, stateJSON, 5*time.Minute).Err()
 }
-
-// Import necessário
-import (
-	"github.com/lib/pq"
-)

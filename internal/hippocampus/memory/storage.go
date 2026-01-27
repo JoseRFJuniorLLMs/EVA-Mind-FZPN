@@ -3,9 +3,23 @@ package memory
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"log"
+	"strings"
 	"time"
 )
+
+// =============================================================================
+// CONSTANTES DE SEGURANÇA
+// =============================================================================
+
+// CREATOR_CPF é o CPF do criador da EVA - Jose R F Junior
+// ÚNICA pessoa autorizada a usar funções administrativas de deleção de memórias
+const CREATOR_CPF = "64525430249"
+
+// ErrUnauthorized é retornado quando alguém não autorizado tenta usar funções admin
+var ErrUnauthorized = errors.New("acesso negado: apenas o criador pode executar esta função")
 
 // Memory representa uma memória episódica armazenada
 type Memory struct {
@@ -115,21 +129,176 @@ func (m *MemoryStore) GetRecent(ctx context.Context, idosoID int64, limit int) (
 	return m.scanMemories(rows)
 }
 
-// DeleteOld remove memórias mais antigas que X dias (para LGPD/GDPR)
-func (m *MemoryStore) DeleteOld(ctx context.Context, idosoID int64, olderThanDays int) (int64, error) {
-	query := `
-		DELETE FROM episodic_memories
-		WHERE idoso_id = $1
-		  AND timestamp < NOW() - INTERVAL '1 day' * $2
-		  AND importance < 0.7  -- Preservar memórias importantes
-	`
+// =============================================================================
+// FUNÇÕES ADMINISTRATIVAS (RESTRITAS AO CRIADOR)
+// =============================================================================
 
-	result, err := m.db.ExecContext(ctx, query, idosoID, olderThanDays)
+// isCreator verifica se o CPF pertence ao criador da EVA
+func isCreator(cpf string) bool {
+	// Remove pontuação do CPF para comparação
+	cleanCPF := strings.ReplaceAll(strings.ReplaceAll(cpf, ".", ""), "-", "")
+	return cleanCPF == CREATOR_CPF
+}
+
+// DeleteOld remove memórias mais antigas que X dias
+//
+// ⚠️  FUNÇÃO RESTRITA - Apenas Jose R F Junior (CPF: 64525430249) pode usar
+//
+// Esta função NÃO é chamada automaticamente pelo sistema.
+// Memórias são mantidas indefinidamente para preservar o contexto do paciente.
+// Usar apenas para manutenção manual quando necessário.
+//
+// Parâmetros:
+//   - requesterCPF: CPF de quem está solicitando (deve ser o criador)
+//   - idosoID: ID do paciente (0 = todos os pacientes)
+//   - olderThanDays: deletar memórias mais antigas que N dias
+//   - minImportance: deletar apenas memórias com importance < este valor (default 0.7)
+//
+// Retorna:
+//   - int64: número de memórias deletadas
+//   - error: ErrUnauthorized se não for o criador
+func (m *MemoryStore) DeleteOld(ctx context.Context, requesterCPF string, idosoID int64, olderThanDays int, minImportance float64) (int64, error) {
+	// ═══════════════════════════════════════════════════════════════════════
+	// VERIFICAÇÃO DE AUTORIZAÇÃO - APENAS O CRIADOR PODE USAR ESTA FUNÇÃO
+	// ═══════════════════════════════════════════════════════════════════════
+	if !isCreator(requesterCPF) {
+		log.Printf("🚫 [SECURITY] Tentativa não autorizada de DeleteOld por CPF: %s", requesterCPF)
+		return 0, ErrUnauthorized
+	}
+
+	log.Printf("🔧 [ADMIN] DeleteOld autorizado para criador Jose R F Junior")
+	log.Printf("🔧 [ADMIN] Parâmetros: idosoID=%d, olderThanDays=%d, minImportance=%.2f",
+		idosoID, olderThanDays, minImportance)
+
+	// Default para minImportance
+	if minImportance <= 0 {
+		minImportance = 0.7
+	}
+
+	var query string
+	var result sql.Result
+	var err error
+
+	if idosoID == 0 {
+		// Deletar de TODOS os pacientes (usar com cuidado!)
+		query = `
+			DELETE FROM episodic_memories
+			WHERE timestamp < NOW() - INTERVAL '1 day' * $1
+			  AND importance < $2
+		`
+		result, err = m.db.ExecContext(ctx, query, olderThanDays, minImportance)
+	} else {
+		// Deletar apenas de um paciente específico
+		query = `
+			DELETE FROM episodic_memories
+			WHERE idoso_id = $1
+			  AND timestamp < NOW() - INTERVAL '1 day' * $2
+			  AND importance < $3
+		`
+		result, err = m.db.ExecContext(ctx, query, idosoID, olderThanDays, minImportance)
+	}
+
 	if err != nil {
+		log.Printf("❌ [ADMIN] Erro em DeleteOld: %v", err)
 		return 0, err
 	}
 
-	return result.RowsAffected()
+	rowsAffected, _ := result.RowsAffected()
+	log.Printf("✅ [ADMIN] DeleteOld concluído: %d memórias removidas", rowsAffected)
+
+	return rowsAffected, nil
+}
+
+// DeleteAllMemories remove TODAS as memórias de um paciente
+//
+// ⚠️  FUNÇÃO RESTRITA - Apenas Jose R F Junior (CPF: 64525430249) pode usar
+// ⚠️  CUIDADO: Esta função é DESTRUTIVA e não pode ser desfeita!
+//
+// Usar apenas para:
+//   - Testes de desenvolvimento
+//   - Solicitação explícita de "direito ao esquecimento" (LGPD Art. 18, VI)
+func (m *MemoryStore) DeleteAllMemories(ctx context.Context, requesterCPF string, idosoID int64) (int64, error) {
+	if !isCreator(requesterCPF) {
+		log.Printf("🚫 [SECURITY] Tentativa não autorizada de DeleteAllMemories por CPF: %s", requesterCPF)
+		return 0, ErrUnauthorized
+	}
+
+	log.Printf("🔧 [ADMIN] DeleteAllMemories autorizado para criador Jose R F Junior")
+	log.Printf("⚠️  [ADMIN] DELETANDO TODAS as memórias do idoso %d", idosoID)
+
+	query := `DELETE FROM episodic_memories WHERE idoso_id = $1`
+	result, err := m.db.ExecContext(ctx, query, idosoID)
+	if err != nil {
+		log.Printf("❌ [ADMIN] Erro em DeleteAllMemories: %v", err)
+		return 0, err
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	log.Printf("✅ [ADMIN] DeleteAllMemories concluído: %d memórias removidas do idoso %d", rowsAffected, idosoID)
+
+	return rowsAffected, nil
+}
+
+// GetMemoryStats retorna estatísticas de memórias (função admin)
+//
+// ⚠️  FUNÇÃO RESTRITA - Apenas Jose R F Junior (CPF: 64525430249) pode usar
+func (m *MemoryStore) GetMemoryStats(ctx context.Context, requesterCPF string) (map[string]interface{}, error) {
+	if !isCreator(requesterCPF) {
+		return nil, ErrUnauthorized
+	}
+
+	stats := make(map[string]interface{})
+
+	// Total de memórias
+	var totalMemories int64
+	m.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM episodic_memories").Scan(&totalMemories)
+	stats["total_memories"] = totalMemories
+
+	// Memórias por paciente
+	var totalPatients int64
+	m.db.QueryRowContext(ctx, "SELECT COUNT(DISTINCT idoso_id) FROM episodic_memories").Scan(&totalPatients)
+	stats["total_patients_with_memories"] = totalPatients
+
+	// Média por paciente
+	if totalPatients > 0 {
+		stats["avg_memories_per_patient"] = float64(totalMemories) / float64(totalPatients)
+	}
+
+	// Memórias por importance
+	rows, _ := m.db.QueryContext(ctx, `
+		SELECT
+			CASE
+				WHEN importance >= 0.9 THEN 'critical (>=0.9)'
+				WHEN importance >= 0.7 THEN 'important (0.7-0.9)'
+				WHEN importance >= 0.5 THEN 'normal (0.5-0.7)'
+				ELSE 'low (<0.5)'
+			END as category,
+			COUNT(*) as count
+		FROM episodic_memories
+		GROUP BY category
+		ORDER BY category
+	`)
+	if rows != nil {
+		defer rows.Close()
+		importanceStats := make(map[string]int64)
+		for rows.Next() {
+			var category string
+			var count int64
+			rows.Scan(&category, &count)
+			importanceStats[category] = count
+		}
+		stats["by_importance"] = importanceStats
+	}
+
+	// Memória mais antiga e mais recente
+	var oldest, newest time.Time
+	m.db.QueryRowContext(ctx, "SELECT MIN(timestamp), MAX(timestamp) FROM episodic_memories").Scan(&oldest, &newest)
+	stats["oldest_memory"] = oldest
+	stats["newest_memory"] = newest
+
+	log.Printf("🔧 [ADMIN] GetMemoryStats executado pelo criador")
+
+	return stats, nil
 }
 
 // scanMemories helper para converter rows em slice de Memory

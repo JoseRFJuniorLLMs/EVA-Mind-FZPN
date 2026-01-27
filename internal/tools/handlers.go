@@ -141,6 +141,106 @@ func (h *ToolsHandler) ExecuteTool(name string, args map[string]interface{}, ido
 		responseText, _ := args["response_text"].(string)
 		return h.handleSubmitCSSRSResponse(idosoID, sessionID, int(questionNumber), int(responseValue), responseText)
 
+	// ========================================
+	// ENTERTAINMENT TOOLS (30 ferramentas)
+	// ========================================
+
+	// --- Música e Áudio (6) ---
+	case "play_nostalgic_music":
+		return h.handlePlayNostalgicMusic(idosoID, args)
+
+	case "play_radio_station":
+		return h.handlePlayRadioStation(idosoID, args)
+
+	case "nature_sounds":
+		return h.handleNatureSounds(idosoID, args)
+
+	case "audiobook_reader":
+		return h.handleAudiobookReader(idosoID, args)
+
+	case "podcast_player":
+		return h.handlePodcastPlayer(idosoID, args)
+
+	case "religious_content":
+		return h.handleReligiousContent(idosoID, args)
+
+	// --- Jogos Cognitivos (6) ---
+	case "play_trivia_game":
+		return h.handlePlayTriviaGame(idosoID, args)
+
+	case "memory_game":
+		return h.handleMemoryGame(idosoID, args)
+
+	case "word_association":
+		return h.handleWordAssociation(idosoID, args)
+
+	case "brain_training":
+		return h.handleBrainTraining(idosoID, args)
+
+	case "complete_the_lyrics":
+		return h.handleCompleteTheLyrics(idosoID, args)
+
+	case "riddles_and_jokes":
+		return h.handleRiddlesAndJokes(idosoID, args)
+
+	// --- Histórias e Narrativas (5) ---
+	case "story_generator":
+		return h.handleStoryGenerator(idosoID, args)
+
+	case "reminiscence_therapy":
+		return h.handleReminiscenceTherapy(idosoID, args)
+
+	case "biography_writer":
+		return h.handleBiographyWriter(idosoID, args)
+
+	case "read_newspaper":
+		return h.handleReadNewspaper(idosoID, args)
+
+	case "daily_horoscope":
+		return h.handleDailyHoroscope(idosoID, args)
+
+	// --- Bem-estar e Saúde (6) ---
+	case "guided_meditation":
+		return h.handleGuidedMeditation(idosoID, args)
+
+	case "breathing_exercises":
+		return h.handleBreathingExercises(idosoID, args)
+
+	case "chair_exercises":
+		return h.handleChairExercises(idosoID, args)
+
+	case "sleep_stories":
+		return h.handleSleepStories(idosoID, args)
+
+	case "gratitude_journal":
+		return h.handleGratitudeJournal(idosoID, args)
+
+	case "motivational_quotes":
+		return h.handleMotivationalQuotes(idosoID, args)
+
+	// --- Social e Família (4) ---
+	case "voice_capsule":
+		return h.handleVoiceCapsule(idosoID, args)
+
+	case "birthday_reminder":
+		return h.handleBirthdayReminder(idosoID, args)
+
+	case "family_tree_explorer":
+		return h.handleFamilyTreeExplorer(idosoID, args)
+
+	case "photo_slideshow":
+		return h.handlePhotoSlideshow(idosoID, args)
+
+	// --- Utilidades Diárias (3) ---
+	case "weather_chat":
+		return h.handleWeatherChat(idosoID, args)
+
+	case "cooking_recipes":
+		return h.handleCookingRecipes(idosoID, args)
+
+	case "voice_diary":
+		return h.handleVoiceDiary(idosoID, args)
+
 	default:
 		return nil, fmt.Errorf("ferramenta desconhecida: %s", name)
 	}
