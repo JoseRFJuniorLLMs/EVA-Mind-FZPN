@@ -25,6 +25,9 @@ type UnifiedRetrieval struct {
 	fdpn           *FDPNEngine
 	zeta           *ZetaRouter
 
+	// 📚 Serviço de Sabedoria (histórias, fábulas, ensinamentos)
+	wisdom *knowledge.WisdomService
+
 	// Modo Debug (exclusivo para o Criador)
 	debugMode *DebugMode
 
@@ -32,9 +35,10 @@ type UnifiedRetrieval struct {
 	creatorProfile *personality.CreatorProfileService
 
 	// Infraestrutura
-	db    *sql.DB
-	neo4j *graph.Neo4jClient
-	cfg   *config.Config
+	db     *sql.DB
+	neo4j  *graph.Neo4jClient
+	qdrant *vector.QdrantClient
+	cfg    *config.Config
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -122,6 +126,9 @@ type UnifiedContext struct {
 	LifeStory      string                    // Narrativa de vida (se disponível)
 	Patterns       []*types.RecurrentPattern // Padrões detectados
 
+	// 📚 SABEDORIA (Histórias, Fábulas, Ensinamentos, Técnicas)
+	WisdomContext string // Contexto de sabedoria relevante (Qdrant)
+
 	// INTERVENÇÃO (Ética + Postura)
 	EthicalStance *EthicalStance
 	GurdjieffType int    // Tipo de atenção recomendado
@@ -151,15 +158,26 @@ func NewUnifiedRetrieval(
 	// Inicializar serviço de perfil do Criador (carrega do PostgreSQL)
 	creatorProfile := personality.NewCreatorProfileService(db)
 
+	// 📚 Inicializar serviço de Sabedoria (busca semântica em histórias/fábulas/ensinamentos)
+	var wisdomService *knowledge.WisdomService
+	if embedding != nil && qdrant != nil {
+		wisdomService = knowledge.NewWisdomService(qdrant, embedding)
+		log.Printf("✅ [UnifiedRetrieval] WisdomService inicializado")
+	} else {
+		log.Printf("⚠️ [UnifiedRetrieval] WisdomService não inicializado (embedding ou qdrant nil)")
+	}
+
 	return &UnifiedRetrieval{
 		interpretation: interpretation,
 		embedding:      embedding,
 		fdpn:           fdpn,
 		zeta:           zeta,
+		wisdom:         wisdomService,
 		debugMode:      debugMode,
 		creatorProfile: creatorProfile,
 		db:             db,
 		neo4j:          neo4j,
+		qdrant:         qdrant,
 		cfg:            cfg,
 	}
 }
@@ -225,14 +243,25 @@ func (u *UnifiedRetrieval) BuildUnifiedContext(
 	// 5. MEMÓRIAS RECENTES (Postgres)
 	unified.RecentMemories = u.getRecentMemories(ctx, idosoID, 5)
 
-	// 6. POSTURA ÉTICA (Zeta Router)
+	// 6. 📚 SABEDORIA RELEVANTE (Qdrant - histórias, fábulas, ensinamentos)
+	if u.wisdom != nil {
+		unified.WisdomContext = u.wisdom.GetWisdomContext(ctx, currentText, &knowledge.WisdomSearchOptions{
+			Limit:    3,
+			MinScore: 0.7,
+		})
+		if unified.WisdomContext != "" {
+			log.Printf("📚 [UnifiedRetrieval] Sabedoria relevante encontrada para: %s", currentText[:min(50, len(currentText))])
+		}
+	}
+
+	// 7. POSTURA ÉTICA (Zeta Router)
 	if lacanResult != nil {
 		stance, _ := u.zeta.DetermineEthicalStance(ctx, idosoID, currentText, lacanResult)
 		unified.EthicalStance = stance
 		unified.GurdjieffType = u.zeta.DetermineGurdjieffType(ctx, idosoID, lacanResult)
 	}
 
-	// 7. CONSTRUIR PROMPT FINAL
+	// 8. CONSTRUIR PROMPT FINAL
 	unified.SystemPrompt = u.buildIntegratedPrompt(unified)
 
 	return unified, nil
@@ -661,6 +690,12 @@ func (u *UnifiedRetrieval) buildIntegratedPrompt(unified *UnifiedContext) string
 			builder.WriteString(fmt.Sprintf("%d. %s\n", i+1, mem))
 		}
 		builder.WriteString("\n")
+	}
+
+	// 📚 SABEDORIA (Histórias, Fábulas, Ensinamentos)
+	if unified.WisdomContext != "" {
+		builder.WriteString("▌SABEDORIA - RECURSOS TERAPÊUTICOS:\n")
+		builder.WriteString(unified.WisdomContext)
 	}
 
 	// INTERVENÇÃO ÉTICA

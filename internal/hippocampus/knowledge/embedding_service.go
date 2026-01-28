@@ -62,9 +62,9 @@ func (e *EmbeddingService) ensureCollection(ctx context.Context) error {
 		return nil // Já existe
 	}
 
-	// Criar coleção (Gemini embeddings são 768 dimensões)
+	// Criar coleção (gemini-embedding-001 usa 3072 dimensões)
 	// wrapper provides CreateCollection
-	err = e.qdrantClient.CreateCollection(ctx, e.collectionName, 768)
+	err = e.qdrantClient.CreateCollection(ctx, e.collectionName, 3072)
 	if err != nil {
 		return fmt.Errorf("failed to create collection: %w", err)
 	}
@@ -75,18 +75,20 @@ func (e *EmbeddingService) ensureCollection(ctx context.Context) error {
 
 // GenerateEmbedding gera embedding usando Gemini API
 func (e *EmbeddingService) GenerateEmbedding(ctx context.Context, text string) ([]float32, error) {
+	// gemini-embedding-001 é o novo modelo recomendado (substitui text-embedding-004)
 	url := fmt.Sprintf(
-		"https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=%s",
+		"https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key=%s",
 		e.cfg.GoogleAPIKey,
 	)
 
 	payload := map[string]interface{}{
-		"model": "models/text-embedding-004",
+		"model": "models/gemini-embedding-001",
 		"content": map[string]interface{}{
 			"parts": []map[string]string{
 				{"text": text},
 			},
 		},
+		"outputDimensionality": 3072, // Máxima qualidade - Qdrant recriado com 3072
 	}
 
 	jsonData, err := json.Marshal(payload)

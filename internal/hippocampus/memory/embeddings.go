@@ -12,8 +12,10 @@ import (
 )
 
 const (
-	geminiEmbeddingEndpoint = "https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent"
-	expectedDimension       = 768 // ✅ CONSTANTE CRÍTICA - Gemini text-embedding-004
+	// gemini-embedding-001 é o novo modelo recomendado (substitui text-embedding-004)
+	// Suporta 100+ idiomas, 2048 tokens, dimensões: 3072, 1536 ou 768
+	geminiEmbeddingEndpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent"
+	expectedDimension       = 3072 // Máxima qualidade - Qdrant recriado com 3072
 )
 
 // EmbeddingService gera embeddings usando Gemini API
@@ -39,6 +41,7 @@ type embeddingRequest struct {
 			Text string `json:"text"`
 		} `json:"parts"`
 	} `json:"content"`
+	OutputDimensionality int `json:"outputDimensionality,omitempty"` // Para gemini-embedding-001: 768, 1536 ou 3072
 }
 
 // EmbeddingResponse representa a resposta da API
@@ -62,6 +65,7 @@ func (e *EmbeddingService) GenerateEmbedding(ctx context.Context, text string) (
 	}{
 		{Text: text},
 	}
+	reqBody.OutputDimensionality = expectedDimension // 3072 dimensões - máxima qualidade semântica
 
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {

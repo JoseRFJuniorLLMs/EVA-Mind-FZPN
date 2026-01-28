@@ -84,7 +84,7 @@ func main() {
 	ctx := context.Background()
 
 	// 3. Criar Coleção se não existir
-	err = qdrantClient.CreateCollection(ctx, "stories", 768) // 768 for Gemini embedding
+	err = qdrantClient.CreateCollection(ctx, "stories", 3072) // 3072 for gemini-embedding-001
 	if err != nil {
 		log.Printf("⚠️ Coleção 'stories' já existe ou erro: %v", err)
 	}

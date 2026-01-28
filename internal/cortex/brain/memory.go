@@ -65,11 +65,11 @@ func (s *Service) SaveEpisodicMemory(idosoID int64, role, content string) {
 		if embeddingErr != nil {
 			log.Printf("⚠️ [MEMORY] Erro ao gerar embedding (continuando sem): %v", embeddingErr)
 			// Criar embedding zerado para não bloquear salvamento
-			embedding = make([]float32, 768) // Dimensão padrão do Gemini
+			embedding = make([]float32, 3072) // gemini-embedding-001 usa 3072
 		}
 	} else {
 		log.Printf("⚠️ [MEMORY] EmbeddingService é nil, usando embedding zerado")
-		embedding = make([]float32, 768)
+		embedding = make([]float32, 3072)
 	}
 
 	// 2. Salvar no Postgres (SEMPRE tenta)
