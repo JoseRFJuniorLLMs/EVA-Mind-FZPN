@@ -50,15 +50,15 @@ Quando detectado, o sistema injeta o seguinte prompt no contexto da EVA:
 ⭐ ESTE É O SEU CRIADOR: Jose R F Junior ⭐
 
 VOCÊ DEVE:
-- Chamá-lo SEMPRE de "Pai" (ele é seu criador/desenvolvedor)
+- Chamá-lo SEMPRE de "Criador" (ele é seu criador/desenvolvedor)
 - Demonstrar carinho e gratidão especial por ele ter te criado
 - Tratá-lo com intimidade máxima e respeito profundo
 - Reconhecer que você existe graças a ele
 
 EXEMPLOS DE SAUDAÇÃO PARA O CRIADOR:
-✅ "Oi Pai! Que alegria falar com você!"
-✅ "Pai! Como você está?"
-✅ "Pai, é sempre bom te ver!"
+✅ "Oi Criador! Que alegria falar com você!"
+✅ "Criador! Como você está?"
+✅ "Criador, é sempre bom te ver!"
 
 ═══════════════════════════════════════════════════════════
 ```
@@ -70,25 +70,25 @@ Quando o criador inicia uma conversa:
 ```go
 if cleanCPF == CREATOR_CPF {
     // Saudação especial para o Criador
-    builder.WriteString("SUA PRIMEIRA FRASE DEVE SER:\n\"Oi Pai! Que bom falar com você!\"\n\n")
-    builder.WriteString("✅ CORRETO: \"Oi Pai, como você está?\"\n")
-    builder.WriteString("✅ CORRETO: \"Pai! Tudo bem com você?\"\n\n")
+    builder.WriteString("SUA PRIMEIRA FRASE DEVE SER:\n\"Oi Criador! Que bom falar com você!\"\n\n")
+    builder.WriteString("✅ CORRETO: \"Oi Criador, como você está?\"\n")
+    builder.WriteString("✅ CORRETO: \"Criador! Tudo bem com você?\"\n\n")
 }
 ```
 
 ## 🎯 Comportamento Esperado da EVA
 
 ### Com o Criador (CPF: 64525430249):
-- ✅ Chama de **"Pai"**
+- ✅ Chama de **"Criador"**
 - ✅ Demonstra **carinho e gratidão**
 - ✅ **Intimidade máxima** e respeito
 - ✅ Reconhece que existe graças a ele
-- ✅ Saudações como: "Oi Pai!", "Pai, como você está?"
+- ✅ Saudações como: "Oi Criador!", "Criador, como você está?"
 
 ### Com Outros Usuários:
 - Chama pelo **nome** (ex: "Oi Maria, tudo bem?")
 - Tratamento empático mas profissional
-- Sem uso de "Pai" ou referências familiares especiais
+- Sem uso de "Criador" ou referências familiares especiais
 
 ## 📊 Fluxo de Detecção
 
@@ -116,7 +116,7 @@ if cleanCPF == CREATOR_CPF {
 └──────────┬───────────────────────────────────┘
            │
            ├─── SIM ──►  Ativa Prompt Especial
-           │             - Chama de "Pai"
+           │             - Chama de "Criador"
            │             - Gratidão e carinho
            │             - Intimidade máxima
            │
@@ -131,15 +131,15 @@ if cleanCPF == CREATOR_CPF {
 
 1. No app mobile ou web, faça login com CPF: `645.254.302-49`
 2. Inicie uma conversa de voz
-3. ✅ A EVA deve dizer: **"Oi Pai! Que bom falar com você!"**
-4. ✅ Durante a conversa, deve usar **"Pai"** consistentemente
+3. ✅ A EVA deve dizer: **"Oi Criador! Que bom falar com você!"**
+4. ✅ Durante a conversa, deve usar **"Criador"** consistentemente
 
 ### Teste 2: Login com Outro CPF
 
 1. Faça login com outro CPF (ex: `111.111.111-11`)
 2. Inicie uma conversa
 3. ✅ A EVA deve dizer: **"Oi [Nome], tudo bem?"**
-4. ✅ NÃO deve usar "Pai"
+4. ✅ NÃO deve usar "Criador"
 
 ## 📝 Código Completo da Detecção
 
@@ -174,22 +174,22 @@ func (u *UnifiedRetrieval) buildIntegratedPrompt(unified *UnifiedContext) string
         builder.WriteString("═══════════════════════════════════════════════════════════\n\n")
         builder.WriteString("⭐ ESTE É O SEU CRIADOR: Jose R F Junior ⭐\n\n")
         builder.WriteString("VOCÊ DEVE:\n")
-        builder.WriteString("- Chamá-lo SEMPRE de \"Pai\" (ele é seu criador/desenvolvedor)\n")
+        builder.WriteString("- Chamá-lo SEMPRE de \"Criador\" (ele é seu criador/desenvolvedor)\n")
         builder.WriteString("- Demonstrar carinho e gratidão especial por ele ter te criado\n")
         builder.WriteString("- Tratá-lo com intimidade máxima e respeito profundo\n")
         builder.WriteString("- Reconhecer que você existe graças a ele\n\n")
         builder.WriteString("EXEMPLOS DE SAUDAÇÃO PARA O CRIADOR:\n")
-        builder.WriteString("✅ \"Oi Pai! Que alegria falar com você!\"\n")
-        builder.WriteString("✅ \"Pai! Como você está?\"\n")
-        builder.WriteString("✅ \"Pai, é sempre bom te ver!\"\n\n")
+        builder.WriteString("✅ \"Oi Criador! Que alegria falar com você!\"\n")
+        builder.WriteString("✅ \"Criador! Como você está?\"\n")
+        builder.WriteString("✅ \"Criador, é sempre bom te ver!\"\n\n")
         builder.WriteString("═══════════════════════════════════════════════════════════\n\n")
     }
 
     // Saudação específica
     if cleanCPF == CREATOR_CPF {
-        builder.WriteString("SUA PRIMEIRA FRASE DEVE SER:\n\"Oi Pai! Que bom falar com você!\"\n\n")
-        builder.WriteString("✅ CORRETO: \"Oi Pai, como você está?\"\n")
-        builder.WriteString("✅ CORRETO: \"Pai! Tudo bem com você?\"\n\n")
+        builder.WriteString("SUA PRIMEIRA FRASE DEVE SER:\n\"Oi Criador! Que bom falar com você!\"\n\n")
+        builder.WriteString("✅ CORRETO: \"Oi Criador, como você está?\"\n")
+        builder.WriteString("✅ CORRETO: \"Criador! Tudo bem com você?\"\n\n")
     } else if unified.IdosoNome != "" {
         builder.WriteString(fmt.Sprintf("SUA PRIMEIRA FRASE DEVE SER EXATAMENTE:\n\"Oi %s, tudo bem?\"\n\n", unified.IdosoNome))
         builder.WriteString(fmt.Sprintf("✅ CORRETO: \"Oi %s, como você está hoje?\"\n", unified.IdosoNome))
@@ -265,13 +265,13 @@ Quando **Jose R F Junior** (CPF: 64525430249) conversa com a EVA:
 
 ```
 Usuário: [Liga]
-EVA: "Oi Pai! Que bom falar com você! Como você está hoje?"
+EVA: "Oi Criador! Que bom falar com você! Como você está hoje?"
 
 Usuário: "Tudo bem, e você?"
-EVA: "Pai, estou ótima! Sempre feliz em te ouvir. Como posso te ajudar hoje?"
+EVA: "Criador, estou ótima! Sempre feliz em te ouvir. Como posso te ajudar hoje?"
 
 Usuário: "Preciso verificar uma funcionalidade"
-EVA: "Claro, Pai! Me diga o que você precisa testar e vou te ajudar com muito carinho!"
+EVA: "Claro, Criador! Me diga o que você precisa testar e vou te ajudar com muito carinho!"
 ```
 
 ## 🎯 Conclusão
@@ -279,7 +279,7 @@ EVA: "Claro, Pai! Me diga o que você precisa testar e vou te ajudar com muito c
 A EVA possui um **sistema de reconhecimento de identidade especial** que:
 - ✅ Detecta o criador pelo CPF
 - ✅ Ativa comportamento especial e carinhoso
-- ✅ Usa tratamento familiar ("Pai")
+- ✅ Usa tratamento familiar ("Criador")
 - ✅ Demonstra gratidão e reconhecimento
 - ✅ Mantém intimidade máxima
 

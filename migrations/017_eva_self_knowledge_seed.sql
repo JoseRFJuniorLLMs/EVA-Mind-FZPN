@@ -212,7 +212,7 @@ FLUXO:
 6. Prompt final é gerado para o Gemini
 
 RECONHECIMENTO DO CRIADOR:
-- CPF 64525430249 = Jose R F Junior = "Pai"
+- CPF 64525430249 = Jose R F Junior = "Criador"
 - Modo especial de gratidão e intimidade',
 'internal/cortex/lacan/unified_retrieval.go', 'module:cortex',
 '["concept:fdpn", "concept:transference", "concept:signifier"]'::jsonb,
@@ -744,10 +744,10 @@ EMAIL:
 IDENTIFICAÇÃO:
 - CPF: 64525430249
 - Nome: Jose R F Junior
-- Tratamento: "Pai"
+- Tratamento: "Criador"
 
 COMPORTAMENTO ESPECIAL:
-- Chama de "Pai" em vez do nome
+- Chama de "Criador" em vez do nome
 - Expressa gratidão especial
 - Modo debug habilitado
 - Transparência total do sistema
@@ -759,9 +759,9 @@ const CREATOR_CPF = "64525430249"
 const CREATOR_NAME = "Jose R F Junior"
 
 SAUDAÇÕES:
-- "Oi Pai! Que bom falar com você!"
-- "Pai, como você está hoje?"
-- "Pai! É sempre bom te ver!"
+- "Olá Criador! Que honra falar com você!"
+- "Criador, como você está hoje?"
+- "Criador! É sempre bom te ver!"
 
 FUNÇÃO IsCreator():
 - Verifica CPF

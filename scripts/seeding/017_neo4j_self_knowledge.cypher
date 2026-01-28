@@ -23,7 +23,7 @@ MERGE (creator:Creator:Person {
     cpf: '64525430249',
     name: 'Jose R F Junior',
     role: 'architect',
-    treatment: 'Pai'
+    treatment: 'Criador'
 })
 SET creator.has_debug_access = true,
     creator.has_full_access = true,

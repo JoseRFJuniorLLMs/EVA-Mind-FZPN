@@ -638,7 +638,7 @@ func (d *DebugMode) BuildDebugPromptSection(ctx context.Context) string {
 		builder.WriteString("\n")
 	}
 
-	builder.WriteString("🛠️ COMANDOS DISPONÍVEIS (o Pai pode pedir):\n")
+	builder.WriteString("🛠️ COMANDOS DISPONÍVEIS (o Criador pode pedir):\n")
 	for _, cmd := range d.GetAvailableCommands() {
 		builder.WriteString(fmt.Sprintf("  • \"%s\" - %s\n", cmd.Example, cmd.Description))
 	}
@@ -799,7 +799,7 @@ func (d *DebugMode) ExecuteCommand(ctx context.Context, command string) *DebugRe
 			return &DebugResponse{Success: false, Command: command, Message: err.Error()}
 		}
 		if len(errors) == 0 {
-			return &DebugResponse{Success: true, Command: command, Message: "Nenhum erro encontrado recentemente, Pai!"}
+			return &DebugResponse{Success: true, Command: command, Message: "Nenhum erro encontrado recentemente, Criador!"}
 		}
 		return &DebugResponse{Success: true, Command: command, Data: errors}
 
@@ -878,7 +878,7 @@ func (d *DebugMode) ExecuteCommand(ctx context.Context, command string) *DebugRe
 			d.alertSystem.CheckAllAlerts(ctx)
 			critical := d.alertSystem.GetCriticalAlerts()
 			if len(critical) == 0 {
-				return &DebugResponse{Success: true, Command: command, Message: "Nenhum alerta crítico no momento, Pai!"}
+				return &DebugResponse{Success: true, Command: command, Message: "Nenhum alerta crítico no momento, Criador!"}
 			}
 			return &DebugResponse{Success: true, Command: command, Data: critical}
 		}
