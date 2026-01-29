@@ -23,6 +23,7 @@ import (
 	"eva-mind/internal/cortex/personality"
 	"eva-mind/internal/cortex/voice"
 	"eva-mind/internal/cortex/alert"
+	"eva-mind/internal/cortex/brain"
 	"eva-mind/internal/cortex/ethics"
 	"eva-mind/internal/persona"
 	"eva-mind/internal/hippocampus/knowledge"
@@ -119,6 +120,7 @@ type SignalingServer struct {
 	prosodyAnalyzer    *voice.ProsodyAnalyzer   // ✅ Voice Biomarkers
 	escalationService  *alert.EscalationService // ✅ Alert Escalation (SMS/WhatsApp/Call)
 	ethicsBoundary     *ethics.EthicalBoundaryEngine // ✅ Ethics Monitoring
+	brainService       *brain.Service           // ✅ Memory Service (Postgres + Qdrant + Neo4j)
 
 	// Services for Memory Saver
 	qdrantClient     *vector.QdrantClient
@@ -239,6 +241,19 @@ func NewSignalingServer(
 		server.knowledge = knowledge.NewGraphReasoningService(cfg, neo4jClient, ctxService)
 		log.Printf("✅ Graph Reasoning Service (Neo4j + Thinking) inicializado")
 	}
+
+	// ✅ NOVO: Inicializar Brain Service (Postgres + Qdrant + Neo4j Memory)
+	server.brainService = brain.NewService(
+		db,
+		server.qdrantClient,
+		neo4jClient, // Pode ser nil se falhou
+		nil,         // unified retrieval (opcional)
+		server.personalityService,
+		server.zetaRouter,
+		server.pushService,
+		nil, // embedding service
+	)
+	log.Println("🧠 Signaling: BrainService initialized for Memory Storage (PG + Qdrant + Neo4j)")
 
 	// ✅ NOVO: Inicializar Redis Client (Audio Buffer)
 	redisClient, err := redis.NewClient(cfg)
@@ -541,6 +556,11 @@ func (s *SignalingServer) handleGeminiResponse(session *WebSocketSession, respon
 			log.Printf("🗣️ [NATIVE] IDOSO: %s", userText)
 			go s.saveTranscription(session.IdosoID, "user", userText)
 
+			// ✅ NOVO: Salvar em Postgres + Qdrant + Neo4j via BrainService
+			if s.brainService != nil {
+				go s.brainService.ProcessUserSpeech(context.Background(), session.IdosoID, userText)
+			}
+
 			// ✅ NOVO: Neo4j Thinking Mode (Fase 2)
 			if s.knowledge != nil {
 				go func(uid int64, text string) {
@@ -585,6 +605,11 @@ func (s *SignalingServer) handleGeminiResponse(session *WebSocketSession, respon
 		if aiText, ok := audioTrans["text"].(string); ok && aiText != "" {
 			log.Printf("💬 [TRANSCRICAO] EVA: %s", aiText)
 			go s.saveTranscription(session.IdosoID, "assistant", aiText)
+
+			// ✅ NOVO: Salvar resposta EVA em Postgres + Qdrant + Neo4j
+			if s.brainService != nil {
+				go s.brainService.SaveEpisodicMemory(session.IdosoID, "assistant", aiText)
+			}
 		}
 	}
 	// ========== FIM TRANSCRIÇÃO NATIVA ==========

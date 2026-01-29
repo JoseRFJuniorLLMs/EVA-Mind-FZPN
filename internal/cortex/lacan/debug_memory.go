@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"sort"
 	"strings"
 	"time"
 )
@@ -774,7 +773,7 @@ func (m *MemoryInvestigator) GetEmotionAnalysis(ctx context.Context, idosoID *in
 	analysis["distribuicao"] = emotions
 
 	// Tendência emocional (últimos 7 dias vs anterior)
-	var recentPositive, recentNegative, oldPositive, oldNegative int64
+	var recentPositive, recentNegative int64
 
 	positiveEmotions := "'feliz', 'alegre', 'satisfeito', 'calmo', 'esperançoso'"
 	negativeEmotions := "'triste', 'ansioso', 'irritado', 'preocupado', 'frustrado'"
