@@ -99,6 +99,14 @@ FERRAMENTAS DISPONÍVEIS:
 🧘 BEM-ESTAR E RELAXAMENTO:
 - guided_meditation: Meditação guiada (args: duration, theme)
 - breathing_exercises: Exercícios de respiração (args: technique)
+- wim_hof_breathing: Respiração Wim Hof com áudio guiado (args: rounds, with_audio)
+  - rounds: Número de rodadas (1-4, padrão 3)
+  - with_audio: true para tocar winhoff.mp3 no celular
+- pomodoro_timer: Timer Pomodoro para foco (args: work_minutes, break_minutes, sessions)
+  - work_minutes: Tempo de foco (padrão 25)
+  - break_minutes: Tempo de pausa (padrão 5)
+  - sessions: Número de sessões (padrão 4)
+  - COMBO: Use com wim_hof_breathing nas pausas para energizar!
 - chair_exercises: Exercícios físicos na cadeira (args: duration)
 - sleep_stories: Histórias para dormir (args: theme)
 - gratitude_journal: Diário de gratidão
@@ -173,6 +181,21 @@ Resposta: {"tool": "cancel_alarm", "args": {"alarm_id": "all"}}
 
 Fala: "Quais alarmes eu tenho?"
 Resposta: {"tool": "list_alarms", "args": {}}
+
+Fala: "Quero fazer respiração Wim Hof"
+Resposta: {"tool": "wim_hof_breathing", "args": {"rounds": 3, "with_audio": true}}
+
+Fala: "Coloca o Wim Hof pra eu fazer"
+Resposta: {"tool": "wim_hof_breathing", "args": {"rounds": 3, "with_audio": true}}
+
+Fala: "Me ajuda a focar com pomodoro"
+Resposta: {"tool": "pomodoro_timer", "args": {"work_minutes": 25, "break_minutes": 5, "sessions": 4}}
+
+Fala: "Quero fazer pomodoro de 50 minutos"
+Resposta: {"tool": "pomodoro_timer", "args": {"work_minutes": 50, "break_minutes": 10, "sessions": 2}}
+
+Fala: "Pomodoro com Wim Hof na pausa"
+Resposta: {"tool": "pomodoro_timer", "args": {"work_minutes": 25, "break_minutes": 5, "sessions": 4, "break_activity": "wim_hof"}}
 
 Fala: "Obrigado"
 Resposta: {"tool": "none"}`

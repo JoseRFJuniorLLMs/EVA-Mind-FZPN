@@ -325,11 +325,25 @@ func NewSignalingServer(
 }
 
 func (s *SignalingServer) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
+	// 📊 Log detalhado da conexão
+	remoteAddr := r.RemoteAddr
+	userAgent := r.Header.Get("User-Agent")
+	origin := r.Header.Get("Origin")
+	connID := fmt.Sprintf("conn-%d", time.Now().UnixNano()%100000)
+
+	log.Printf("🔌 [%s] Nova conexão WebSocket", connID)
+	log.Printf("   📍 Endereço: %s", remoteAddr)
+	log.Printf("   🌐 Origin: %s", origin)
+	log.Printf("   📱 User-Agent: %s", userAgent)
+
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
+		log.Printf("❌ [%s] Falha no upgrade: %v", connID, err)
 		return
 	}
 	defer conn.Close()
+
+	log.Printf("✅ [%s] WebSocket upgrade bem-sucedido", connID)
 
 	conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 	conn.SetPongHandler(func(string) error {
@@ -337,29 +351,96 @@ func (s *SignalingServer) HandleWebSocket(w http.ResponseWriter, r *http.Request
 		return nil
 	})
 
+	// Handler de close para diagnóstico
+	conn.SetCloseHandler(func(code int, text string) error {
+		closeReason := getCloseReason(code)
+		log.Printf("🚪 [%s] Conexão fechada: código=%d (%s), motivo='%s'", connID, code, closeReason, text)
+		return nil
+	})
+
 	var currentSession *WebSocketSession
+	messageCount := 0
+	startTime := time.Now()
 
 	for {
 		messageType, message, err := conn.ReadMessage()
 		if err != nil {
+			duration := time.Since(startTime)
+			if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+				log.Printf("👋 [%s] Fechamento normal após %v (%d msgs)", connID, duration, messageCount)
+			} else if websocket.IsUnexpectedCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				log.Printf("⚠️ [%s] Fechamento inesperado após %v (%d msgs): %v", connID, duration, messageCount, err)
+			} else {
+				log.Printf("🔴 [%s] Erro de leitura após %v (%d msgs): %v", connID, duration, messageCount, err)
+			}
 			break
 		}
 
+		messageCount++
 		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 
 		switch messageType {
 		case websocket.TextMessage:
+			if messageCount <= 3 {
+				// Log das primeiras mensagens para diagnóstico
+				msgPreview := string(message)
+				if len(msgPreview) > 100 {
+					msgPreview = msgPreview[:100] + "..."
+				}
+				log.Printf("📨 [%s] Msg #%d (text): %s", connID, messageCount, msgPreview)
+			}
 			currentSession = s.handleControlMessage(conn, message, currentSession)
 
 		case websocket.BinaryMessage:
 			if currentSession != nil {
 				s.handleAudioMessage(currentSession, message)
+			} else if messageCount <= 3 {
+				log.Printf("⚠️ [%s] Áudio recebido sem sessão ativa (msg #%d)", connID, messageCount)
 			}
 		}
 	}
 
 	if currentSession != nil {
+		log.Printf("🧹 [%s] Limpando sessão: %s", connID, currentSession.ID)
 		s.cleanupSession(currentSession.ID)
+	} else {
+		log.Printf("🔍 [%s] Conexão fechou sem criar sessão (msgs recebidas: %d)", connID, messageCount)
+	}
+}
+
+// getCloseReason retorna descrição do código de fechamento WebSocket
+func getCloseReason(code int) string {
+	switch code {
+	case websocket.CloseNormalClosure:
+		return "Normal"
+	case websocket.CloseGoingAway:
+		return "GoingAway"
+	case websocket.CloseProtocolError:
+		return "ProtocolError"
+	case websocket.CloseUnsupportedData:
+		return "UnsupportedData"
+	case websocket.CloseNoStatusReceived:
+		return "NoStatusReceived"
+	case websocket.CloseAbnormalClosure:
+		return "AbnormalClosure"
+	case websocket.CloseInvalidFramePayloadData:
+		return "InvalidPayload"
+	case websocket.ClosePolicyViolation:
+		return "PolicyViolation"
+	case websocket.CloseMessageTooBig:
+		return "MessageTooBig"
+	case websocket.CloseMandatoryExtension:
+		return "MandatoryExtension"
+	case websocket.CloseInternalServerErr:
+		return "InternalServerError"
+	case websocket.CloseServiceRestart:
+		return "ServiceRestart"
+	case websocket.CloseTryAgainLater:
+		return "TryAgainLater"
+	case websocket.CloseTLSHandshake:
+		return "TLSHandshake"
+	default:
+		return fmt.Sprintf("Unknown(%d)", code)
 	}
 }
 

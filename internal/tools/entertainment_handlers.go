@@ -400,6 +400,117 @@ func (h *ToolsHandler) handleBreathingExercises(idosoID int64, args map[string]i
 	}, nil
 }
 
+// handleWimHofBreathing guia respiração Wim Hof com áudio opcional
+func (h *ToolsHandler) handleWimHofBreathing(idosoID int64, args map[string]interface{}) (map[string]interface{}, error) {
+	log.Printf("❄️ [WIM HOF] Respiração Wim Hof para Idoso %d", idosoID)
+
+	roundsFloat, _ := args["rounds"].(float64)
+	withAudio, _ := args["with_audio"].(bool)
+
+	rounds := int(roundsFloat)
+	if rounds == 0 || rounds > 4 {
+		rounds = 3 // Padrão: 3 rodadas
+	}
+
+	// Instruções do Wim Hof
+	instructions := WimHofInstructions{
+		Intro:        "Vamos fazer respiração Wim Hof. Sente-se ou deite em lugar confortável. NUNCA faça isso na água ou dirigindo.",
+		Breathing:    "Inspire profundamente pelo nariz, deixe o ar sair relaxadamente. Faça 30-40 respirações. Formigamento e tontura são normais.",
+		Retention:    "Após a última expiração, segure com pulmões vazios pelo máximo que conseguir.",
+		Recovery:     "Quando precisar respirar, inspire fundo e segure por 15 segundos.",
+		BetweenRound: "Respire normalmente por um momento, depois repita.",
+		Finish:       "Excelente! Você completou a respiração Wim Hof. Sinta a energia fluindo.",
+	}
+
+	// Notificar app para iniciar Wim Hof
+	if h.NotifyFunc != nil {
+		h.NotifyFunc(idosoID, "start_wim_hof", map[string]interface{}{
+			"rounds":       rounds,
+			"with_audio":   withAudio,
+			"audio_file":   "winhoff.mp3",
+			"instructions": instructions,
+		})
+	}
+
+	audioMsg := ""
+	if withAudio {
+		audioMsg = " Vou tocar o áudio guiado para você."
+	}
+
+	return map[string]interface{}{
+		"status":       "started",
+		"rounds":       rounds,
+		"with_audio":   withAudio,
+		"audio_file":   "winhoff.mp3",
+		"instructions": instructions,
+		"message":      fmt.Sprintf("Vamos fazer %d rodadas de respiração Wim Hof.%s %s", rounds, audioMsg, instructions.Intro),
+	}, nil
+}
+
+// WimHofInstructions estrutura de instruções do Wim Hof
+type WimHofInstructions struct {
+	Intro        string `json:"intro"`
+	Breathing    string `json:"breathing"`
+	Retention    string `json:"retention"`
+	Recovery     string `json:"recovery"`
+	BetweenRound string `json:"between_round"`
+	Finish       string `json:"finish"`
+}
+
+// handlePomodoroTimer inicia timer Pomodoro
+func (h *ToolsHandler) handlePomodoroTimer(idosoID int64, args map[string]interface{}) (map[string]interface{}, error) {
+	log.Printf("🍅 [POMODORO] Timer Pomodoro para Idoso %d", idosoID)
+
+	workFloat, _ := args["work_minutes"].(float64)
+	breakFloat, _ := args["break_minutes"].(float64)
+	sessionsFloat, _ := args["sessions"].(float64)
+	breakActivity, _ := args["break_activity"].(string)
+
+	workMinutes := int(workFloat)
+	breakMinutes := int(breakFloat)
+	sessions := int(sessionsFloat)
+
+	// Defaults Pomodoro clássico
+	if workMinutes == 0 {
+		workMinutes = 25
+	}
+	if breakMinutes == 0 {
+		breakMinutes = 5
+	}
+	if sessions == 0 {
+		sessions = 4
+	}
+
+	// Calcular tempo total
+	totalMinutes := (workMinutes + breakMinutes) * sessions
+
+	// Notificar app para iniciar Pomodoro
+	if h.NotifyFunc != nil {
+		h.NotifyFunc(idosoID, "start_pomodoro", map[string]interface{}{
+			"work_minutes":   workMinutes,
+			"break_minutes":  breakMinutes,
+			"sessions":       sessions,
+			"break_activity": breakActivity,
+			"total_minutes":  totalMinutes,
+		})
+	}
+
+	breakMsg := fmt.Sprintf("pausas de %d minutos", breakMinutes)
+	if breakActivity == "wim_hof" {
+		breakMsg = fmt.Sprintf("pausas de %d minutos com respiração Wim Hof", breakMinutes)
+	}
+
+	return map[string]interface{}{
+		"status":         "started",
+		"work_minutes":   workMinutes,
+		"break_minutes":  breakMinutes,
+		"sessions":       sessions,
+		"break_activity": breakActivity,
+		"total_minutes":  totalMinutes,
+		"message":        fmt.Sprintf("Pomodoro iniciado! %d sessões de %d minutos de foco com %s. Tempo total: ~%d minutos.", sessions, workMinutes, breakMsg, totalMinutes),
+	}, nil
+}
+
 // handleChairExercises guia exercícios na cadeira
 func (h *ToolsHandler) handleChairExercises(idosoID int64, args map[string]interface{}) (map[string]interface{}, error) {
 	log.Printf("💪 [EXERCISE] Exercícios na cadeira para Idoso %d", idosoID)

@@ -434,6 +434,12 @@ func (h *ToolsHandler) ExecuteTool(name string, args map[string]interface{}, ido
 	case "breathing_exercises":
 		return h.handleBreathingExercises(idosoID, args)
 
+	case "wim_hof_breathing":
+		return h.handleWimHofBreathing(idosoID, args)
+
+	case "pomodoro_timer":
+		return h.handlePomodoroTimer(idosoID, args)
+
 	case "chair_exercises":
 		return h.handleChairExercises(idosoID, args)
 
