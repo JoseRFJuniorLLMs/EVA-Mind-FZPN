@@ -4,14 +4,27 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"eva-mind/internal/motor/email"
 	"eva-mind/internal/brainstem/push"
+	"eva-mind/internal/motor/email"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
 	"firebase.google.com/go/v4/messaging"
 )
+
+// PendingSchedule armazena um agendamento aguardando confirmação
+type PendingSchedule struct {
+	Timestamp   string
+	Tipo        string
+	Description string
+	CreatedAt   time.Time
+}
+
+// pendingSchedules armazena agendamentos pendentes por idoso_id
+var pendingSchedules = make(map[int64]*PendingSchedule)
+var pendingMu sync.RWMutex
 
 // AlertFamily envia notificação push para cuidadores com sistema de fallback
 func AlertFamily(db *sql.DB, pushService *push.FirebaseService, emailService *email.EmailService, idosoID int64, reason string) error {
@@ -341,4 +354,178 @@ func ScheduleAppointment(db *sql.DB, idosoID int64, timestampStr, tipo, descrica
 
 	log.Printf("📅 Appointment scheduled: ID %d for Idoso %d at %s", id, idosoID, dataHora)
 	return nil
+}
+
+// StorePendingSchedule armazena um agendamento pendente aguardando confirmação
+// Retorna uma mensagem para EVA pedir confirmação ao usuário
+func StorePendingSchedule(idosoID int64, timestampStr, tipo, description string) string {
+	pendingMu.Lock()
+	defer pendingMu.Unlock()
+
+	pendingSchedules[idosoID] = &PendingSchedule{
+		Timestamp:   timestampStr,
+		Tipo:        tipo,
+		Description: description,
+		CreatedAt:   time.Now(),
+	}
+
+	// Parse para mostrar horário amigável
+	timestamp, err := time.Parse(time.RFC3339, timestampStr)
+	if err != nil {
+		timestamp, _ = time.Parse("2006-01-02 15:04:05", timestampStr)
+	}
+
+	horaFormatada := timestamp.Format("15:04")
+	log.Printf("⏳ Agendamento pendente armazenado para idoso %d: %s às %s", idosoID, description, horaFormatada)
+
+	// Retorna mensagem para EVA pedir confirmação
+	return fmt.Sprintf("[[CONFIRM_SCHEDULE:%s|%s|%s]]", horaFormatada, tipo, description)
+}
+
+// ConfirmPendingSchedule confirma ou cancela um agendamento pendente
+func ConfirmPendingSchedule(db *sql.DB, idosoID int64, confirmed bool) (bool, string, error) {
+	pendingMu.Lock()
+	defer pendingMu.Unlock()
+
+	pending, exists := pendingSchedules[idosoID]
+	if !exists {
+		log.Printf("⚠️ Nenhum agendamento pendente para idoso %d", idosoID)
+		return false, "", nil
+	}
+
+	// Remove o pendente
+	delete(pendingSchedules, idosoID)
+
+	if !confirmed {
+		log.Printf("❌ Agendamento cancelado pelo usuário: %s", pending.Description)
+		return false, pending.Description, nil
+	}
+
+	// Confirma - executa o agendamento
+	log.Printf("✅ Agendamento confirmado: %s", pending.Description)
+
+	err := ScheduleAppointment(db, idosoID, pending.Timestamp, pending.Tipo, pending.Description)
+	if err != nil {
+		return false, pending.Description, err
+	}
+
+	return true, pending.Description, nil
+}
+
+// HasPendingSchedule verifica se há agendamento pendente para um idoso
+func HasPendingSchedule(idosoID int64) bool {
+	pendingMu.RLock()
+	defer pendingMu.RUnlock()
+	_, exists := pendingSchedules[idosoID]
+	return exists
+}
+
+// GetPendingSchedule retorna o agendamento pendente de um idoso
+func GetPendingSchedule(idosoID int64) *PendingSchedule {
+	pendingMu.RLock()
+	defer pendingMu.RUnlock()
+	return pendingSchedules[idosoID]
+}
+
+// CleanExpiredPendingSchedules limpa agendamentos pendentes expirados (mais de 5 minutos)
+func CleanExpiredPendingSchedules() {
+	pendingMu.Lock()
+	defer pendingMu.Unlock()
+
+	now := time.Now()
+	for id, pending := range pendingSchedules {
+		if now.Sub(pending.CreatedAt) > 5*time.Minute {
+			log.Printf("🧹 Limpando agendamento pendente expirado para idoso %d", id)
+			delete(pendingSchedules, id)
+		}
+	}
+}
+
+// InteracaoRisco representa uma interação perigosa entre medicamentos
+type InteracaoRisco struct {
+	MedicamentoA     string
+	MedicamentoB     string
+	NivelPerigo      string // MODERADO, GRAVE, FATAL
+	MensagemAlerta   string
+	AcaoRecomendada  string
+}
+
+// CheckMedicationInteractions verifica se um medicamento tem interações perigosas
+// com os medicamentos atuais do idoso
+func CheckMedicationInteractions(db *sql.DB, idosoID int64, novoMedicamento string) ([]InteracaoRisco, error) {
+	log.Printf("🔍 [SAFETY] Verificando interações para: %s (Idoso: %d)", novoMedicamento, idosoID)
+
+	query := `
+		SELECT
+			m_atual.nome AS medicamento_atual,
+			ir.nivel_perigo,
+			ir.mensagem_alerta,
+			COALESCE(ir.acao_recomendada, 'Consultar médico imediatamente') AS acao_recomendada
+		FROM medicamentos m_atual
+		JOIN catalogo_farmaceutico cf_atual ON m_atual.catalogo_ref_id = cf_atual.id
+		JOIN catalogo_farmaceutico cf_novo ON (
+			LOWER(cf_novo.nome_comercial) LIKE LOWER('%' || $2 || '%')
+			OR LOWER(cf_novo.principio_ativo) LIKE LOWER('%' || $2 || '%')
+		)
+		JOIN interacoes_risco ir ON (
+			(ir.catalogo_id_a = cf_atual.id AND ir.catalogo_id_b = cf_novo.id)
+			OR (ir.catalogo_id_a = cf_novo.id AND ir.catalogo_id_b = cf_atual.id)
+		)
+		WHERE m_atual.idoso_id = $1
+		  AND m_atual.ativo = true
+		  AND ir.nivel_perigo IN ('GRAVE', 'FATAL')
+		ORDER BY
+			CASE ir.nivel_perigo
+				WHEN 'FATAL' THEN 1
+				WHEN 'GRAVE' THEN 2
+				ELSE 3
+			END
+	`
+
+	rows, err := db.Query(query, idosoID, novoMedicamento)
+	if err != nil {
+		log.Printf("⚠️ [SAFETY] Erro ao verificar interações: %v", err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	var interacoes []InteracaoRisco
+	for rows.Next() {
+		var ir InteracaoRisco
+		ir.MedicamentoB = novoMedicamento
+		if err := rows.Scan(&ir.MedicamentoA, &ir.NivelPerigo, &ir.MensagemAlerta, &ir.AcaoRecomendada); err != nil {
+			log.Printf("⚠️ [SAFETY] Erro ao ler interação: %v", err)
+			continue
+		}
+		interacoes = append(interacoes, ir)
+		log.Printf("🚨 [SAFETY] INTERAÇÃO %s DETECTADA: %s + %s", ir.NivelPerigo, ir.MedicamentoA, ir.MedicamentoB)
+	}
+
+	if len(interacoes) > 0 {
+		log.Printf("⛔ [SAFETY] %d interações perigosas encontradas!", len(interacoes))
+	} else {
+		log.Printf("✅ [SAFETY] Nenhuma interação perigosa detectada")
+	}
+
+	return interacoes, nil
+}
+
+// FormatInteractionWarning formata alerta de interação para EVA falar
+func FormatInteractionWarning(interacoes []InteracaoRisco) string {
+	if len(interacoes) == 0 {
+		return ""
+	}
+
+	// Priorizar FATAL
+	for _, ir := range interacoes {
+		if ir.NivelPerigo == "FATAL" {
+			return fmt.Sprintf("[[BLOCKED:FATAL]] ATENÇÃO! Não posso agendar %s porque pode causar uma interação FATAL com %s que você já toma. %s. %s",
+				ir.MedicamentoB, ir.MedicamentoA, ir.MensagemAlerta, ir.AcaoRecomendada)
+		}
+	}
+
+	// Se não tem FATAL, pegar GRAVE
+	ir := interacoes[0]
+	return fmt.Sprintf("[[BLOCKED:GRAVE]] Cuidado! %s pode ter uma interação GRAVE com %s. %s. Recomendo: %s",
+		ir.MedicamentoB, ir.MedicamentoA, ir.MensagemAlerta, ir.AcaoRecomendada)
 }

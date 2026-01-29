@@ -54,6 +54,7 @@ FERRAMENTAS DISPONÍVEIS:
 - alert_family: Alertar família em emergência (args: reason, severity)
 - confirm_medication: Confirmar medicamento tomado (args: medication_name)
 - schedule_appointment: Agendar compromisso/lembrete (args: timestamp, type, description)
+- confirm_schedule: Confirmar agendamento pendente (args: confirmed)
 - call_family_webrtc: Ligar para família
 - call_central_webrtc: Ligar para central
 - call_doctor_webrtc: Ligar para médico
@@ -74,6 +75,14 @@ FERRAMENTAS DISPONÍVEIS:
 - poetry_generator: Criar um poema personalizado (args: theme)
 - learn_new_language: Iniciar lição de idioma (args: language)
 
+⚠️ REGRA CRÍTICA PARA AGENDAMENTOS:
+- schedule_appointment REQUER CONFIRMAÇÃO EXPLÍCITA do usuário!
+- Quando o idoso pedir para agendar algo (remédio, consulta, lembrete), retorne:
+  {"tool": "pending_schedule", "args": {...}}
+  NÃO use schedule_appointment diretamente.
+- Só use schedule_appointment quando o usuário CONFIRMAR explicitamente (ex: "sim", "pode agendar", "confirma", "isso mesmo").
+- Use confirm_schedule quando o usuário confirmar ou negar um agendamento pendente.
+
 Se detectar uma intenção que requer ferramenta, responda APENAS com JSON:
 {"tool": "nome_da_tool", "args": {...}}
 
@@ -81,7 +90,13 @@ Se NÃO detectar nenhuma intenção de ferramenta, responda: {"tool": "none"}
 
 Exemplos:
 Fala: "Me lembre de tomar remédio às 14h"
-Resposta: {"tool": "schedule_appointment", "args": {"timestamp": "2026-01-13T14:00:00Z", "type": "medicamento", "description": "Tomar remédio"}}
+Resposta: {"tool": "pending_schedule", "args": {"timestamp": "2026-01-13T14:00:00Z", "type": "medicamento", "description": "Tomar remédio"}}
+
+Fala: "Sim, pode agendar" (após EVA perguntar se quer agendar)
+Resposta: {"tool": "confirm_schedule", "args": {"confirmed": true}}
+
+Fala: "Não, deixa pra lá"
+Resposta: {"tool": "confirm_schedule", "args": {"confirmed": false}}
 
 Fala: "Estou com dor no peito"
 Resposta: {"tool": "alert_family", "args": {"reason": "Paciente relatou dor no peito", "severity": "critica"}}

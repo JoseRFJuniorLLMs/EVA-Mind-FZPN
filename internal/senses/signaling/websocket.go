@@ -21,6 +21,7 @@ import (
 	"eva-mind/internal/brainstem/infrastructure/vector"
 	"eva-mind/internal/cortex/gemini"
 	"eva-mind/internal/cortex/personality"
+	"eva-mind/internal/persona"
 	"eva-mind/internal/hippocampus/knowledge"
 	"eva-mind/internal/hippocampus/memory"
 	"eva-mind/internal/hippocampus/stories"
@@ -111,6 +112,7 @@ type SignalingServer struct {
 	storiesRepo        *stories.Repository
 	personalityService *personality.PersonalityService
 	cortex             *gemini.ToolsClient // ✅ NOVO: Phase 10 Cortex
+	personaManager     *persona.PersonaManager // ✅ NOVO: Multi-Persona System
 
 	// Services for Memory Saver
 	qdrantClient     *vector.QdrantClient
@@ -185,6 +187,10 @@ func NewSignalingServer(
 	// ✅ NOVO: Inicializar Cortex (Tools Intelligence)
 	server.cortex = gemini.NewToolsClient(cfg)
 	log.Println("🧠 Signaling: Cortex Intelligence initialized for Phase 10")
+
+	// ✅ NOVO: Inicializar PersonaManager (Multi-Persona System)
+	server.personaManager = persona.NewPersonaManager(db)
+	log.Println("🎭 Signaling: PersonaManager initialized for Multi-Persona System")
 
 	// ✅ NOVO: Inicializar Knowledge Service (Neo4j Thinking)
 	neo4jClient, err := graph.NewNeo4jClient(cfg)
@@ -1193,7 +1199,7 @@ func (s *SignalingServer) BuildInstructions(idosoID int64) string {
 
 	// ✅ Campos fixos para evitar crash/missing
 	var mobilidade string = "Não informada"
-	var limitacoesVisuais, familiarPrincipal, contatoEmergencia, medicoResponsavel, notasGerais sql.NullString
+	var limitacoesVisuais, familiarPrincipal, medicoResponsavel, notasGerais sql.NullString
 	var limitacoesAuditivas, usaAparelhoAuditivo, ambienteRuidoso sql.NullBool
 
 	err := db.QueryRow(query, idosoID).Scan(
@@ -1281,17 +1287,83 @@ func (s *SignalingServer) BuildInstructions(idosoID int64) string {
 		log.Printf("⚠️ Erro ao buscar agenda: %v", errAgenda)
 	}
 
+	// ✅ NOVO: Buscar rede de apoio (cuidadores/família/médico)
+	redeApoioQuery := `
+		SELECT
+			c.nome,
+			c.telefone,
+			c.email,
+			c.tipo,
+			c.cpf,
+			COALESCE(ci.prioridade, 99) as prioridade,
+			COALESCE(ci.parentesco, c.tipo) as parentesco
+		FROM cuidadores c
+		LEFT JOIN cuidador_idoso ci ON c.id = ci.cuidador_id AND ci.idoso_id = $1
+		WHERE ci.idoso_id = $1 OR c.tipo IN ('medico', 'responsavel')
+		ORDER BY prioridade ASC
+	`
+	rowsRede, errRede := db.Query(redeApoioQuery, idosoID)
+	type ContatoRede struct {
+		Nome       string
+		Telefone   sql.NullString
+		Email      sql.NullString
+		Tipo       string
+		CPF        sql.NullString
+		Prioridade int
+		Parentesco string
+	}
+	var redeApoio []ContatoRede
+	if errRede == nil {
+		defer rowsRede.Close()
+		for rowsRede.Next() {
+			var c ContatoRede
+			if err := rowsRede.Scan(&c.Nome, &c.Telefone, &c.Email, &c.Tipo, &c.CPF, &c.Prioridade, &c.Parentesco); err == nil {
+				redeApoio = append(redeApoio, c)
+			}
+		}
+		log.Printf("📞 [REDE APOIO] %d contatos encontrados para idoso %d", len(redeApoio), idosoID)
+	} else {
+		log.Printf("⚠️ Erro ao buscar rede de apoio: %v", errRede)
+	}
+
 	// 📝 DEBUG EXAUSTIVO DOS DADOS RECUPERADOS
 	log.Printf("📋 [DADOS PACIENTE] Nome: %s, Idade: %d", nome, idade)
 	log.Printf("   💊 Meds Relacionais: %d encontrados", len(medsList))
 	log.Printf("   🥼 Condições: %s", getString(condicoesMedicas, "Nenhuma"))
 
-	// 2. Buscar Template Base
-	templateQuery := `SELECT template FROM prompt_templates WHERE nome = 'eva_base_v2' AND ativo = true LIMIT 1`
+	// 2. Buscar Persona Ativa e seu Template
 	var template string
-	if err := db.QueryRow(templateQuery).Scan(&template); err != nil {
-		log.Printf("⚠️ Template não encontrado, usando padrão.")
-		template = `Você é a EVA, assistente de saúde virtual para {{nome_idoso}}.`
+	var personaCode string = "companion" // Default
+
+	if s.personaManager != nil {
+		// Verificar se tem persona ativa, se não, ativar companion como default
+		session, _ := s.personaManager.GetCurrentPersona(idosoID)
+		if session == nil {
+			log.Printf("🎭 [PERSONA] Nenhuma persona ativa, ativando 'companion' como padrão")
+			session, _ = s.personaManager.ActivatePersona(idosoID, "companion", "auto_default", "system")
+		}
+
+		if session != nil {
+			personaCode = session.PersonaCode
+		}
+
+		// Buscar template da persona ativa
+		personaPrompt, err := s.personaManager.GetSystemInstructions(idosoID)
+		if err == nil && personaPrompt != "" {
+			template = personaPrompt
+			log.Printf("🎭 [PERSONA] Usando persona '%s' para idoso %d", personaCode, idosoID)
+		} else {
+			log.Printf("⚠️ [PERSONA] Erro ao buscar persona: %v, usando fallback", err)
+		}
+	}
+
+	// Fallback: Buscar template base se persona não disponível
+	if template == "" {
+		templateQuery := `SELECT template FROM prompt_templates WHERE nome = 'eva_base_v2' AND ativo = true LIMIT 1`
+		if err := db.QueryRow(templateQuery).Scan(&template); err != nil {
+			log.Printf("⚠️ Template não encontrado, usando padrão.")
+			template = `Você é a EVA, assistente de saúde virtual para {{nome_idoso}}.`
+		}
 	}
 
 	// 3. Montar "Dossiê do Paciente" (Texto Completo)
@@ -1342,10 +1414,34 @@ func (s *SignalingServer) BuildInstructions(idosoID int64) string {
 		dossier += "Nenhum compromisso agendado no futuro.\n"
 	}
 
-	dossier += "\n📞 --- REDE DE APOIO ---\n"
-	dossier += fmt.Sprintf("Familiar: %s\n", getString(familiarPrincipal, "Não informado"))
-	dossier += fmt.Sprintf("Emergência: %s\n", getString(contatoEmergencia, "Não informado"))
-	dossier += fmt.Sprintf("Médico: %s\n", getString(medicoResponsavel, "Não informado"))
+	dossier += "\n📞 --- REDE DE APOIO (CONTATOS PARA CHAMADAS) ---\n"
+	if len(redeApoio) > 0 {
+		dossier += "O paciente tem os seguintes contatos cadastrados que podem ser acionados:\n"
+		for _, c := range redeApoio {
+			tipoLabel := c.Parentesco
+			if tipoLabel == "" {
+				tipoLabel = c.Tipo
+			}
+			telefone := "não informado"
+			if c.Telefone.Valid && c.Telefone.String != "" {
+				telefone = c.Telefone.String
+			}
+			cpfInfo := ""
+			if c.CPF.Valid && c.CPF.String != "" {
+				cpfInfo = fmt.Sprintf(" [CPF: %s]", c.CPF.String)
+			}
+			dossier += fmt.Sprintf("- %s (%s): Tel %s%s\n", c.Nome, tipoLabel, telefone, cpfInfo)
+		}
+		dossier += "\nINSTRUÇÃO PARA CHAMADAS:\n"
+		dossier += "- Se o idoso pedir para 'ligar para família/filha/filho', use call_family_webrtc\n"
+		dossier += "- Se pedir para 'ligar para o médico/doutor', use call_doctor_webrtc\n"
+		dossier += "- Se pedir para 'ligar para o cuidador', use call_caregiver_webrtc\n"
+		dossier += "- Se for emergência, use call_central_webrtc\n"
+	} else {
+		dossier += "Nenhum contato de apoio cadastrado.\n"
+		dossier += fmt.Sprintf("Familiar (legado): %s\n", getString(familiarPrincipal, "Não informado"))
+		dossier += fmt.Sprintf("Médico (legado): %s\n", getString(medicoResponsavel, "Não informado"))
+	}
 
 	dossier += "\n📝 --- OUTRAS NOTAS ---\n"
 	dossier += fmt.Sprintf("Notas Gerais: %s\n", getString(notasGerais, ""))

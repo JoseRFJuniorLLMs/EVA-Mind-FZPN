@@ -52,7 +52,76 @@ func (h *ToolsHandler) ExecuteTool(name string, args map[string]interface{}, ido
 		}
 		return map[string]interface{}{"status": "sucesso", "medicamento": medicationName}, nil
 
+	case "pending_schedule":
+		// Armazena agendamento pendente e retorna instrução para EVA pedir confirmação
+		timestamp, _ := args["timestamp"].(string)
+		tipo, _ := args["type"].(string)
+		description, _ := args["description"].(string)
+
+		// 🛡️ SAFETY CHECK: Verificar interações medicamentosas ANTES de agendar
+		if tipo == "medicamento" || tipo == "remedio" || tipo == "medication" {
+			interacoes, err := actions.CheckMedicationInteractions(h.db.Conn, idosoID, description)
+			if err != nil {
+				log.Printf("⚠️ [SAFETY] Erro ao verificar interações: %v", err)
+				// Continua mesmo com erro - melhor agendar do que bloquear por falha técnica
+			} else if len(interacoes) > 0 {
+				// 🚨 BLOQUEAR AGENDAMENTO - Interação perigosa detectada
+				warning := actions.FormatInteractionWarning(interacoes)
+				log.Printf("⛔ [SAFETY] AGENDAMENTO BLOQUEADO: %s", warning)
+
+				// Notificar cuidador/família sobre tentativa bloqueada
+				alertMsg := fmt.Sprintf("EVA bloqueou agendamento de %s para idoso %d devido a interação medicamentosa: %s",
+					description, idosoID, interacoes[0].NivelPerigo)
+				go actions.AlertFamilyWithSeverity(h.db.Conn, h.pushService, h.emailService, idosoID, alertMsg, "alta")
+
+				return map[string]interface{}{
+					"status":       "bloqueado",
+					"blocked":      true,
+					"reason":       "interacao_medicamentosa",
+					"nivel_perigo": interacoes[0].NivelPerigo,
+					"warning":      warning,
+					"message":      "BLOQUEADO: Diga ao usuário que não pode agendar este medicamento e explique o motivo",
+				}, nil
+			}
+		}
+
+		confirmMsg := actions.StorePendingSchedule(idosoID, timestamp, tipo, description)
+		return map[string]interface{}{
+			"status":              "aguardando_confirmacao",
+			"pending":             true,
+			"description":         description,
+			"confirmation_prompt": confirmMsg,
+			"message":             "Pergunte ao usuário se ele confirma o agendamento antes de prosseguir",
+		}, nil
+
+	case "confirm_schedule":
+		// Confirma ou cancela agendamento pendente
+		confirmed, _ := args["confirmed"].(bool)
+		success, desc, err := actions.ConfirmPendingSchedule(h.db.Conn, idosoID, confirmed)
+		if err != nil {
+			return map[string]interface{}{"error": err.Error()}, nil
+		}
+		if !success && desc == "" {
+			return map[string]interface{}{
+				"status":  "nenhum_pendente",
+				"message": "Não há agendamento pendente para confirmar",
+			}, nil
+		}
+		if confirmed && success {
+			return map[string]interface{}{
+				"status":      "agendado",
+				"description": desc,
+				"message":     "Agendamento confirmado e salvo com sucesso",
+			}, nil
+		}
+		return map[string]interface{}{
+			"status":      "cancelado",
+			"description": desc,
+			"message":     "Agendamento cancelado pelo usuário",
+		}, nil
+
 	case "schedule_appointment":
+		// Agendamento direto (sem confirmação) - mantido para compatibilidade
 		timestamp, _ := args["timestamp"].(string)
 		tipo, _ := args["type"].(string)
 		description, _ := args["description"].(string)
@@ -63,11 +132,24 @@ func (h *ToolsHandler) ExecuteTool(name string, args map[string]interface{}, ido
 		return map[string]interface{}{"status": "sucesso", "agendamento": description}, nil
 
 	case "call_family_webrtc", "call_doctor_webrtc", "call_caregiver_webrtc", "call_central_webrtc":
+		// Buscar CPF do contato baseado no tipo de chamada
+		targetCPF, targetName, err := h.getCallTargetCPF(idosoID, name)
+		if err != nil {
+			log.Printf("⚠️ [CALL] Erro ao buscar contato: %v", err)
+			return map[string]interface{}{"error": fmt.Sprintf("Não encontrei contato para %s", name)}, nil
+		}
+
 		if h.NotifyFunc != nil {
-			h.NotifyFunc(idosoID, "initiate_call", map[string]string{
-				"target": name,
+			h.NotifyFunc(idosoID, "initiate_call", map[string]interface{}{
+				"target":      name,
+				"target_cpf":  targetCPF,
+				"target_name": targetName,
 			})
-			return map[string]interface{}{"status": "iniciando chamada", "alvo": name}, nil
+			return map[string]interface{}{
+				"status":      "iniciando chamada",
+				"alvo":        name,
+				"target_name": targetName,
+			}, nil
 		}
 		return map[string]interface{}{"error": "serviço de sinalização não disponível"}, nil
 
@@ -558,4 +640,56 @@ func (h *ToolsHandler) handleApplyCSSRS(idosoID int64, triggerPhrase string, sta
 			},
 		},
 	}, nil
+}
+
+// getCallTargetCPF busca o CPF do contato baseado no tipo de chamada
+func (h *ToolsHandler) getCallTargetCPF(idosoID int64, callType string) (string, string, error) {
+	// Mapear tipo de chamada para tipo de cuidador
+	var tipoFilter string
+	switch callType {
+	case "call_family_webrtc":
+		tipoFilter = "familiar"
+	case "call_doctor_webrtc":
+		tipoFilter = "medico"
+	case "call_caregiver_webrtc":
+		tipoFilter = "cuidador"
+	case "call_central_webrtc":
+		tipoFilter = "central"
+	default:
+		tipoFilter = "familiar" // fallback
+	}
+
+	// Query para buscar o contato com prioridade mais alta do tipo solicitado
+	query := `
+		SELECT c.cpf, c.nome
+		FROM cuidadores c
+		LEFT JOIN cuidador_idoso ci ON c.id = ci.cuidador_id AND ci.idoso_id = $1
+		WHERE (ci.idoso_id = $1 OR c.tipo = 'responsavel')
+		  AND (c.tipo = $2 OR ci.parentesco = $2 OR c.tipo ILIKE '%' || $2 || '%')
+		  AND c.cpf IS NOT NULL AND c.cpf != ''
+		ORDER BY COALESCE(ci.prioridade, 99) ASC
+		LIMIT 1
+	`
+
+	var cpf, nome string
+	err := h.db.Conn.QueryRow(query, idosoID, tipoFilter).Scan(&cpf, &nome)
+	if err != nil {
+		// Fallback: buscar qualquer contato ativo se não encontrar do tipo específico
+		fallbackQuery := `
+			SELECT c.cpf, c.nome
+			FROM cuidadores c
+			JOIN cuidador_idoso ci ON c.id = ci.cuidador_id
+			WHERE ci.idoso_id = $1
+			  AND c.cpf IS NOT NULL AND c.cpf != ''
+			ORDER BY ci.prioridade ASC
+			LIMIT 1
+		`
+		err = h.db.Conn.QueryRow(fallbackQuery, idosoID).Scan(&cpf, &nome)
+		if err != nil {
+			return "", "", fmt.Errorf("nenhum contato encontrado para %s", callType)
+		}
+	}
+
+	log.Printf("📞 [CALL] Contato encontrado: %s (CPF: %s) para %s", nome, cpf, callType)
+	return cpf, nome, nil
 }

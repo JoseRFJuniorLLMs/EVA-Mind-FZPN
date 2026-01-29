@@ -9,6 +9,7 @@ import (
 )
 
 // AlertFamilyWithSeverity cria um alerta e notifica a família
+// NOTA: Versão legada - usar motor/actions.AlertFamilyWithSeverity de preferência
 func AlertFamilyWithSeverity(db *sql.DB, pushService *push.FirebaseService, idosoID int64, reason, severity string) error {
 	log.Printf("🚨 Alerta de Família: %s (Severidade: %s)", reason, severity)
 
@@ -47,6 +48,7 @@ func AlertFamilyWithSeverity(db *sql.DB, pushService *push.FirebaseService, idos
 }
 
 // ConfirmMedication registra a confirmação de medicamento
+// NOTA: Versão legada - usar motor/actions.ConfirmMedication de preferência
 func ConfirmMedication(db *sql.DB, pushService *push.FirebaseService, idosoID int64, medName string) error {
 	log.Printf("💊 Medicamento confirmado: %s", medName)
 
@@ -64,6 +66,7 @@ func ConfirmMedication(db *sql.DB, pushService *push.FirebaseService, idosoID in
 }
 
 // ScheduleAppointment agenda um compromisso
+// NOTA: Versão legada - usar motor/actions.ScheduleAppointment de preferência
 func ScheduleAppointment(db *sql.DB, idosoID int64, timestampStr, tipo, description string) error {
 	log.Printf("📅 Agendamento solicitado: %s - %s em %s", tipo, description, timestampStr)
 
