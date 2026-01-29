@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/joho/godotenv"
 	"github.com/qdrant/go-client/qdrant"
 )
 
@@ -166,13 +167,42 @@ func main() {
 	log.Println("🌱 EVA Wisdom Seeder - Base de Conhecimento (3072 dims)")
 	log.Println("═══════════════════════════════════════════════════════════")
 
+	// Carregar .env explicitamente (pode estar em diretório diferente com go run)
+	if err := godotenv.Load(); err != nil {
+		log.Printf("⚠️ Não encontrou .env no diretório atual, tentando caminhos alternativos...")
+		// Tenta caminhos comuns
+		paths := []string{".env", "../.env", "../../.env"}
+		loaded := false
+		for _, p := range paths {
+			if err := godotenv.Load(p); err == nil {
+				log.Printf("✅ Carregado .env de: %s", p)
+				loaded = true
+				break
+			}
+		}
+		if !loaded {
+			log.Println("⚠️ .env não encontrado, usando variáveis de ambiente do sistema")
+		}
+	}
+
+	// Debug: mostrar diretório atual
+	cwd, _ := os.Getwd()
+	log.Printf("📂 Diretório atual: %s", cwd)
+
 	// Carregar Config
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("❌ Config error: %v", err)
 	}
-	if cfg.GoogleAPIKey == "" {
-		log.Fatal("❌ GoogleAPIKey não encontrada no .env")
+
+	// Verificar credenciais (Vertex AI token tem prioridade)
+	vertexToken := os.Getenv("VERTEX_ACCESS_TOKEN")
+	if vertexToken != "" {
+		log.Printf("🔐 Vertex AI Token: %s...%s (len=%d)", vertexToken[:8], vertexToken[len(vertexToken)-4:], len(vertexToken))
+	} else if cfg.GoogleAPIKey != "" {
+		log.Printf("🔑 API Key: %s...%s (len=%d)", cfg.GoogleAPIKey[:8], cfg.GoogleAPIKey[len(cfg.GoogleAPIKey)-4:], len(cfg.GoogleAPIKey))
+	} else {
+		log.Fatal("❌ Nenhuma credencial encontrada (VERTEX_ACCESS_TOKEN ou GOOGLE_API_KEY)")
 	}
 
 	// Conectar Qdrant (usa config do .env)
@@ -191,8 +221,8 @@ func main() {
 		log.Fatalf("❌ Erro ao conectar Qdrant: %v", err)
 	}
 
-	// Criar embedder
-	embedder := memory.NewEmbeddingService(cfg.GoogleAPIKey)
+	// Criar embedder (detecta automaticamente Vertex AI ou API Key)
+	embedder := memory.NewEmbeddingServiceFromEnv()
 	ctx := context.Background()
 
 	// Processar argumentos
@@ -292,8 +322,9 @@ func seedSource(ctx context.Context, qClient *vector.QdrantClient, embedder *mem
 		return
 	}
 
-	// Criar coleção se não existir
-	err = qClient.CreateCollection(ctx, ws.Collection, 3072)
+	// Criar coleção com dimensão correta (768 para Vertex AI)
+	dim := uint64(embedder.GetExpectedDimension())
+	err = qClient.CreateCollection(ctx, ws.Collection, dim)
 	if err != nil {
 		log.Printf("⚠️ [%s] Coleção já existe ou erro: %v", ws.Name, err)
 	}

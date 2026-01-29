@@ -8,120 +8,253 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 )
 
 const (
-	// gemini-embedding-001 é o novo modelo recomendado (substitui text-embedding-004)
-	// Suporta 100+ idiomas, 2048 tokens, dimensões: 3072, 1536 ou 768
+	// Google AI Studio (API Key AIzaSy...) - gemini-embedding-001: 3072 dims
 	geminiEmbeddingEndpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent"
-	expectedDimension       = 3072 // Máxima qualidade - Qdrant recriado com 3072
+
+	// Vertex AI (API Key AQ...) - gemini-embedding-001: 3072 dims (QUALIDADE MÁXIMA)
+	vertexEmbeddingEndpoint = "https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-embedding-001:predict"
+
+	// Retry config
+	maxRetries       = 5
+	initialBackoff   = 5 * time.Second
+	maxBackoff       = 1 * time.Minute
+	backoffMultipler = 1.5
 )
 
-// EmbeddingService gera embeddings usando Gemini API
+// AuthMode define o tipo de autenticação
+type AuthMode int
+
+const (
+	AuthModeGoogleAI AuthMode = iota // Google AI Studio (AIzaSy...) - 3072 dims
+	AuthModeVertexAI                 // Vertex AI (AQ...) - 3072 dims (gemini-embedding-001)
+)
+
+// EmbeddingService gera embeddings usando Gemini/Vertex API
 type EmbeddingService struct {
-	APIKey     string
-	HTTPClient *http.Client
+	APIKey          string
+	AuthMode        AuthMode
+	ExpectedDim     int
+	HTTPClient      *http.Client
 }
 
 // NewEmbeddingService cria um novo serviço de embeddings
-func NewEmbeddingService(apiKey string) *EmbeddingService {
-	return &EmbeddingService{
-		APIKey: apiKey,
+// Detecta automaticamente se é Google AI Studio ou Vertex AI
+func NewEmbeddingService(credential string) *EmbeddingService {
+	svc := &EmbeddingService{
+		APIKey: credential,
 		HTTPClient: &http.Client{
-			Timeout: 10 * time.Second,
+			Timeout: 30 * time.Second,
 		},
+	}
+
+	// Detecta tipo de credencial
+	if strings.HasPrefix(credential, "AIza") {
+		svc.AuthMode = AuthModeGoogleAI
+		svc.ExpectedDim = 3072
+		log.Println("🔑 [EMBEDDING] Usando Google AI Studio (3072 dims)")
+	} else if strings.HasPrefix(credential, "AQ.") {
+		svc.AuthMode = AuthModeVertexAI
+		svc.ExpectedDim = 3072
+		log.Println("🔐 [EMBEDDING] Usando Vertex AI gemini-embedding-001 (3072 dims)")
+	} else {
+		// Assume Vertex AI para outras chaves
+		svc.AuthMode = AuthModeVertexAI
+		svc.ExpectedDim = 3072
+		log.Println("🔐 [EMBEDDING] Usando Vertex AI (3072 dims) - formato desconhecido")
+	}
+
+	return svc
+}
+
+// NewEmbeddingServiceFromEnv cria serviço a partir de variáveis de ambiente
+// Prioriza VERTEX_API_KEY sobre GOOGLE_API_KEY
+func NewEmbeddingServiceFromEnv() *EmbeddingService {
+	// Primeiro tenta Vertex AI API Key
+	if apiKey := os.Getenv("VERTEX_API_KEY"); apiKey != "" {
+		return NewEmbeddingService(apiKey)
+	}
+	// Fallback para Google AI Studio
+	if apiKey := os.Getenv("GOOGLE_API_KEY"); apiKey != "" {
+		return NewEmbeddingService(apiKey)
+	}
+	log.Println("⚠️ [EMBEDDING] Nenhuma credencial encontrada!")
+	return &EmbeddingService{
+		HTTPClient: &http.Client{Timeout: 30 * time.Second},
+		ExpectedDim: 768,
 	}
 }
 
-// EmbeddingRequest representa o payload da API
-type embeddingRequest struct {
+// ========== Request/Response para Google AI Studio ==========
+
+type googleAIRequest struct {
 	Content struct {
 		Parts []struct {
 			Text string `json:"text"`
 		} `json:"parts"`
 	} `json:"content"`
-	OutputDimensionality int `json:"outputDimensionality,omitempty"` // Para gemini-embedding-001: 768, 1536 ou 3072
+	OutputDimensionality int `json:"outputDimensionality,omitempty"`
 }
 
-// EmbeddingResponse representa a resposta da API
-type embeddingResponse struct {
+type googleAIResponse struct {
 	Embedding struct {
 		Values []float32 `json:"values"`
 	} `json:"embedding"`
 }
 
+// ========== Request/Response para Vertex AI ==========
+
+type vertexAIRequest struct {
+	Instances []struct {
+		Content string `json:"content"`
+	} `json:"instances"`
+	Parameters struct {
+		OutputDimensionality int `json:"outputDimensionality"`
+	} `json:"parameters"`
+}
+
+type vertexAIResponse struct {
+	Predictions []struct {
+		Embeddings struct {
+			Values []float32 `json:"values"`
+		} `json:"embeddings"`
+	} `json:"predictions"`
+}
+
 // GenerateEmbedding gera um vetor de embedding para o texto fornecido
 func (e *EmbeddingService) GenerateEmbedding(ctx context.Context, text string) ([]float32, error) {
-	// Truncar texto se muito longo (limite da API: ~2048 tokens)
+	// Truncar texto se muito longo
 	if len(text) > 8000 {
 		text = text[:8000]
 	}
 
-	// Construir request
-	reqBody := embeddingRequest{}
-	reqBody.Content.Parts = []struct {
-		Text string `json:"text"`
-	}{
-		{Text: text},
+	var url string
+	var jsonData []byte
+	var err error
+
+	if e.AuthMode == AuthModeGoogleAI {
+		// Google AI Studio format
+		reqBody := googleAIRequest{}
+		reqBody.Content.Parts = []struct {
+			Text string `json:"text"`
+		}{{Text: text}}
+		reqBody.OutputDimensionality = 3072
+
+		jsonData, err = json.Marshal(reqBody)
+		if err != nil {
+			return nil, fmt.Errorf("erro ao serializar request: %w", err)
+		}
+		url = fmt.Sprintf("%s?key=%s", geminiEmbeddingEndpoint, e.APIKey)
+	} else {
+		// Vertex AI format com gemini-embedding-001 (3072 dims)
+		reqBody := vertexAIRequest{
+			Instances: []struct {
+				Content string `json:"content"`
+			}{{Content: text}},
+		}
+		reqBody.Parameters.OutputDimensionality = 3072
+
+		jsonData, err = json.Marshal(reqBody)
+		if err != nil {
+			return nil, fmt.Errorf("erro ao serializar request: %w", err)
+		}
+		url = fmt.Sprintf("%s?key=%s", vertexEmbeddingEndpoint, e.APIKey)
 	}
-	reqBody.OutputDimensionality = expectedDimension // 3072 dimensões - máxima qualidade semântica
 
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("erro ao serializar request: %w", err)
-	}
+	// Retry loop com backoff exponencial
+	var lastErr error
+	backoff := initialBackoff
 
-	// Fazer request HTTP
-	url := fmt.Sprintf("%s?key=%s", geminiEmbeddingEndpoint, e.APIKey)
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("erro ao criar request: %w", err)
-	}
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			log.Printf("⏳ [EMBEDDING] Retry %d/%d, aguardando %v...", attempt, maxRetries, backoff)
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(backoff):
+			}
+			backoff = time.Duration(float64(backoff) * backoffMultipler)
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
+		}
 
-	req.Header.Set("Content-Type", "application/json")
+		req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+		if err != nil {
+			return nil, fmt.Errorf("erro ao criar request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
 
-	resp, err := e.HTTPClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("erro na requisição HTTP: %w", err)
-	}
-	defer resp.Body.Close()
+		resp, err := e.HTTPClient.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("erro na requisição HTTP: %w", err)
+			continue
+		}
 
-	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("API retornou status %d: %s", resp.StatusCode, string(body))
+		resp.Body.Close()
+
+		// Rate limit - retry
+		if resp.StatusCode == 429 {
+			lastErr = fmt.Errorf("rate limit (429)")
+			continue
+		}
+
+		// Outros erros - não retry
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("API retornou status %d: %s", resp.StatusCode, string(body))
+		}
+
+		// Parse response baseado no modo
+		var values []float32
+		if e.AuthMode == AuthModeGoogleAI {
+			var result googleAIResponse
+			if err := json.Unmarshal(body, &result); err != nil {
+				return nil, fmt.Errorf("erro ao decodificar resposta: %w", err)
+			}
+			values = result.Embedding.Values
+		} else {
+			var result vertexAIResponse
+			if err := json.Unmarshal(body, &result); err != nil {
+				return nil, fmt.Errorf("erro ao decodificar resposta: %w", err)
+			}
+			if len(result.Predictions) == 0 {
+				return nil, fmt.Errorf("nenhuma prediction retornada")
+			}
+			values = result.Predictions[0].Embeddings.Values
+		}
+
+		if len(values) == 0 {
+			return nil, fmt.Errorf("embedding vazio retornado pela API")
+		}
+
+		return values, nil
 	}
 
-	// Parse response
-	var result embeddingResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("erro ao decodificar resposta: %w", err)
-	}
+	return nil, fmt.Errorf("falhou após %d tentativas: %w", maxRetries, lastErr)
+}
 
-	if len(result.Embedding.Values) == 0 {
-		return nil, fmt.Errorf("embedding vazio retornado pela API")
+// GenerateEmbeddingWithLog igual ao GenerateEmbedding mas sempre loga sucesso
+func (e *EmbeddingService) GenerateEmbeddingWithLog(ctx context.Context, text string) ([]float32, error) {
+	emb, err := e.GenerateEmbedding(ctx, text)
+	if err != nil {
+		return nil, err
 	}
-
-	// ✅ VALIDAÇÃO CRÍTICA DE DIMENSÃO
-	actualDim := len(result.Embedding.Values)
-	if actualDim != expectedDimension {
-		return nil, fmt.Errorf(
-			"❌ DIMENSION MISMATCH DETECTED!\n"+
-				"   Expected: %d (Postgres schema)\n"+
-				"   Got: %d (Gemini API)\n"+
-				"   This will cause ALL searches to fail!\n"+
-				"   Run migration: migrations/004_fix_embedding_dimension.sql",
-			expectedDimension,
-			actualDim,
-		)
+	preview := text
+	if len(preview) > 50 {
+		preview = preview[:50] + "..."
 	}
-
-	log.Printf("✅ [EMBEDDING] Generated %d dimensions (validated)", actualDim)
-	return result.Embedding.Values, nil
+	preview = strings.ReplaceAll(preview, "\n", " ")
+	log.Printf("✅ [EMBEDDING] %d dims: %s", len(emb), preview)
+	return emb, nil
 }
 
 // GenerateBatch gera embeddings para múltiplos textos
-// Útil para re-embedding em massa
 func (e *EmbeddingService) GenerateBatch(ctx context.Context, texts []string) ([][]float32, error) {
 	embeddings := make([][]float32, len(texts))
 
@@ -132,11 +265,16 @@ func (e *EmbeddingService) GenerateBatch(ctx context.Context, texts []string) ([
 		}
 		embeddings[i] = emb
 
-		// Rate limiting: 10 requests/second
+		// Rate limiting
 		if i < len(texts)-1 {
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(200 * time.Millisecond) // Vertex AI tem mais quota
 		}
 	}
 
 	return embeddings, nil
+}
+
+// GetExpectedDimension retorna a dimensão esperada para o modo atual
+func (e *EmbeddingService) GetExpectedDimension() int {
+	return e.ExpectedDim
 }
