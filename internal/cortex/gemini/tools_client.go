@@ -138,6 +138,19 @@ FERRAMENTAS DISPONÍVEIS:
 - cancel_alarm: Cancelar alarme ativo (args: alarm_id ou "all" para cancelar todos)
 - list_alarms: Listar todos os alarmes ativos
 
+🧠 SPACED REPETITION (Reforço de Memória):
+- remember_this: Capturar informação importante para reforço de memória (args: content, category, trigger, importance)
+  - content: O que precisa ser lembrado (ex: "Documento está na gaveta do escritório")
+  - category: location, medication, person, event, routine, general
+  - trigger: O que o idoso disse que disparou (ex: "onde guardei o documento")
+  - importance: 1-5 (5=crítico, será reforçado com mais frequência)
+- review_memory: Registrar resultado de um reforço (args: item_id, remembered, quality)
+  - remembered: true se lembrou, false se esqueceu
+  - quality: 0-5 (0=esqueceu totalmente, 5=fácil)
+- list_memories: Listar memórias sendo reforçadas (args: category, limit)
+- pause_memory: Pausar reforços de uma memória específica (args: item_id)
+- memory_stats: Ver estatísticas de memória
+
 📋 GTD (CAPTURA DE TAREFAS - Getting Things Done):
 - capture_task: Capturar preocupação/tarefa vaga e transformar em ação concreta (args: raw_input, context, next_action, due_date, project)
   - raw_input: O que o idoso disse (ex: "Preciso ver o joelho")
@@ -210,6 +223,54 @@ Resposta: {"tool": "pomodoro_timer", "args": {"work_minutes": 50, "break_minutes
 
 Fala: "Pomodoro com Wim Hof na pausa"
 Resposta: {"tool": "pomodoro_timer", "args": {"work_minutes": 25, "break_minutes": 5, "sessions": 4, "break_activity": "wim_hof"}}
+
+Fala: "Preciso ver o joelho"
+Resposta: {"tool": "capture_task", "args": {"raw_input": "Preciso ver o joelho", "context": "saúde", "next_action": "Ligar para o ortopedista", "project": "Cuidar da saúde"}}
+
+Fala: "Tenho que ligar pro banco"
+Resposta: {"tool": "capture_task", "args": {"raw_input": "Tenho que ligar pro banco", "context": "finanças", "next_action": "Ligar para o banco", "due_date": "amanhã"}}
+
+Fala: "Preciso comprar presente pro neto"
+Resposta: {"tool": "capture_task", "args": {"raw_input": "Preciso comprar presente pro neto", "context": "família", "next_action": "Escolher e comprar presente para o neto"}}
+
+Fala: "O que eu tenho pra fazer?"
+Resposta: {"tool": "list_tasks", "args": {"limit": 5}}
+
+Fala: "Quais são minhas próximas ações?"
+Resposta: {"tool": "list_tasks", "args": {"limit": 5}}
+
+Fala: "Já liguei pro banco"
+Resposta: {"tool": "complete_task", "args": {"task_description": "ligar para o banco"}}
+
+Fala: "Fiz a tarefa do joelho"
+Resposta: {"tool": "complete_task", "args": {"task_description": "ortopedista"}}
+
+Fala: "Vamos fazer a revisão semanal"
+Resposta: {"tool": "weekly_review", "args": {}}
+
+Fala: "Guardei o documento na gaveta do escritório"
+Resposta: {"tool": "remember_this", "args": {"content": "Documento está na gaveta do escritório", "category": "location", "trigger": "documento", "importance": 4}}
+
+Fala: "Onde eu guardei o documento?" (e o idoso NÃO lembrou sozinho)
+Resposta: {"tool": "review_memory", "args": {"remembered": false, "quality": 1}}
+
+Fala: "Ah sim, lembrei! Está na gaveta"
+Resposta: {"tool": "review_memory", "args": {"remembered": true, "quality": 4}}
+
+Fala: "A chave do carro fica no gancho da cozinha, me ajuda a lembrar"
+Resposta: {"tool": "remember_this", "args": {"content": "Chave do carro fica no gancho da cozinha", "category": "location", "trigger": "chave do carro", "importance": 4}}
+
+Fala: "O nome da vizinha é Dona Maria"
+Resposta: {"tool": "remember_this", "args": {"content": "A vizinha se chama Dona Maria", "category": "person", "trigger": "nome da vizinha", "importance": 3}}
+
+Fala: "O que eu estou tentando lembrar?"
+Resposta: {"tool": "list_memories", "args": {"limit": 5}}
+
+Fala: "Pode parar de me lembrar sobre o documento"
+Resposta: {"tool": "pause_memory", "args": {"content": "documento"}}
+
+Fala: "Como está minha memória?"
+Resposta: {"tool": "memory_stats", "args": {}}
 
 Fala: "Obrigado"
 Resposta: {"tool": "none"}`

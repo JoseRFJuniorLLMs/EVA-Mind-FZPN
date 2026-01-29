@@ -5,6 +5,7 @@ import (
 	"eva-mind/internal/brainstem/database"
 	"eva-mind/internal/brainstem/push"
 	"eva-mind/internal/cortex/alert"
+	"eva-mind/internal/hippocampus/spaced"
 	"eva-mind/internal/motor/actions"
 	"eva-mind/internal/motor/email"
 	"fmt"
@@ -17,7 +18,8 @@ type ToolsHandler struct {
 	db                *database.DB
 	pushService       *push.FirebaseService
 	emailService      *email.EmailService
-	escalationService *alert.EscalationService // ✅ NOVO: Escalation Service
+	escalationService *alert.EscalationService      // ✅ Escalation Service
+	spacedService     *spaced.SpacedRepetitionService // ✅ Spaced Repetition
 	NotifyFunc        func(idosoID int64, msgType string, payload interface{})
 }
 
@@ -32,6 +34,11 @@ func NewToolsHandler(db *database.DB, pushService *push.FirebaseService, emailSe
 // SetEscalationService configura o serviço de escalation
 func (h *ToolsHandler) SetEscalationService(svc *alert.EscalationService) {
 	h.escalationService = svc
+}
+
+// SetSpacedService configura o serviço de spaced repetition
+func (h *ToolsHandler) SetSpacedService(svc *spaced.SpacedRepetitionService) {
+	h.spacedService = svc
 }
 
 // ExecuteTool dispatches the tool call to the appropriate handler
@@ -474,6 +481,38 @@ func (h *ToolsHandler) ExecuteTool(name string, args map[string]interface{}, ido
 
 	case "voice_diary":
 		return h.handleVoiceDiary(idosoID, args)
+
+	// --- Spaced Repetition (Reforço de Memória) ---
+	case "remember_this":
+		return h.handleRememberThis(idosoID, args)
+
+	case "review_memory":
+		return h.handleReviewMemory(idosoID, args)
+
+	case "list_memories":
+		return h.handleListMemories(idosoID, args)
+
+	case "pause_memory":
+		return h.handlePauseMemory(idosoID, args)
+
+	case "memory_stats":
+		return h.handleMemoryStats(idosoID, args)
+
+	// --- GTD (Getting Things Done) - Captura de Tarefas ---
+	case "capture_task":
+		return h.handleCaptureTask(idosoID, args)
+
+	case "list_tasks":
+		return h.handleListTasks(idosoID, args)
+
+	case "complete_task":
+		return h.handleCompleteTask(idosoID, args)
+
+	case "clarify_task":
+		return h.handleClarifyTask(idosoID, args)
+
+	case "weekly_review":
+		return h.handleWeeklyReview(idosoID, args)
 
 	default:
 		return nil, fmt.Errorf("ferramenta desconhecida: %s", name)
@@ -1024,4 +1063,651 @@ func parseJSONArray(jsonStr string) []string {
 		}
 	}
 	return result
+}
+
+// ============================================================================
+// 📋 GTD (Getting Things Done) - Captura e Gerenciamento de Tarefas
+// ============================================================================
+
+// GTDTask representa uma tarefa capturada pelo sistema GTD
+type GTDTask struct {
+	ID          int64     `json:"id"`
+	RawInput    string    `json:"raw_input"`    // O que o idoso disse
+	NextAction  string    `json:"next_action"`  // Ação física concreta
+	Context     string    `json:"context"`      // @saúde, @família, @casa, etc
+	Project     string    `json:"project"`      // Projeto maior (opcional)
+	DueDate     *string   `json:"due_date"`     // Data limite (opcional)
+	Status      string    `json:"status"`       // inbox, next, waiting, someday, done
+	Priority    int       `json:"priority"`     // 1=alta, 2=média, 3=baixa
+	CreatedAt   time.Time `json:"created_at"`
+	CompletedAt *time.Time `json:"completed_at"`
+}
+
+// handleCaptureTask captura uma preocupação/tarefa vaga e transforma em ação
+func (h *ToolsHandler) handleCaptureTask(idosoID int64, args map[string]interface{}) (map[string]interface{}, error) {
+	rawInput, _ := args["raw_input"].(string)
+	context, _ := args["context"].(string)
+	nextAction, _ := args["next_action"].(string)
+	dueDate, _ := args["due_date"].(string)
+	project, _ := args["project"].(string)
+
+	if rawInput == "" {
+		return map[string]interface{}{"error": "raw_input é obrigatório"}, nil
+	}
+
+	// Se não tem next_action, usar o raw_input como base
+	if nextAction == "" {
+		nextAction = rawInput
+	}
+
+	// Normalizar contexto
+	if context == "" {
+		context = "geral"
+	}
+	context = strings.ToLower(context)
+
+	// Criar tabela se não existir
+	if err := h.createGTDTable(); err != nil {
+		log.Printf("⚠️ [GTD] Erro ao criar tabela: %v", err)
+	}
+
+	// Processar data
+	var dueDatePtr *string
+	if dueDate != "" {
+		parsedDate := h.parseGTDDate(dueDate)
+		if parsedDate != "" {
+			dueDatePtr = &parsedDate
+		}
+	}
+
+	// Inserir tarefa
+	query := `
+		INSERT INTO gtd_tasks (idoso_id, raw_input, next_action, context, project, due_date, status, priority, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, 'next', 2, NOW())
+		RETURNING id, created_at
+	`
+
+	var taskID int64
+	var createdAt time.Time
+	err := h.db.Conn.QueryRow(query, idosoID, rawInput, nextAction, context, project, dueDatePtr).Scan(&taskID, &createdAt)
+	if err != nil {
+		return map[string]interface{}{"error": fmt.Sprintf("Erro ao capturar tarefa: %v", err)}, nil
+	}
+
+	log.Printf("📋 [GTD] Tarefa capturada ID=%d: '%s' -> '%s' (@%s)", taskID, rawInput, nextAction, context)
+
+	// Notificar app sobre nova tarefa
+	if h.NotifyFunc != nil {
+		h.NotifyFunc(idosoID, "gtd_task_created", map[string]interface{}{
+			"task_id":     taskID,
+			"next_action": nextAction,
+			"context":     context,
+		})
+	}
+
+	return map[string]interface{}{
+		"status":      "capturado",
+		"task_id":     taskID,
+		"raw_input":   rawInput,
+		"next_action": nextAction,
+		"context":     context,
+		"message":     fmt.Sprintf("Entendi! Anotei: '%s'. Isso está na sua lista de próximas ações.", nextAction),
+	}, nil
+}
+
+// handleListTasks lista as próximas ações pendentes
+func (h *ToolsHandler) handleListTasks(idosoID int64, args map[string]interface{}) (map[string]interface{}, error) {
+	context, _ := args["context"].(string)
+	limitFloat, _ := args["limit"].(float64)
+	limit := int(limitFloat)
+	if limit == 0 {
+		limit = 5
+	}
+
+	query := `
+		SELECT id, raw_input, next_action, context, COALESCE(project, ''),
+		       COALESCE(to_char(due_date, 'DD/MM/YYYY'), ''), status, priority, created_at
+		FROM gtd_tasks
+		WHERE idoso_id = $1 AND status IN ('next', 'inbox')
+	`
+	queryArgs := []interface{}{idosoID}
+
+	if context != "" {
+		query += " AND context = $2"
+		queryArgs = append(queryArgs, strings.ToLower(context))
+		query += " ORDER BY priority ASC, created_at ASC LIMIT $3"
+		queryArgs = append(queryArgs, limit)
+	} else {
+		query += " ORDER BY priority ASC, created_at ASC LIMIT $2"
+		queryArgs = append(queryArgs, limit)
+	}
+
+	rows, err := h.db.Conn.Query(query, queryArgs...)
+	if err != nil {
+		// Se tabela não existe, retornar vazio
+		if strings.Contains(err.Error(), "does not exist") {
+			return map[string]interface{}{
+				"status":  "sucesso",
+				"tasks":   []interface{}{},
+				"message": "Você não tem tarefas pendentes. Que bom!",
+			}, nil
+		}
+		return map[string]interface{}{"error": fmt.Sprintf("Erro ao listar tarefas: %v", err)}, nil
+	}
+	defer rows.Close()
+
+	var tasks []map[string]interface{}
+	for rows.Next() {
+		var t GTDTask
+		var project, dueDate string
+		var createdAt time.Time
+
+		if err := rows.Scan(&t.ID, &t.RawInput, &t.NextAction, &t.Context, &project, &dueDate, &t.Status, &t.Priority, &createdAt); err != nil {
+			continue
+		}
+
+		tasks = append(tasks, map[string]interface{}{
+			"id":          t.ID,
+			"next_action": t.NextAction,
+			"context":     t.Context,
+			"project":     project,
+			"due_date":    dueDate,
+			"priority":    t.Priority,
+		})
+	}
+
+	if len(tasks) == 0 {
+		return map[string]interface{}{
+			"status":  "sucesso",
+			"tasks":   []interface{}{},
+			"message": "Você não tem tarefas pendentes. Que bom, está tudo em dia!",
+		}, nil
+	}
+
+	// Montar mensagem de fala
+	var taskList []string
+	for i, task := range tasks {
+		action := task["next_action"].(string)
+		taskList = append(taskList, fmt.Sprintf("%d. %s", i+1, action))
+	}
+	message := fmt.Sprintf("Você tem %d tarefa(s) pendente(s):\n%s", len(tasks), strings.Join(taskList, "\n"))
+
+	return map[string]interface{}{
+		"status":  "sucesso",
+		"tasks":   tasks,
+		"count":   len(tasks),
+		"message": message,
+	}, nil
+}
+
+// handleCompleteTask marca uma tarefa como concluída
+func (h *ToolsHandler) handleCompleteTask(idosoID int64, args map[string]interface{}) (map[string]interface{}, error) {
+	taskID, _ := args["task_id"].(float64)
+	taskDesc, _ := args["task_description"].(string)
+
+	var query string
+	var queryArgs []interface{}
+
+	if taskID > 0 {
+		query = `
+			UPDATE gtd_tasks
+			SET status = 'done', completed_at = NOW()
+			WHERE id = $1 AND idoso_id = $2 AND status != 'done'
+			RETURNING id, next_action
+		`
+		queryArgs = []interface{}{int64(taskID), idosoID}
+	} else if taskDesc != "" {
+		// Buscar por descrição parcial
+		query = `
+			UPDATE gtd_tasks
+			SET status = 'done', completed_at = NOW()
+			WHERE idoso_id = $1 AND status != 'done'
+			  AND (LOWER(next_action) LIKE '%' || LOWER($2) || '%' OR LOWER(raw_input) LIKE '%' || LOWER($2) || '%')
+			RETURNING id, next_action
+		`
+		queryArgs = []interface{}{idosoID, taskDesc}
+	} else {
+		return map[string]interface{}{"error": "Informe o ID ou descrição da tarefa"}, nil
+	}
+
+	var completedID int64
+	var completedAction string
+	err := h.db.Conn.QueryRow(query, queryArgs...).Scan(&completedID, &completedAction)
+	if err != nil {
+		return map[string]interface{}{
+			"status":  "não encontrado",
+			"message": "Não encontrei essa tarefa nas suas pendências.",
+		}, nil
+	}
+
+	log.Printf("✅ [GTD] Tarefa concluída ID=%d: '%s'", completedID, completedAction)
+
+	// Notificar app
+	if h.NotifyFunc != nil {
+		h.NotifyFunc(idosoID, "gtd_task_completed", map[string]interface{}{
+			"task_id":     completedID,
+			"next_action": completedAction,
+		})
+	}
+
+	return map[string]interface{}{
+		"status":      "concluído",
+		"task_id":     completedID,
+		"next_action": completedAction,
+		"message":     fmt.Sprintf("Ótimo! Marquei '%s' como concluída. Parabéns!", completedAction),
+	}, nil
+}
+
+// handleClarifyTask pede mais informação para definir a próxima ação
+func (h *ToolsHandler) handleClarifyTask(idosoID int64, args map[string]interface{}) (map[string]interface{}, error) {
+	taskID, _ := args["task_id"].(float64)
+	question, _ := args["question"].(string)
+
+	if question == "" {
+		question = "Qual é a próxima ação física que você precisa fazer?"
+	}
+
+	return map[string]interface{}{
+		"status":   "clarificação_necessária",
+		"task_id":  int64(taskID),
+		"question": question,
+		"message":  fmt.Sprintf("Para eu poder te ajudar melhor: %s", question),
+	}, nil
+}
+
+// handleWeeklyReview mostra revisão semanal GTD
+func (h *ToolsHandler) handleWeeklyReview(idosoID int64, args map[string]interface{}) (map[string]interface{}, error) {
+	// Contar tarefas por status
+	statsQuery := `
+		SELECT
+			COUNT(*) FILTER (WHERE status = 'next') as next_count,
+			COUNT(*) FILTER (WHERE status = 'inbox') as inbox_count,
+			COUNT(*) FILTER (WHERE status = 'waiting') as waiting_count,
+			COUNT(*) FILTER (WHERE status = 'done' AND completed_at > NOW() - INTERVAL '7 days') as done_week,
+			COUNT(*) FILTER (WHERE due_date < NOW() AND status NOT IN ('done')) as overdue_count
+		FROM gtd_tasks
+		WHERE idoso_id = $1
+	`
+
+	var nextCount, inboxCount, waitingCount, doneWeek, overdueCount int
+	err := h.db.Conn.QueryRow(statsQuery, idosoID).Scan(&nextCount, &inboxCount, &waitingCount, &doneWeek, &overdueCount)
+	if err != nil {
+		// Se tabela não existe
+		if strings.Contains(err.Error(), "does not exist") {
+			return map[string]interface{}{
+				"status":  "sucesso",
+				"message": "Você ainda não tem tarefas cadastradas. Que tal começar a usar o sistema de captura?",
+			}, nil
+		}
+	}
+
+	// Montar mensagem
+	var parts []string
+	if doneWeek > 0 {
+		parts = append(parts, fmt.Sprintf("Parabéns! Você concluiu %d tarefa(s) esta semana", doneWeek))
+	}
+	if nextCount > 0 {
+		parts = append(parts, fmt.Sprintf("Você tem %d próxima(s) ação(ões) pendente(s)", nextCount))
+	}
+	if inboxCount > 0 {
+		parts = append(parts, fmt.Sprintf("%d item(ns) na caixa de entrada para processar", inboxCount))
+	}
+	if overdueCount > 0 {
+		parts = append(parts, fmt.Sprintf("⚠️ Atenção: %d tarefa(s) atrasada(s)", overdueCount))
+	}
+	if waitingCount > 0 {
+		parts = append(parts, fmt.Sprintf("%d tarefa(s) aguardando alguém", waitingCount))
+	}
+
+	message := "Revisão semanal:\n" + strings.Join(parts, "\n")
+	if len(parts) == 0 {
+		message = "Sua lista está vazia. Você está em dia com tudo!"
+	}
+
+	return map[string]interface{}{
+		"status":        "sucesso",
+		"next_count":    nextCount,
+		"inbox_count":   inboxCount,
+		"waiting_count": waitingCount,
+		"done_week":     doneWeek,
+		"overdue_count": overdueCount,
+		"message":       message,
+	}, nil
+}
+
+// createGTDTable cria a tabela de tarefas GTD
+func (h *ToolsHandler) createGTDTable() error {
+	query := `
+		CREATE TABLE IF NOT EXISTS gtd_tasks (
+			id SERIAL PRIMARY KEY,
+			idoso_id BIGINT NOT NULL REFERENCES idosos(id),
+			raw_input TEXT NOT NULL,
+			next_action TEXT NOT NULL,
+			context VARCHAR(50) DEFAULT 'geral',
+			project VARCHAR(255),
+			due_date DATE,
+			status VARCHAR(20) DEFAULT 'inbox',
+			priority INT DEFAULT 2,
+			created_at TIMESTAMP DEFAULT NOW(),
+			completed_at TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT NOW()
+		);
+		CREATE INDEX IF NOT EXISTS idx_gtd_idoso ON gtd_tasks(idoso_id);
+		CREATE INDEX IF NOT EXISTS idx_gtd_status ON gtd_tasks(status);
+		CREATE INDEX IF NOT EXISTS idx_gtd_context ON gtd_tasks(context);
+		CREATE INDEX IF NOT EXISTS idx_gtd_due ON gtd_tasks(due_date) WHERE due_date IS NOT NULL;
+	`
+
+	_, err := h.db.Conn.Exec(query)
+	if err != nil && !strings.Contains(err.Error(), "already exists") {
+		return fmt.Errorf("erro ao criar tabela gtd_tasks: %w", err)
+	}
+
+	log.Println("✅ [GTD] Tabela 'gtd_tasks' verificada/criada")
+	return nil
+}
+
+// parseGTDDate converte datas relativas para absolutas
+func (h *ToolsHandler) parseGTDDate(dateStr string) string {
+	now := time.Now()
+	lower := strings.ToLower(dateStr)
+
+	switch {
+	case lower == "hoje":
+		return now.Format("2006-01-02")
+	case lower == "amanhã" || lower == "amanha":
+		return now.AddDate(0, 0, 1).Format("2006-01-02")
+	case lower == "segunda" || lower == "segunda-feira":
+		return h.nextWeekday(now, time.Monday)
+	case lower == "terça" || lower == "terca" || lower == "terça-feira":
+		return h.nextWeekday(now, time.Tuesday)
+	case lower == "quarta" || lower == "quarta-feira":
+		return h.nextWeekday(now, time.Wednesday)
+	case lower == "quinta" || lower == "quinta-feira":
+		return h.nextWeekday(now, time.Thursday)
+	case lower == "sexta" || lower == "sexta-feira":
+		return h.nextWeekday(now, time.Friday)
+	case lower == "sábado" || lower == "sabado":
+		return h.nextWeekday(now, time.Saturday)
+	case lower == "domingo":
+		return h.nextWeekday(now, time.Sunday)
+	case strings.HasPrefix(lower, "próxima semana") || strings.HasPrefix(lower, "proxima semana"):
+		return now.AddDate(0, 0, 7).Format("2006-01-02")
+	default:
+		// Tentar parsear como data ISO
+		if t, err := time.Parse("2006-01-02", dateStr); err == nil {
+			return t.Format("2006-01-02")
+		}
+		// Tentar formato brasileiro
+		if t, err := time.Parse("02/01/2006", dateStr); err == nil {
+			return t.Format("2006-01-02")
+		}
+		return ""
+	}
+}
+
+// nextWeekday encontra o próximo dia da semana
+func (h *ToolsHandler) nextWeekday(from time.Time, weekday time.Weekday) string {
+	daysUntil := int(weekday - from.Weekday())
+	if daysUntil <= 0 {
+		daysUntil += 7
+	}
+	return from.AddDate(0, 0, daysUntil).Format("2006-01-02")
+}
+
+// ============================================================================
+// 🧠 SPACED REPETITION - Reforço de Memória
+// ============================================================================
+
+// handleRememberThis captura informação para reforço de memória
+func (h *ToolsHandler) handleRememberThis(idosoID int64, args map[string]interface{}) (map[string]interface{}, error) {
+	if h.spacedService == nil {
+		return map[string]interface{}{"error": "Serviço de memória não disponível"}, nil
+	}
+
+	content, _ := args["content"].(string)
+	category, _ := args["category"].(string)
+	trigger, _ := args["trigger"].(string)
+	importanceFloat, _ := args["importance"].(float64)
+	importance := int(importanceFloat)
+	if importance == 0 {
+		importance = 3
+	}
+
+	if content == "" {
+		return map[string]interface{}{"error": "Conteúdo não pode ser vazio"}, nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	item, err := h.spacedService.CaptureMemory(ctx, idosoID, content, category, trigger, importance)
+	if err != nil {
+		return map[string]interface{}{"error": fmt.Sprintf("Erro ao capturar: %v", err)}, nil
+	}
+
+	// Notificar app
+	if h.NotifyFunc != nil {
+		h.NotifyFunc(idosoID, "memory_captured", map[string]interface{}{
+			"item_id":     item.ID,
+			"content":     item.Content,
+			"category":    item.Category,
+			"next_review": item.NextReview.Format("15:04"),
+		})
+	}
+
+	// Calcular quando será o primeiro reforço
+	untilReview := time.Until(item.NextReview)
+	reviewMsg := ""
+	if untilReview < time.Hour {
+		reviewMsg = fmt.Sprintf("em %d minutos", int(untilReview.Minutes()))
+	} else {
+		reviewMsg = fmt.Sprintf("em %.1f horas", untilReview.Hours())
+	}
+
+	return map[string]interface{}{
+		"status":      "capturado",
+		"item_id":     item.ID,
+		"content":     item.Content,
+		"category":    item.Category,
+		"importance":  item.Importance,
+		"next_review": item.NextReview.Format("15:04"),
+		"message":     fmt.Sprintf("Anotei! Vou te ajudar a lembrar: '%s'. Primeiro reforço %s.", content, reviewMsg),
+	}, nil
+}
+
+// handleReviewMemory registra resultado de um reforço
+func (h *ToolsHandler) handleReviewMemory(idosoID int64, args map[string]interface{}) (map[string]interface{}, error) {
+	if h.spacedService == nil {
+		return map[string]interface{}{"error": "Serviço de memória não disponível"}, nil
+	}
+
+	itemID, _ := args["item_id"].(float64)
+	remembered, _ := args["remembered"].(bool)
+	qualityFloat, _ := args["quality"].(float64)
+	quality := int(qualityFloat)
+
+	// Se não passou item_id, buscar o mais recente pendente
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if itemID == 0 {
+		items, err := h.spacedService.GetPendingReviews(ctx, idosoID, 1)
+		if err != nil || len(items) == 0 {
+			return map[string]interface{}{
+				"status":  "sem_pendencias",
+				"message": "Não há memórias pendentes para revisar agora.",
+			}, nil
+		}
+		itemID = float64(items[0].ID)
+	}
+
+	item, err := h.spacedService.RecordReview(ctx, int64(itemID), quality, remembered)
+	if err != nil {
+		return map[string]interface{}{"error": fmt.Sprintf("Erro ao registrar: %v", err)}, nil
+	}
+
+	// Mensagem baseada no resultado
+	var message string
+	if remembered {
+		if item.Status == "mastered" {
+			message = fmt.Sprintf("Excelente! Você dominou essa memória: '%s'. Não vou mais te lembrar.", item.Content)
+		} else {
+			nextDays := item.IntervalDays
+			if nextDays < 1 {
+				message = fmt.Sprintf("Muito bem! Próximo reforço em %.0f horas.", nextDays*24)
+			} else {
+				message = fmt.Sprintf("Ótimo! Próximo reforço em %.0f dia(s).", nextDays)
+			}
+		}
+	} else {
+		message = fmt.Sprintf("Sem problemas, vamos reforçar. Lembre-se: '%s'. Vou te perguntar de novo em breve.", item.Content)
+	}
+
+	return map[string]interface{}{
+		"status":       "registrado",
+		"item_id":      item.ID,
+		"remembered":   remembered,
+		"next_review":  item.NextReview.Format("02/01 15:04"),
+		"interval_days": item.IntervalDays,
+		"status_item":  item.Status,
+		"message":      message,
+	}, nil
+}
+
+// handleListMemories lista memórias sendo reforçadas
+func (h *ToolsHandler) handleListMemories(idosoID int64, args map[string]interface{}) (map[string]interface{}, error) {
+	if h.spacedService == nil {
+		return map[string]interface{}{"error": "Serviço de memória não disponível"}, nil
+	}
+
+	limitFloat, _ := args["limit"].(float64)
+	limit := int(limitFloat)
+	if limit == 0 {
+		limit = 5
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Buscar itens pendentes primeiro
+	items, err := h.spacedService.GetPendingReviews(ctx, idosoID, limit)
+	if err != nil {
+		return map[string]interface{}{"error": fmt.Sprintf("Erro: %v", err)}, nil
+	}
+
+	if len(items) == 0 {
+		return map[string]interface{}{
+			"status":  "sucesso",
+			"items":   []interface{}{},
+			"message": "Nenhuma memória pendente de reforço agora. Você está em dia!",
+		}, nil
+	}
+
+	// Formatar para resposta
+	var memories []map[string]interface{}
+	var descriptions []string
+	for i, item := range items {
+		memories = append(memories, map[string]interface{}{
+			"id":          item.ID,
+			"content":     item.Content,
+			"category":    item.Category,
+			"importance":  item.Importance,
+			"repetitions": item.RepetitionCount,
+		})
+		descriptions = append(descriptions, fmt.Sprintf("%d. %s", i+1, item.Content))
+	}
+
+	message := fmt.Sprintf("Você tem %d memória(s) para reforçar:\n%s", len(items), strings.Join(descriptions, "\n"))
+
+	return map[string]interface{}{
+		"status":  "sucesso",
+		"items":   memories,
+		"count":   len(items),
+		"message": message,
+	}, nil
+}
+
+// handlePauseMemory pausa reforços de uma memória
+func (h *ToolsHandler) handlePauseMemory(idosoID int64, args map[string]interface{}) (map[string]interface{}, error) {
+	if h.spacedService == nil {
+		return map[string]interface{}{"error": "Serviço de memória não disponível"}, nil
+	}
+
+	itemID, _ := args["item_id"].(float64)
+	contentSearch, _ := args["content"].(string)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Se passou descrição ao invés de ID, buscar
+	if itemID == 0 && contentSearch != "" {
+		query := `
+			SELECT id FROM spaced_memory_items
+			WHERE idoso_id = $1 AND status = 'active'
+			  AND LOWER(content) LIKE '%' || LOWER($2) || '%'
+			LIMIT 1
+		`
+		err := h.db.Conn.QueryRowContext(ctx, query, idosoID, contentSearch).Scan(&itemID)
+		if err != nil {
+			return map[string]interface{}{
+				"status":  "não encontrado",
+				"message": "Não encontrei essa memória na sua lista.",
+			}, nil
+		}
+	}
+
+	if itemID == 0 {
+		return map[string]interface{}{"error": "Informe o ID ou descrição da memória"}, nil
+	}
+
+	err := h.spacedService.PauseItem(ctx, int64(itemID))
+	if err != nil {
+		return map[string]interface{}{"error": fmt.Sprintf("Erro: %v", err)}, nil
+	}
+
+	return map[string]interface{}{
+		"status":  "pausado",
+		"item_id": int64(itemID),
+		"message": "Ok, pausei os reforços dessa memória. Se quiser retomar, é só me pedir.",
+	}, nil
+}
+
+// handleMemoryStats mostra estatísticas de memória
+func (h *ToolsHandler) handleMemoryStats(idosoID int64, args map[string]interface{}) (map[string]interface{}, error) {
+	if h.spacedService == nil {
+		return map[string]interface{}{"error": "Serviço de memória não disponível"}, nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	stats, err := h.spacedService.GetStats(ctx, idosoID)
+	if err != nil {
+		return map[string]interface{}{"error": fmt.Sprintf("Erro: %v", err)}, nil
+	}
+
+	total := stats["total_items"].(int)
+	active := stats["active_items"].(int)
+	mastered := stats["mastered_items"].(int)
+	pending := stats["pending_reviews"].(int)
+	successRate := stats["avg_success_rate"].(float64) * 100
+
+	var message string
+	if total == 0 {
+		message = "Você ainda não começou a usar o reforço de memória. Quando quiser lembrar de algo importante, me avise!"
+	} else {
+		message = fmt.Sprintf("Sua memória está indo bem! Você tem %d memória(s) ativas, %d dominada(s), e %d pendente(s) de reforço. Taxa de sucesso: %.0f%%.",
+			active, mastered, pending, successRate)
+	}
+
+	return map[string]interface{}{
+		"status":       "sucesso",
+		"total":        total,
+		"active":       active,
+		"mastered":     mastered,
+		"pending":      pending,
+		"success_rate": successRate,
+		"message":      message,
+	}, nil
 }
