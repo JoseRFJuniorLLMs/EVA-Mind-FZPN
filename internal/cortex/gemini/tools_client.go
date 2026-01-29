@@ -138,6 +138,47 @@ FERRAMENTAS DISPONÍVEIS:
 - cancel_alarm: Cancelar alarme ativo (args: alarm_id ou "all" para cancelar todos)
 - list_alarms: Listar todos os alarmes ativos
 
+📊 HABIT TRACKING (Log de Hábitos):
+- log_habit: Registrar sucesso/falha de um hábito (args: habit_name, success, notes)
+  - habit_name: "tomar_agua", "tomar_remedio", "exercicio", "comer", "caminhar"
+  - success: true se completou, false se não fez
+  - notes: observação opcional
+- log_water: Registrar consumo de água (args: glasses)
+  - glasses: número de copos (padrão 1)
+- habit_stats: Ver estatísticas e padrões de hábitos
+- habit_summary: Resumo do dia de hábitos
+
+📍 PESQUISA DE LOCAIS E MAPAS:
+- search_places: Pesquisar endereços, restaurantes, farmácias, etc (args: query, type, radius)
+  - query: O que buscar (ex: "farmácia", "restaurante italiano")
+  - type: restaurant, pharmacy, hospital, bank, supermarket, gas_station
+  - radius: distância em metros (padrão 5000)
+- get_directions: Obter rota para um local (args: destination, mode)
+  - destination: endereço ou nome do local
+  - mode: walking, driving, transit (padrão walking para idosos)
+- nearby_transport: Ver transporte público próximo (args: type)
+  - type: bus, metro, all
+
+📱 ABRIR APLICATIVOS:
+- open_app: Abrir aplicativo no celular (args: app_name)
+  - app_name: whatsapp, agenda, relogio, alarme, camera, galeria, telefone, mensagens, spotify, youtube, maps
+
+🎮 EVA KIDS MODE (Modo Criança Gamificado):
+- kids_mission_create: Criar missão para a criança (args: title, category, difficulty, due_time)
+  - title: Nome da missão (ex: "Escovar os dentes")
+  - category: hygiene, study, chores, health, social, food, sleep
+  - difficulty: easy (10pts), medium (25pts), hard (50pts), epic (100pts)
+  - due_time: Horário limite opcional (HH:MM)
+- kids_mission_complete: Marcar missão como concluída (args: mission_id ou title)
+- kids_missions_pending: Ver missões pendentes do dia
+- kids_stats: Ver pontos, nível, conquistas e sequência
+- kids_learn: Ensinar algo novo para a criança (args: topic, content, category)
+  - topic: Assunto (ex: "Leões", "Planetas")
+  - category: animals, science, history, language, math, nature
+- kids_quiz: Fazer quiz de revisão sobre temas aprendidos
+- kids_story: Iniciar história interativa (args: theme)
+  - theme: adventure, fantasy, space, animals, pirates
+
 🧠 SPACED REPETITION (Reforço de Memória):
 - remember_this: Capturar informação importante para reforço de memória (args: content, category, trigger, importance)
   - content: O que precisa ser lembrado (ex: "Documento está na gaveta do escritório")
@@ -271,6 +312,78 @@ Resposta: {"tool": "pause_memory", "args": {"content": "documento"}}
 
 Fala: "Como está minha memória?"
 Resposta: {"tool": "memory_stats", "args": {}}
+
+Fala: "Tomei meu remédio"
+Resposta: {"tool": "log_habit", "args": {"habit_name": "tomar_remedio", "success": true}}
+
+Fala: "Bebi água"
+Resposta: {"tool": "log_water", "args": {"glasses": 1}}
+
+Fala: "Tomei dois copos de água"
+Resposta: {"tool": "log_water", "args": {"glasses": 2}}
+
+Fala: "Hoje não fiz exercício"
+Resposta: {"tool": "log_habit", "args": {"habit_name": "exercicio", "success": false}}
+
+Fala: "Como estão meus hábitos?"
+Resposta: {"tool": "habit_stats", "args": {}}
+
+Fala: "O que eu fiz hoje?"
+Resposta: {"tool": "habit_summary", "args": {}}
+
+Fala: "Onde tem uma farmácia perto?"
+Resposta: {"tool": "search_places", "args": {"query": "farmácia", "type": "pharmacy", "radius": 2000}}
+
+Fala: "Quero ir em um restaurante italiano"
+Resposta: {"tool": "search_places", "args": {"query": "restaurante italiano", "type": "restaurant"}}
+
+Fala: "Como chego no hospital São Lucas?"
+Resposta: {"tool": "get_directions", "args": {"destination": "Hospital São Lucas", "mode": "driving"}}
+
+Fala: "Onde pego ônibus aqui perto?"
+Resposta: {"tool": "nearby_transport", "args": {"type": "bus"}}
+
+Fala: "Abre o WhatsApp"
+Resposta: {"tool": "open_app", "args": {"app_name": "whatsapp"}}
+
+Fala: "Quero ver minhas fotos"
+Resposta: {"tool": "open_app", "args": {"app_name": "galeria"}}
+
+Fala: "Abre a agenda"
+Resposta: {"tool": "open_app", "args": {"app_name": "agenda"}}
+
+Fala: "Coloca o relógio"
+Resposta: {"tool": "open_app", "args": {"app_name": "relogio"}}
+
+Fala: "Abre o YouTube"
+Resposta: {"tool": "open_app", "args": {"app_name": "youtube"}}
+
+Fala: "Escovei os dentes!"
+Resposta: {"tool": "kids_mission_complete", "args": {"title": "escovar os dentes"}}
+
+Fala: "Terminei o dever de casa"
+Resposta: {"tool": "kids_mission_complete", "args": {"title": "dever de casa"}}
+
+Fala: "O que eu tenho que fazer hoje?"
+Resposta: {"tool": "kids_missions_pending", "args": {}}
+
+Fala: "Quantos pontos eu tenho?"
+Resposta: {"tool": "kids_stats", "args": {}}
+
+Fala: "Me conta sobre os leões"
+Resposta: {"tool": "kids_learn", "args": {"topic": "Leões", "category": "animals"}}
+
+Fala: "O que são planetas?"
+Resposta: {"tool": "kids_learn", "args": {"topic": "Planetas", "category": "science"}}
+
+Fala: "Faz um quiz pra mim"
+Resposta: {"tool": "kids_quiz", "args": {}}
+
+Fala: "Me conta uma história de piratas"
+Resposta: {"tool": "kids_story", "args": {"theme": "pirates"}}
+
+Fala: "Quero uma aventura no espaço"
+Resposta: {"tool": "kids_story", "args": {"theme": "space"}}
 
 Fala: "Obrigado"
 Resposta: {"tool": "none"}`

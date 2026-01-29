@@ -5,6 +5,7 @@ import (
 	"eva-mind/internal/brainstem/database"
 	"eva-mind/internal/brainstem/push"
 	"eva-mind/internal/cortex/alert"
+	"eva-mind/internal/hippocampus/habits"
 	"eva-mind/internal/hippocampus/spaced"
 	"eva-mind/internal/motor/actions"
 	"eva-mind/internal/motor/email"
@@ -18,8 +19,9 @@ type ToolsHandler struct {
 	db                *database.DB
 	pushService       *push.FirebaseService
 	emailService      *email.EmailService
-	escalationService *alert.EscalationService      // ✅ Escalation Service
+	escalationService *alert.EscalationService        // ✅ Escalation Service
 	spacedService     *spaced.SpacedRepetitionService // ✅ Spaced Repetition
+	habitTracker      *habits.HabitTracker            // ✅ Habit Tracking
 	NotifyFunc        func(idosoID int64, msgType string, payload interface{})
 }
 
@@ -39,6 +41,11 @@ func (h *ToolsHandler) SetEscalationService(svc *alert.EscalationService) {
 // SetSpacedService configura o serviço de spaced repetition
 func (h *ToolsHandler) SetSpacedService(svc *spaced.SpacedRepetitionService) {
 	h.spacedService = svc
+}
+
+// SetHabitTracker configura o serviço de habit tracking
+func (h *ToolsHandler) SetHabitTracker(tracker *habits.HabitTracker) {
+	h.habitTracker = tracker
 }
 
 // ExecuteTool dispatches the tool call to the appropriate handler
@@ -481,6 +488,33 @@ func (h *ToolsHandler) ExecuteTool(name string, args map[string]interface{}, ido
 
 	case "voice_diary":
 		return h.handleVoiceDiary(idosoID, args)
+
+	// --- Habit Tracking (Log de Hábitos) ---
+	case "log_habit":
+		return h.handleLogHabit(idosoID, args)
+
+	case "log_water":
+		return h.handleLogWater(idosoID, args)
+
+	case "habit_stats":
+		return h.handleHabitStats(idosoID, args)
+
+	case "habit_summary":
+		return h.handleHabitSummary(idosoID, args)
+
+	// --- Pesquisa de Locais e Mapas ---
+	case "search_places":
+		return h.handleSearchPlaces(idosoID, args)
+
+	case "get_directions":
+		return h.handleGetDirections(idosoID, args)
+
+	case "nearby_transport":
+		return h.handleNearbyTransport(idosoID, args)
+
+	// --- Abrir Aplicativos ---
+	case "open_app":
+		return h.handleOpenApp(idosoID, args)
 
 	// --- Spaced Repetition (Reforço de Memória) ---
 	case "remember_this":
@@ -1709,5 +1743,343 @@ func (h *ToolsHandler) handleMemoryStats(idosoID int64, args map[string]interfac
 		"pending":      pending,
 		"success_rate": successRate,
 		"message":      message,
+	}, nil
+}
+
+// ============================================================================
+// 📊 HABIT TRACKING - Log de Hábitos
+// ============================================================================
+
+// handleLogHabit registra sucesso/falha de um hábito
+func (h *ToolsHandler) handleLogHabit(idosoID int64, args map[string]interface{}) (map[string]interface{}, error) {
+	if h.habitTracker == nil {
+		return map[string]interface{}{"error": "Serviço de hábitos não disponível"}, nil
+	}
+
+	habitName, _ := args["habit_name"].(string)
+	success, _ := args["success"].(bool)
+	notes, _ := args["notes"].(string)
+
+	if habitName == "" {
+		return map[string]interface{}{"error": "Nome do hábito é obrigatório"}, nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	logEntry, err := h.habitTracker.LogHabit(ctx, idosoID, habitName, success, "voice", notes, nil)
+	if err != nil {
+		return map[string]interface{}{"error": fmt.Sprintf("Erro: %v", err)}, nil
+	}
+
+	// Notificar app
+	if h.NotifyFunc != nil {
+		h.NotifyFunc(idosoID, "habit_logged", map[string]interface{}{
+			"log_id":     logEntry.ID,
+			"habit":      habitName,
+			"success":    success,
+		})
+	}
+
+	var message string
+	if success {
+		message = fmt.Sprintf("Ótimo! Registrei que você completou '%s'. Continue assim!", habitName)
+	} else {
+		message = fmt.Sprintf("Entendi, registrei. Não se preocupe, amanhã é um novo dia!")
+	}
+
+	return map[string]interface{}{
+		"status":  "registrado",
+		"log_id":  logEntry.ID,
+		"habit":   habitName,
+		"success": success,
+		"message": message,
+	}, nil
+}
+
+// handleLogWater registra consumo de água
+func (h *ToolsHandler) handleLogWater(idosoID int64, args map[string]interface{}) (map[string]interface{}, error) {
+	if h.habitTracker == nil {
+		return map[string]interface{}{"error": "Serviço de hábitos não disponível"}, nil
+	}
+
+	glassesFloat, _ := args["glasses"].(float64)
+	glasses := int(glassesFloat)
+	if glasses == 0 {
+		glasses = 1
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	logEntry, err := h.habitTracker.LogWater(ctx, idosoID, glasses, "voice")
+	if err != nil {
+		return map[string]interface{}{"error": fmt.Sprintf("Erro: %v", err)}, nil
+	}
+
+	// Notificar app
+	if h.NotifyFunc != nil {
+		h.NotifyFunc(idosoID, "water_logged", map[string]interface{}{
+			"log_id":  logEntry.ID,
+			"glasses": glasses,
+		})
+	}
+
+	copoStr := "copo"
+	if glasses > 1 {
+		copoStr = "copos"
+	}
+
+	return map[string]interface{}{
+		"status":  "registrado",
+		"log_id":  logEntry.ID,
+		"glasses": glasses,
+		"message": fmt.Sprintf("Anotei! %d %s de água. Hidratação é muito importante!", glasses, copoStr),
+	}, nil
+}
+
+// handleHabitStats mostra estatísticas de hábitos
+func (h *ToolsHandler) handleHabitStats(idosoID int64, args map[string]interface{}) (map[string]interface{}, error) {
+	if h.habitTracker == nil {
+		return map[string]interface{}{"error": "Serviço de hábitos não disponível"}, nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	report, err := h.habitTracker.GetWeeklyReport(ctx, idosoID)
+	if err != nil {
+		return map[string]interface{}{"error": fmt.Sprintf("Erro: %v", err)}, nil
+	}
+
+	patterns := report["patterns"].([]habits.HabitPattern)
+	problematic := report["problematic"].([]string)
+	excellent := report["excellent"].([]string)
+
+	var parts []string
+	if len(excellent) > 0 {
+		parts = append(parts, fmt.Sprintf("Parabéns! Você está mandando bem em: %s", strings.Join(excellent, ", ")))
+	}
+	if len(problematic) > 0 {
+		parts = append(parts, fmt.Sprintf("Precisamos melhorar: %s", strings.Join(problematic, ", ")))
+	}
+	if len(patterns) == 0 {
+		parts = append(parts, "Ainda não temos dados suficientes. Continue registrando seus hábitos!")
+	}
+
+	return map[string]interface{}{
+		"status":      "sucesso",
+		"patterns":    patterns,
+		"problematic": problematic,
+		"excellent":   excellent,
+		"message":     strings.Join(parts, " "),
+	}, nil
+}
+
+// handleHabitSummary mostra resumo do dia
+func (h *ToolsHandler) handleHabitSummary(idosoID int64, args map[string]interface{}) (map[string]interface{}, error) {
+	if h.habitTracker == nil {
+		return map[string]interface{}{"error": "Serviço de hábitos não disponível"}, nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	summary, err := h.habitTracker.GetDailySummary(ctx, idosoID)
+	if err != nil {
+		return map[string]interface{}{"error": fmt.Sprintf("Erro: %v", err)}, nil
+	}
+
+	totalCompleted := summary["total_completed"].(int)
+	totalHabits := summary["total_habits"].(int)
+
+	var message string
+	if totalHabits == 0 {
+		message = "Você ainda não tem hábitos registrados hoje. Que tal começar?"
+	} else if totalCompleted == totalHabits {
+		message = fmt.Sprintf("Excelente! Você completou todos os %d hábitos de hoje!", totalCompleted)
+	} else {
+		message = fmt.Sprintf("Hoje você completou %d de %d hábitos. Continue assim!", totalCompleted, totalHabits)
+	}
+
+	return map[string]interface{}{
+		"status":  "sucesso",
+		"summary": summary,
+		"message": message,
+	}, nil
+}
+
+// ============================================================================
+// 📍 PESQUISA DE LOCAIS E MAPAS
+// ============================================================================
+
+// handleSearchPlaces pesquisa locais próximos
+func (h *ToolsHandler) handleSearchPlaces(idosoID int64, args map[string]interface{}) (map[string]interface{}, error) {
+	query, _ := args["query"].(string)
+	placeType, _ := args["type"].(string)
+	radiusFloat, _ := args["radius"].(float64)
+	radius := int(radiusFloat)
+	if radius == 0 {
+		radius = 5000
+	}
+
+	if query == "" && placeType == "" {
+		return map[string]interface{}{"error": "Informe o que deseja buscar"}, nil
+	}
+
+	// Enviar comando para o app executar a busca via Google Places API
+	if h.NotifyFunc != nil {
+		h.NotifyFunc(idosoID, "search_places", map[string]interface{}{
+			"query":  query,
+			"type":   placeType,
+			"radius": radius,
+		})
+	}
+
+	return map[string]interface{}{
+		"status":  "buscando",
+		"query":   query,
+		"type":    placeType,
+		"radius":  radius,
+		"message": fmt.Sprintf("Buscando '%s' perto de você...", query),
+	}, nil
+}
+
+// handleGetDirections obtém direções para um local
+func (h *ToolsHandler) handleGetDirections(idosoID int64, args map[string]interface{}) (map[string]interface{}, error) {
+	destination, _ := args["destination"].(string)
+	mode, _ := args["mode"].(string)
+
+	if destination == "" {
+		return map[string]interface{}{"error": "Informe o destino"}, nil
+	}
+
+	if mode == "" {
+		mode = "walking" // Padrão para idosos: caminhada
+	}
+
+	// Enviar comando para o app abrir Google Maps com direções
+	if h.NotifyFunc != nil {
+		h.NotifyFunc(idosoID, "get_directions", map[string]interface{}{
+			"destination": destination,
+			"mode":        mode,
+		})
+	}
+
+	modeNames := map[string]string{
+		"walking":  "a pé",
+		"driving":  "de carro",
+		"transit":  "de transporte público",
+		"bicycling": "de bicicleta",
+	}
+
+	modeName := modeNames[mode]
+	if modeName == "" {
+		modeName = mode
+	}
+
+	return map[string]interface{}{
+		"status":      "abrindo_mapa",
+		"destination": destination,
+		"mode":        mode,
+		"message":     fmt.Sprintf("Abrindo rota %s para %s no mapa...", modeName, destination),
+	}, nil
+}
+
+// handleNearbyTransport mostra transporte público próximo
+func (h *ToolsHandler) handleNearbyTransport(idosoID int64, args map[string]interface{}) (map[string]interface{}, error) {
+	transportType, _ := args["type"].(string)
+	if transportType == "" {
+		transportType = "all"
+	}
+
+	// Enviar comando para o app buscar transporte próximo
+	if h.NotifyFunc != nil {
+		h.NotifyFunc(idosoID, "nearby_transport", map[string]interface{}{
+			"type": transportType,
+		})
+	}
+
+	var message string
+	switch transportType {
+	case "bus":
+		message = "Buscando pontos de ônibus próximos..."
+	case "metro":
+		message = "Buscando estações de metrô próximas..."
+	default:
+		message = "Buscando transporte público próximo..."
+	}
+
+	return map[string]interface{}{
+		"status":  "buscando",
+		"type":    transportType,
+		"message": message,
+	}, nil
+}
+
+// ============================================================================
+// 📱 ABRIR APLICATIVOS
+// ============================================================================
+
+// handleOpenApp abre um aplicativo no celular
+func (h *ToolsHandler) handleOpenApp(idosoID int64, args map[string]interface{}) (map[string]interface{}, error) {
+	appName, _ := args["app_name"].(string)
+
+	if appName == "" {
+		return map[string]interface{}{"error": "Informe qual aplicativo deseja abrir"}, nil
+	}
+
+	// Mapear nomes para package names do Android
+	appPackages := map[string]struct {
+		pkg     string
+		display string
+	}{
+		"whatsapp":  {"com.whatsapp", "WhatsApp"},
+		"agenda":    {"com.google.android.calendar", "Agenda"},
+		"calendario": {"com.google.android.calendar", "Calendário"},
+		"relogio":   {"com.google.android.deskclock", "Relógio"},
+		"alarme":    {"com.google.android.deskclock", "Alarme"},
+		"camera":    {"com.android.camera", "Câmera"},
+		"galeria":   {"com.google.android.apps.photos", "Galeria"},
+		"fotos":     {"com.google.android.apps.photos", "Fotos"},
+		"telefone":  {"com.android.dialer", "Telefone"},
+		"mensagens": {"com.google.android.apps.messaging", "Mensagens"},
+		"sms":       {"com.google.android.apps.messaging", "SMS"},
+		"spotify":   {"com.spotify.music", "Spotify"},
+		"youtube":   {"com.google.android.youtube", "YouTube"},
+		"maps":      {"com.google.android.apps.maps", "Google Maps"},
+		"mapa":      {"com.google.android.apps.maps", "Mapa"},
+		"gmail":     {"com.google.android.gm", "Gmail"},
+		"email":     {"com.google.android.gm", "E-mail"},
+		"chrome":    {"com.android.chrome", "Chrome"},
+		"navegador": {"com.android.chrome", "Navegador"},
+		"calculadora": {"com.google.android.calculator", "Calculadora"},
+		"configuracoes": {"com.android.settings", "Configurações"},
+		"ajustes":   {"com.android.settings", "Ajustes"},
+	}
+
+	appKey := strings.ToLower(strings.ReplaceAll(appName, " ", ""))
+	appInfo, exists := appPackages[appKey]
+	if !exists {
+		// Tentar abrir pelo nome mesmo
+		appInfo = struct {
+			pkg     string
+			display string
+		}{appName, appName}
+	}
+
+	// Enviar comando para o app abrir o aplicativo
+	if h.NotifyFunc != nil {
+		h.NotifyFunc(idosoID, "open_app", map[string]interface{}{
+			"package":      appInfo.pkg,
+			"display_name": appInfo.display,
+		})
+	}
+
+	return map[string]interface{}{
+		"status":       "abrindo",
+		"app":          appInfo.display,
+		"package":      appInfo.pkg,
+		"message":      fmt.Sprintf("Abrindo %s...", appInfo.display),
 	}, nil
 }
