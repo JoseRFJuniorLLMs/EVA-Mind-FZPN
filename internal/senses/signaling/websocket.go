@@ -21,6 +21,9 @@ import (
 	"eva-mind/internal/brainstem/infrastructure/vector"
 	"eva-mind/internal/cortex/gemini"
 	"eva-mind/internal/cortex/personality"
+	"eva-mind/internal/cortex/voice"
+	"eva-mind/internal/cortex/alert"
+	"eva-mind/internal/cortex/ethics"
 	"eva-mind/internal/persona"
 	"eva-mind/internal/hippocampus/knowledge"
 	"eva-mind/internal/hippocampus/memory"
@@ -111,8 +114,11 @@ type SignalingServer struct {
 	zetaRouter         *personality.ZetaRouter
 	storiesRepo        *stories.Repository
 	personalityService *personality.PersonalityService
-	cortex             *gemini.ToolsClient // ✅ NOVO: Phase 10 Cortex
-	personaManager     *persona.PersonaManager // ✅ NOVO: Multi-Persona System
+	cortex             *gemini.ToolsClient      // ✅ Phase 10 Cortex
+	personaManager     *persona.PersonaManager  // ✅ Multi-Persona System
+	prosodyAnalyzer    *voice.ProsodyAnalyzer   // ✅ Voice Biomarkers
+	escalationService  *alert.EscalationService // ✅ Alert Escalation (SMS/WhatsApp/Call)
+	ethicsBoundary     *ethics.EthicalBoundaryEngine // ✅ Ethics Monitoring
 
 	// Services for Memory Saver
 	qdrantClient     *vector.QdrantClient
@@ -191,6 +197,39 @@ func NewSignalingServer(
 	// ✅ NOVO: Inicializar PersonaManager (Multi-Persona System)
 	server.personaManager = persona.NewPersonaManager(db)
 	log.Println("🎭 Signaling: PersonaManager initialized for Multi-Persona System")
+
+	// ✅ NOVO: Inicializar ProsodyAnalyzer (Voice Biomarkers)
+	if prosodyAnalyzer, err := voice.NewProsodyAnalyzer(cfg.GoogleAPIKey, dbWrapper); err != nil {
+		log.Printf("⚠️ Erro ao inicializar ProsodyAnalyzer: %v", err)
+	} else {
+		server.prosodyAnalyzer = prosodyAnalyzer
+		log.Println("🎤 Signaling: ProsodyAnalyzer initialized for Voice Biomarkers")
+	}
+
+	// ✅ NOVO: Inicializar EscalationService (SMS/WhatsApp/Call)
+	escalationCfg := alert.EscalationConfig{
+		Firebase: server.pushService,
+		DB:       db,
+	}
+	server.escalationService = alert.NewEscalationService(escalationCfg)
+	server.tools.SetEscalationService(server.escalationService) // Wire up to tools handler
+	log.Println("🚨 Signaling: EscalationService initialized for Alert Escalation")
+
+	// ✅ NOVO: Inicializar EthicalBoundaryEngine
+	server.ethicsBoundary = ethics.NewEthicalBoundaryEngine(db, nil, func(idosoID int64, msgType string, payload interface{}) {
+		// Notify via WebSocket
+		server.sessions.Range(func(key, value interface{}) bool {
+			session := value.(*WebSocketSession)
+			if session.IdosoID == idosoID {
+				session.WSConn.WriteJSON(map[string]interface{}{
+					"type":    msgType,
+					"payload": payload,
+				})
+			}
+			return true
+		})
+	})
+	log.Println("🛡️ Signaling: EthicalBoundaryEngine initialized for Ethics Monitoring")
 
 	// ✅ NOVO: Inicializar Knowledge Service (Neo4j Thinking)
 	neo4jClient, err := graph.NewNeo4jClient(cfg)
@@ -518,6 +557,25 @@ func (s *SignalingServer) handleGeminiResponse(session *WebSocketSession, respon
 			// ✅ FASE 10: Cortex Intention Analysis (Bicameral Brain)
 			if s.cortex != nil {
 				go s.runCortexAnalysis(session, userText)
+			}
+
+			// ✅ NOVO: Ethics Boundary Check (Dependência Emocional)
+			if s.ethicsBoundary != nil {
+				go func(uid int64, text string) {
+					event, err := s.ethicsBoundary.AnalyzeEthicalBoundaries(uid, text)
+					if err != nil {
+						log.Printf("⚠️ [ETHICS] Erro: %v", err)
+						return
+					}
+					if event != nil && (event.Severity == "high" || event.Severity == "critical") {
+						log.Printf("🛡️ [ETHICS] Evento detectado: %s (severidade: %s)", event.EventType, event.Severity)
+						// Notificar se família/médico devem ser alertados
+						if event.FamilyNotified || event.DoctorNotified {
+							log.Printf("⚠️ [ETHICS] Notificação enviada - Família: %v, Médico: %v",
+								event.FamilyNotified, event.DoctorNotified)
+						}
+					}
+				}(session.IdosoID, userText)
 			}
 		}
 	}

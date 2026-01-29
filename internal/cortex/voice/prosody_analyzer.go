@@ -251,7 +251,7 @@ func (p *ProsodyAnalyzer) parseGeminiResponse(
 // estimateFromTranscript estimates basic features from transcript
 func (p *ProsodyAnalyzer) estimateFromTranscript(transcript string) *ProsodyFeatures {
 	words := len(strings.Fields(transcript))
-	duration := float64(words) / 150.0 // Assume 150 WPM average
+	_ = float64(words) / 150.0 // Assume 150 WPM average (estimated duration)
 
 	return &ProsodyFeatures{
 		PitchMean:      180.0, // Default values

@@ -1,22 +1,23 @@
 package tools
 
 import (
-	"eva-mind/internal/motor/actions" // ✅ NEW IMPORT
+	"context"
 	"eva-mind/internal/brainstem/database"
-	"eva-mind/internal/motor/email"
-
-	// "eva-mind/internal/cortex/gemini" // ❌ REMOVED IMPORTS to break cycle
 	"eva-mind/internal/brainstem/push"
+	"eva-mind/internal/cortex/alert"
+	"eva-mind/internal/motor/actions"
+	"eva-mind/internal/motor/email"
 	"fmt"
 	"log"
 	"time"
 )
 
 type ToolsHandler struct {
-	db           *database.DB
-	pushService  *push.FirebaseService
-	emailService *email.EmailService
-	NotifyFunc   func(idosoID int64, msgType string, payload interface{}) // ✅ Callback para sinalização
+	db                *database.DB
+	pushService       *push.FirebaseService
+	emailService      *email.EmailService
+	escalationService *alert.EscalationService // ✅ NOVO: Escalation Service
+	NotifyFunc        func(idosoID int64, msgType string, payload interface{})
 }
 
 func NewToolsHandler(db *database.DB, pushService *push.FirebaseService, emailService *email.EmailService) *ToolsHandler {
@@ -25,6 +26,11 @@ func NewToolsHandler(db *database.DB, pushService *push.FirebaseService, emailSe
 		pushService:  pushService,
 		emailService: emailService,
 	}
+}
+
+// SetEscalationService configura o serviço de escalation
+func (h *ToolsHandler) SetEscalationService(svc *alert.EscalationService) {
+	h.escalationService = svc
 }
 
 // ExecuteTool dispatches the tool call to the appropriate handler
@@ -42,6 +48,41 @@ func (h *ToolsHandler) ExecuteTool(name string, args map[string]interface{}, ido
 		if err != nil {
 			return map[string]interface{}{"error": err.Error()}, nil
 		}
+
+		// ✅ NOVO: Trigger Escalation Service para alertas críticos
+		if h.escalationService != nil && (severity == "critica" || severity == "alta") {
+			go func(eid int64, msg, sev string) {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+				defer cancel()
+
+				priority := alert.PriorityHigh
+				if sev == "critica" {
+					priority = alert.PriorityCritical
+				}
+
+				// Buscar contatos do idoso
+				contacts, err := h.escalationService.GetContactsForElder(eid)
+				if err != nil || len(contacts) == 0 {
+					log.Printf("⚠️ [ESCALATION] Sem contatos para idoso %d: %v", eid, err)
+					return
+				}
+
+				// Buscar nome do idoso
+				var elderName string
+				h.db.Conn.QueryRow("SELECT nome FROM idosos WHERE id = $1", eid).Scan(&elderName)
+				if elderName == "" {
+					elderName = fmt.Sprintf("Paciente %d", eid)
+				}
+
+				result := h.escalationService.SendEmergencyAlert(ctx, elderName, msg, priority, contacts)
+				if result.Acknowledged {
+					log.Printf("✅ [ESCALATION] Alerta reconhecido: %s", msg)
+				} else {
+					log.Printf("⚠️ [ESCALATION] Alerta não reconhecido após escalação: %s", msg)
+				}
+			}(idosoID, reason, severity)
+		}
+
 		return map[string]interface{}{"status": "sucesso", "alerta": reason}, nil
 
 	case "confirm_medication":

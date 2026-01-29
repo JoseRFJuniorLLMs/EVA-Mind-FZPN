@@ -51,28 +51,75 @@ func (tc *ToolsClient) AnalyzeTranscription(ctx context.Context, transcript stri
 Analise a fala do idoso e detecte se ele está solicitando alguma ação que requer uma ferramenta.
 
 FERRAMENTAS DISPONÍVEIS:
+
+📋 ALERTAS E SEGURANÇA:
 - alert_family: Alertar família em emergência (args: reason, severity)
+- call_family_webrtc: Ligar para família
+- call_central_webrtc: Ligar para central de emergência
+- call_doctor_webrtc: Ligar para médico
+- call_caregiver_webrtc: Ligar para cuidador
+
+💊 MEDICAMENTOS E SAÚDE:
 - confirm_medication: Confirmar medicamento tomado (args: medication_name)
 - schedule_appointment: Agendar compromisso/lembrete (args: timestamp, type, description)
 - confirm_schedule: Confirmar agendamento pendente (args: confirmed)
-- call_family_webrtc: Ligar para família
-- call_central_webrtc: Ligar para central
-- call_doctor_webrtc: Ligar para médico
-- call_caregiver_webrtc: Ligar para cuidador
-- google_search_retrieval: Pesquisar informações em tempo real na internet (args: query)
+- scan_medication_visual: Identificar medicamento pela câmera (args: period)
+
+🧠 AVALIAÇÕES CLÍNICAS (usar quando detectar sinais de depressão/ansiedade/risco):
+- apply_phq9: Iniciar avaliação de depressão PHQ-9 (usar se idoso parecer triste, desanimado, sem energia)
+- apply_gad7: Iniciar avaliação de ansiedade GAD-7 (usar se idoso parecer ansioso, preocupado, nervoso)
+- apply_cssrs: Iniciar avaliação de risco C-SSRS (usar APENAS se detectar ideação suicida ou autolesão)
+- submit_phq9_response: Registrar resposta PHQ-9 (args: question_number, response)
+- submit_gad7_response: Registrar resposta GAD-7 (args: question_number, response)
+- submit_cssrs_response: Registrar resposta C-SSRS (args: question_number, response)
+
+🔍 PESQUISA:
+- google_search_retrieval: Pesquisar informações na internet (args: query)
+
+🎵 ENTRETENIMENTO E MÚSICA:
 - play_nostalgic_music: Tocar músicas da juventude do paciente (args: decade)
 - radio_station_tuner: Sintonizar rádio AM/FM (args: station_name)
 - play_relaxation_sounds: Tocar sons relaxantes (args: sound_type)
 - hymn_and_prayer_player: Tocar hinos ou orações (args: type, content_name)
 - daily_mass_stream: Ver missa ao vivo
+
+📺 CONTEÚDO E NOTÍCIAS:
 - watch_classic_movies: Ver filmes clássicos (args: movie_name)
 - watch_news_briefing: Ver resumo de notícias (args: topic)
 - read_newspaper_aloud: Ler manchetes de jornais (args: newspaper)
 - horoscope_daily: Ler horóscopo do dia (args: sign)
+
+🎮 JOGOS E ATIVIDADES COGNITIVAS:
 - play_trivia_game: Iniciar jogo de quiz/trivia (args: theme)
+- memory_game: Jogo de memória (args: difficulty)
+- word_association: Jogo de associação de palavras
+- brain_training: Exercícios cognitivos (args: type)
 - riddle_and_joke_teller: Contar piada ou adivinha (args: type)
+
+🧘 BEM-ESTAR E RELAXAMENTO:
+- guided_meditation: Meditação guiada (args: duration, theme)
+- breathing_exercises: Exercícios de respiração (args: technique)
+- chair_exercises: Exercícios físicos na cadeira (args: duration)
+- sleep_stories: Histórias para dormir (args: theme)
+- gratitude_journal: Diário de gratidão
+- motivational_quotes: Frases motivacionais (args: theme)
+
+📝 MEMÓRIAS E HISTÓRIAS:
 - voice_diary: Iniciar sessão de diário por voz
 - poetry_generator: Criar um poema personalizado (args: theme)
+- story_generator: Gerar história personalizada (args: theme, characters)
+- reminiscence_therapy: Terapia de reminiscência (args: era, topic)
+- biography_writer: Escrever biografia do idoso (args: life_period)
+- voice_capsule: Gravar cápsula do tempo por voz (args: recipient)
+
+👨‍👩‍👧 FAMÍLIA E SOCIAL:
+- birthday_reminder: Lembrar aniversários da família
+- family_tree_explorer: Explorar árvore genealógica
+- photo_slideshow: Mostrar fotos da família
+
+🌡️ UTILIDADES:
+- weather_chat: Conversar sobre o tempo (args: location)
+- cooking_recipes: Receitas de culinária (args: dish_type)
 - learn_new_language: Iniciar lição de idioma (args: language)
 
 ⚠️ REGRA CRÍTICA PARA AGENDAMENTOS:
