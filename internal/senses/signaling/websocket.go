@@ -25,9 +25,14 @@ import (
 	"eva-mind/internal/cortex/alert"
 	"eva-mind/internal/cortex/brain"
 	"eva-mind/internal/cortex/ethics"
+	"eva-mind/internal/cortex/cognitive"
+	"eva-mind/internal/cortex/lacan"
+	"eva-mind/internal/cortex/prediction"
+	"eva-mind/internal/cortex/scales"
 	"eva-mind/internal/persona"
 	"eva-mind/internal/hippocampus/knowledge"
 	"eva-mind/internal/hippocampus/memory"
+	"eva-mind/internal/hippocampus/memory/superhuman"
 	"eva-mind/internal/hippocampus/stories"
 	"eva-mind/internal/motor/actions"
 	"eva-mind/internal/motor/email"
@@ -121,6 +126,16 @@ type SignalingServer struct {
 	escalationService  *alert.EscalationService // ✅ Alert Escalation (SMS/WhatsApp/Call)
 	ethicsBoundary     *ethics.EthicalBoundaryEngine // ✅ Ethics Monitoring
 	brainService       *brain.Service           // ✅ Memory Service (Postgres + Qdrant + Neo4j)
+
+	// 🧠 NOVOS: Módulos de Psicologia e Personalidade
+	cognitiveOrchestrator *cognitive.CognitiveLoadOrchestrator // ✅ Carga Cognitiva e Ruminação
+	crisisPredictor       *prediction.CrisisPredictor          // ✅ Predição de Crises
+	clinicalScales        *scales.ClinicalScalesManager        // ✅ PHQ-9, GAD-7, C-SSRS
+	deepMemory            *superhuman.DeepMemoryService        // ✅ Memória Profunda (Trauma, Corpo)
+	transferenceService   *lacan.TransferenceService           // ✅ Transferência Lacaniana
+	demandDesireService   *lacan.DemandDesireService           // ✅ Demanda vs Desejo
+	grandAutreService     *lacan.GrandAutreService             // ✅ EVA como Grande Outro
+	fdpnEngine            *lacan.FDPNEngine                    // ✅ Grafo do Desejo
 
 	// Services for Memory Saver
 	qdrantClient     *vector.QdrantClient
@@ -254,6 +269,46 @@ func NewSignalingServer(
 		nil, // embedding service
 	)
 	log.Println("🧠 Signaling: BrainService initialized for Memory Storage (PG + Qdrant + Neo4j)")
+
+	// ============================================================================
+	// 🧠 MÓDULOS DE PSICOLOGIA E PERSONALIDADE
+	// ============================================================================
+
+	// ✅ Cognitive Load Orchestrator (Gerencia carga cognitiva, detecta ruminação)
+	if server.redis != nil {
+		server.cognitiveOrchestrator = cognitive.NewCognitiveLoadOrchestrator(db, server.redis.GetUnderlyingClient())
+		log.Println("🧠 Signaling: CognitiveLoadOrchestrator initialized (Carga Cognitiva + Ruminação)")
+	}
+
+	// ✅ Crisis Predictor (Prediz risco de crises baseado em features)
+	server.crisisPredictor = prediction.NewCrisisPredictor(db)
+	log.Println("🔮 Signaling: CrisisPredictor initialized (Predição de Crises)")
+
+	// ✅ Clinical Scales Manager (PHQ-9, GAD-7, C-SSRS)
+	server.clinicalScales = scales.NewClinicalScalesManager(dbWrapper)
+	log.Println("📊 Signaling: ClinicalScalesManager initialized (PHQ-9, GAD-7, C-SSRS)")
+
+	// ✅ Deep Memory Service (Memória Persistente, Corporal, Compartilhada)
+	server.deepMemory = superhuman.NewDeepMemoryService(db)
+	log.Println("🧬 Signaling: DeepMemoryService initialized (Trauma, Memória Corporal)")
+
+	// ✅ Lacan: Transference Service (Detecta transferência filial, materna, etc)
+	server.transferenceService = lacan.NewTransferenceService(db)
+	log.Println("💭 Signaling: TransferenceService initialized (Transferência Lacaniana)")
+
+	// ✅ Lacan: Demand/Desire Service (Extrai desejo latente)
+	server.demandDesireService = lacan.NewDemandDesireService()
+	log.Println("💫 Signaling: DemandDesireService initialized (Demanda vs Desejo)")
+
+	// ✅ Lacan: Grand Autre Service (EVA como Grande Outro)
+	server.grandAutreService = lacan.NewGrandAutreService()
+	log.Println("🪞 Signaling: GrandAutreService initialized (EVA como Grande Outro)")
+
+	// ✅ Lacan: FDPN Engine (Grafo do Desejo - A quem o idoso dirige demandas)
+	if neo4jClient != nil {
+		server.fdpnEngine = lacan.NewFDPNEngine(neo4jClient)
+		log.Println("📊 Signaling: FDPNEngine initialized (Grafo do Desejo)")
+	}
 
 	// ✅ NOVO: Inicializar Redis Client (Audio Buffer)
 	redisClient, err := redis.NewClient(cfg)
@@ -595,6 +650,105 @@ func (s *SignalingServer) handleGeminiResponse(session *WebSocketSession, respon
 								event.FamilyNotified, event.DoctorNotified)
 						}
 					}
+				}(session.IdosoID, userText)
+			}
+
+			// ============================================================================
+			// 🧠 ANÁLISE PSICOLÓGICA COMPLETA (Lacan + Cognitivo + Clínico)
+			// ============================================================================
+
+			// ✅ Lacan: Detectar Transferência (filial, materna, conjugal, paterna)
+			if s.transferenceService != nil {
+				go func(uid int64, text string) {
+					ctx := context.Background()
+					transType := s.transferenceService.DetectTransference(ctx, uid, text)
+					if transType != lacan.TRANSFERENCIA_NENHUMA {
+						log.Printf("💭 [LACAN] Transferência detectada: %s", transType)
+						// Guidance está disponível via lacan.GetTransferenceGuidance(transType)
+					}
+				}(session.IdosoID, userText)
+			}
+
+			// ✅ Lacan: Analisar Demanda vs Desejo (desejo latente por trás da fala)
+			if s.demandDesireService != nil {
+				go func(uid int64, text string) {
+					analysis := s.demandDesireService.AnalyzeUtterance(text)
+					if analysis.LatentDesire != lacan.DESEJO_INDEFINIDO && analysis.Confidence > 0.6 {
+						log.Printf("💫 [LACAN] Desejo latente: %s (confiança: %.0f%%)",
+							analysis.LatentDesire, analysis.Confidence*100)
+						log.Printf("   → Interpretação: %s", analysis.Interpretation)
+						// Guidance: lacan.GetClinicalGuidance(analysis.LatentDesire)
+					}
+
+					// ✅ Grafo do Desejo (FDPN) - A quem o idoso dirige a demanda
+					if s.fdpnEngine != nil {
+						ctx := context.Background()
+						addressee, _ := s.fdpnEngine.AnalyzeDemandAddressee(ctx, uid, text, string(analysis.LatentDesire))
+						if addressee != lacan.ADDRESSEE_UNKNOWN {
+							log.Printf("📊 [FDPN] Demanda endereçada a: %s", addressee)
+							// Isso já salva no Neo4j automaticamente
+						}
+					}
+				}(session.IdosoID, userText)
+			}
+
+			// ✅ Cognitive Load: Registrar interação e verificar carga
+			if s.cognitiveOrchestrator != nil {
+				go func(uid int64, text string) {
+					load := cognitive.InteractionLoad{
+						PatientID:           uid,
+						InteractionType:     "conversation",
+						EmotionalIntensity:  0.5, // TODO: calcular baseado no texto
+						CognitiveComplexity: 0.3,
+						DurationSeconds:     30, // Estimado
+						TopicsDiscussed:     extractTopics(text),
+					}
+					err := s.cognitiveOrchestrator.RecordInteraction(load)
+					if err != nil {
+						log.Printf("⚠️ [COGNITIVE] Erro ao registrar interação: %v", err)
+						return
+					}
+
+					// Verificar se há restrições
+					state, _ := s.cognitiveOrchestrator.GetCurrentState(uid)
+					if state != nil && state.CurrentLoadScore > 0.7 {
+						log.Printf("⚠️ [COGNITIVE] Carga cognitiva alta: %.2f - Redirecionando para temas leves",
+							state.CurrentLoadScore)
+					}
+					if state != nil && state.RuminationDetected {
+						log.Printf("🔄 [COGNITIVE] Ruminação detectada no tópico: %s", state.RuminationTopic)
+					}
+				}(session.IdosoID, userText)
+			}
+
+			// ✅ Deep Memory: Detectar evitação, retorno a temas, sintomas corporais
+			if s.deepMemory != nil {
+				go func(uid int64, text string) {
+					ctx := context.Background()
+					now := time.Now()
+
+					// Detectar evitação de tópico
+					s.deepMemory.DetectAvoidance(ctx, uid, text, "current_topic", now)
+
+					// Detectar retorno a tópico previamente evitado
+					s.deepMemory.DetectReturn(ctx, uid, text, now)
+
+					// Detectar sintomas corporais (memória somática)
+					s.deepMemory.DetectBodySymptom(ctx, uid, text, []string{}, now)
+
+					// Detectar desejo de compartilhar memória
+					s.deepMemory.DetectSharingDesire(ctx, uid, text, now)
+				}(session.IdosoID, userText)
+			}
+
+			// ✅ Personality State: Atualizar nível de relacionamento
+			if s.personalityService != nil {
+				go func(uid int64, text string) {
+					ctx := context.Background()
+					// Detectar emoção simples baseada no texto
+					emotion := detectSimpleEmotion(text)
+					topics := extractTopics(text)
+					s.personalityService.UpdateAfterConversation(ctx, uid, emotion, topics)
 				}(session.IdosoID, userText)
 			}
 		}
@@ -1715,4 +1869,67 @@ func (s *SignalingServer) GetRecentMemories(idosoID int64) []string {
 	}
 
 	return memories
+}
+
+// ============================================================================
+// 🧠 HELPERS PARA ANÁLISE PSICOLÓGICA
+// ============================================================================
+
+// extractTopics extrai tópicos principais de um texto (simplificado)
+func extractTopics(text string) []string {
+	textLower := strings.ToLower(text)
+	var topics []string
+
+	// Tópicos comuns de idosos
+	topicKeywords := map[string][]string{
+		"familia":    {"filh", "net", "esposa", "marido", "familia"},
+		"saude":      {"dor", "remedio", "medico", "doença", "hospital", "exame"},
+		"saudade":    {"saudade", "falta", "lembr", "morreu", "faleceu"},
+		"solidao":    {"sozinho", "solidão", "ninguem", "abandono"},
+		"medo":       {"medo", "receio", "preocupa", "ansied"},
+		"religiao":   {"deus", "jesus", "oração", "igreja", "fé"},
+		"morte":      {"mort", "partir", "fim", "enterr"},
+		"memoria":    {"lembro", "antigamente", "passado", "juventude"},
+		"alimentacao": {"com", "almoç", "jant", "fome"},
+		"sono":       {"dorm", "sono", "insonia", "cansa"},
+	}
+
+	for topic, keywords := range topicKeywords {
+		for _, kw := range keywords {
+			if strings.Contains(textLower, kw) {
+				topics = append(topics, topic)
+				break
+			}
+		}
+	}
+
+	return topics
+}
+
+// detectSimpleEmotion detecta emoção básica do texto (simplificado)
+func detectSimpleEmotion(text string) string {
+	textLower := strings.ToLower(text)
+
+	emotionPatterns := map[string][]string{
+		"triste":    {"triste", "chorand", "choro", "infeliz", "deprimid", "desanimad"},
+		"ansioso":   {"ansiosa", "ansioso", "nervos", "preocupad", "agitad"},
+		"feliz":     {"feliz", "alegre", "contente", "satisfeit", "bem"},
+		"saudade":   {"saudade", "falta", "miss", "queria ver"},
+		"medo":      {"medo", "assusta", "apavorad", "preocupad"},
+		"raiva":     {"raiva", "irritad", "brav", "revoltad"},
+		"solidao":   {"sozinho", "solidão", "abandona", "esquecid"},
+		"gratidao":  {"obrigad", "agradeç", "grat"},
+		"confuso":   {"confus", "perdid", "não entend", "esqueci"},
+		"esperanca": {"esperanç", "vai melhorar", "fé"},
+	}
+
+	for emotion, patterns := range emotionPatterns {
+		for _, pattern := range patterns {
+			if strings.Contains(textLower, pattern) {
+				return emotion
+			}
+		}
+	}
+
+	return "neutro"
 }

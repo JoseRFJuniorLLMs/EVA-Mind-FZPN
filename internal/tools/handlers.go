@@ -9,6 +9,7 @@ import (
 	"eva-mind/internal/motor/email"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 )
 
@@ -171,6 +172,110 @@ func (h *ToolsHandler) ExecuteTool(name string, args map[string]interface{}, ido
 			return map[string]interface{}{"error": err.Error()}, nil
 		}
 		return map[string]interface{}{"status": "sucesso", "agendamento": description}, nil
+
+	// ============================================================================
+	// ⏰ ALARMES E DESPERTADOR
+	// ============================================================================
+
+	case "set_alarm":
+		timeStr, _ := args["time"].(string)
+		label, _ := args["label"].(string)
+		if label == "" {
+			label = "Alarme"
+		}
+
+		// Parse repeat_days
+		var repeatDays []string
+		if rd, ok := args["repeat_days"].([]interface{}); ok {
+			for _, d := range rd {
+				if ds, ok := d.(string); ok {
+					repeatDays = append(repeatDays, ds)
+				}
+			}
+		}
+
+		alarmID, err := h.createAlarm(idosoID, timeStr, label, repeatDays)
+		if err != nil {
+			return map[string]interface{}{"error": err.Error()}, nil
+		}
+
+		// Notificar app para configurar alarme local
+		if h.NotifyFunc != nil {
+			h.NotifyFunc(idosoID, "alarm_set", map[string]interface{}{
+				"alarm_id":    alarmID,
+				"time":        timeStr,
+				"label":       label,
+				"repeat_days": repeatDays,
+			})
+		}
+
+		repeatMsg := "apenas uma vez"
+		if len(repeatDays) == 7 {
+			repeatMsg = "todos os dias"
+		} else if len(repeatDays) > 0 {
+			repeatMsg = fmt.Sprintf("nos dias: %v", repeatDays)
+		}
+
+		return map[string]interface{}{
+			"status":      "sucesso",
+			"alarm_id":    alarmID,
+			"time":        timeStr,
+			"label":       label,
+			"repeat_days": repeatDays,
+			"message":     fmt.Sprintf("Alarme configurado para %s (%s)", timeStr, repeatMsg),
+		}, nil
+
+	case "cancel_alarm":
+		alarmID, _ := args["alarm_id"].(string)
+		if alarmID == "" {
+			alarmID = "all"
+		}
+
+		count, err := h.cancelAlarm(idosoID, alarmID)
+		if err != nil {
+			return map[string]interface{}{"error": err.Error()}, nil
+		}
+
+		// Notificar app para cancelar alarme local
+		if h.NotifyFunc != nil {
+			h.NotifyFunc(idosoID, "alarm_cancelled", map[string]interface{}{
+				"alarm_id": alarmID,
+				"count":    count,
+			})
+		}
+
+		if alarmID == "all" {
+			return map[string]interface{}{
+				"status":  "sucesso",
+				"count":   count,
+				"message": fmt.Sprintf("%d alarme(s) cancelado(s)", count),
+			}, nil
+		}
+		return map[string]interface{}{
+			"status":  "sucesso",
+			"message": "Alarme cancelado",
+		}, nil
+
+	case "list_alarms":
+		alarms, err := h.listAlarms(idosoID)
+		if err != nil {
+			return map[string]interface{}{"error": err.Error()}, nil
+		}
+
+		if len(alarms) == 0 {
+			return map[string]interface{}{
+				"status":  "sucesso",
+				"alarms":  []interface{}{},
+				"message": "Você não tem alarmes configurados",
+			}, nil
+		}
+
+		return map[string]interface{}{
+			"status":  "sucesso",
+			"alarms":  alarms,
+			"count":   len(alarms),
+			"message": fmt.Sprintf("Você tem %d alarme(s) configurado(s)", len(alarms)),
+		}, nil
 
 	case "call_family_webrtc", "call_doctor_webrtc", "call_caregiver_webrtc", "call_central_webrtc":
 		// Buscar CPF do contato baseado no tipo de chamada
@@ -733,4 +838,184 @@ func (h *ToolsHandler) getCallTargetCPF(idosoID int64, callType string) (string,
 
 	log.Printf("📞 [CALL] Contato encontrado: %s (CPF: %s) para %s", nome, cpf, callType)
 	return cpf, nome, nil
+}
+
+// ============================================================================
+// ⏰ MÉTODOS DE ALARME
+// ============================================================================
+
+// AlarmInfo representa um alarme configurado
+type AlarmInfo struct {
+	ID         int64    `json:"id"`
+	Time       string   `json:"time"`
+	Label      string   `json:"label"`
+	RepeatDays []string `json:"repeat_days"`
+	Active     bool     `json:"active"`
+	CreatedAt  string   `json:"created_at"`
+}
+
+// createAlarm cria um novo alarme no banco de dados
+func (h *ToolsHandler) createAlarm(idosoID int64, timeStr, label string, repeatDays []string) (int64, error) {
+	// Validar formato do horário
+	if _, err := time.Parse("15:04", timeStr); err != nil {
+		return 0, fmt.Errorf("horário inválido: use formato HH:MM (ex: 07:00)")
+	}
+
+	// Converter repeatDays para JSON
+	repeatDaysJSON := "{}"
+	if len(repeatDays) > 0 {
+		repeatDaysJSON = fmt.Sprintf("[\"%s\"]", joinStrings(repeatDays, "\",\""))
+	} else {
+		repeatDaysJSON = "[]"
+	}
+
+	// Inserir no banco
+	query := `
+		INSERT INTO alarmes (idoso_id, horario, descricao, dias_repeticao, ativo, criado_em)
+		VALUES ($1, $2, $3, $4::jsonb, true, NOW())
+		RETURNING id
+	`
+
+	var alarmID int64
+	err := h.db.Conn.QueryRow(query, idosoID, timeStr, label, repeatDaysJSON).Scan(&alarmID)
+	if err != nil {
+		// Se tabela não existe, criar
+		if err.Error() == "pq: relation \"alarmes\" does not exist" {
+			if createErr := h.createAlarmsTable(); createErr != nil {
+				return 0, createErr
+			}
+			// Tentar novamente
+			err = h.db.Conn.QueryRow(query, idosoID, timeStr, label, repeatDaysJSON).Scan(&alarmID)
+			if err != nil {
+				return 0, fmt.Errorf("erro ao criar alarme: %w", err)
+			}
+		} else {
+			return 0, fmt.Errorf("erro ao criar alarme: %w", err)
+		}
+	}
+
+	log.Printf("⏰ [ALARM] Alarme criado ID=%d para idoso %d às %s", alarmID, idosoID, timeStr)
+	return alarmID, nil
+}
+
+// cancelAlarm cancela um ou todos os alarmes
+func (h *ToolsHandler) cancelAlarm(idosoID int64, alarmID string) (int, error) {
+	var result int64
+
+	if alarmID == "all" {
+		// Cancelar todos os alarmes ativos
+		query := `UPDATE alarmes SET ativo = false WHERE idoso_id = $1 AND ativo = true`
+		res, err := h.db.Conn.Exec(query, idosoID)
+		if err != nil {
+			return 0, fmt.Errorf("erro ao cancelar alarmes: %w", err)
+		}
+		result, _ = res.RowsAffected()
+		log.Printf("⏰ [ALARM] %d alarmes cancelados para idoso %d", result, idosoID)
+	} else {
+		// Cancelar alarme específico
+		query := `UPDATE alarmes SET ativo = false WHERE id = $1 AND idoso_id = $2`
+		res, err := h.db.Conn.Exec(query, alarmID, idosoID)
+		if err != nil {
+			return 0, fmt.Errorf("erro ao cancelar alarme: %w", err)
+		}
+		result, _ = res.RowsAffected()
+		log.Printf("⏰ [ALARM] Alarme %s cancelado para idoso %d", alarmID, idosoID)
+	}
+
+	return int(result), nil
+}
+
+// listAlarms lista todos os alarmes ativos de um idoso
+func (h *ToolsHandler) listAlarms(idosoID int64) ([]AlarmInfo, error) {
+	query := `
+		SELECT id, horario, descricao, COALESCE(dias_repeticao::text, '[]'), ativo, criado_em
+		FROM alarmes
+		WHERE idoso_id = $1 AND ativo = true
+		ORDER BY horario ASC
+	`
+
+	rows, err := h.db.Conn.Query(query, idosoID)
+	if err != nil {
+		// Se tabela não existe, retornar vazio
+		if err.Error() == "pq: relation \"alarmes\" does not exist" {
+			return []AlarmInfo{}, nil
+		}
+		return nil, fmt.Errorf("erro ao listar alarmes: %w", err)
+	}
+	defer rows.Close()
+
+	var alarms []AlarmInfo
+	for rows.Next() {
+		var a AlarmInfo
+		var repeatDaysJSON string
+		var createdAt time.Time
+
+		if err := rows.Scan(&a.ID, &a.Time, &a.Label, &repeatDaysJSON, &a.Active, &createdAt); err != nil {
+			continue
+		}
+
+		// Parse repeat_days do JSON
+		a.RepeatDays = parseJSONArray(repeatDaysJSON)
+		a.CreatedAt = createdAt.Format("02/01/2006 15:04")
+
+		alarms = append(alarms, a)
+	}
+
+	return alarms, nil
+}
+
+// createAlarmsTable cria a tabela de alarmes se não existir
+func (h *ToolsHandler) createAlarmsTable() error {
+	query := `
+		CREATE TABLE IF NOT EXISTS alarmes (
+			id SERIAL PRIMARY KEY,
+			idoso_id BIGINT NOT NULL REFERENCES idosos(id),
+			horario VARCHAR(5) NOT NULL,
+			descricao VARCHAR(255) NOT NULL DEFAULT 'Alarme',
+			dias_repeticao JSONB DEFAULT '[]',
+			ativo BOOLEAN DEFAULT true,
+			criado_em TIMESTAMP DEFAULT NOW(),
+			atualizado_em TIMESTAMP DEFAULT NOW()
+		);
+		CREATE INDEX IF NOT EXISTS idx_alarmes_idoso ON alarmes(idoso_id);
+		CREATE INDEX IF NOT EXISTS idx_alarmes_ativo ON alarmes(ativo);
+	`
+
+	_, err := h.db.Conn.Exec(query)
+	if err != nil {
+		return fmt.Errorf("erro ao criar tabela alarmes: %w", err)
+	}
+
+	log.Println("✅ [ALARM] Tabela 'alarmes' criada com sucesso")
+	return nil
+}
+
+// Helper: juntar strings com separador
+func joinStrings(arr []string, sep string) string {
+	if len(arr) == 0 {
+		return ""
+	}
+	result := arr[0]
+	for i := 1; i < len(arr); i++ {
+		result += sep + arr[i]
+	}
+	return result
+}
+
+// Helper: parse JSON array para []string
+func parseJSONArray(jsonStr string) []string {
+	var result []string
+	// Remove [ e ] e divide por vírgulas
+	jsonStr = strings.Trim(jsonStr, "[]")
+	if jsonStr == "" {
+		return result
+	}
+	parts := strings.Split(jsonStr, ",")
+	for _, p := range parts {
+		p = strings.Trim(p, " \"")
+		if p != "" {
+			result = append(result, p)
+		}
+	}
+	return result
 }

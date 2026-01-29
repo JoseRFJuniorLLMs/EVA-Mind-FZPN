@@ -74,6 +74,11 @@ func (c *Client) GetFullAudio(ctx context.Context, sessionID string, clear bool)
 	return fullAudio, nil
 }
 
+// GetUnderlyingClient retorna o cliente Redis subjacente para uso externo
+func (c *Client) GetUnderlyingClient() *redis.Client {
+	return c.client
+}
+
 func (c *Client) Close() error {
 	return c.client.Close()
 }

@@ -8,7 +8,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 	"github.com/lib/pq"
 )
 
@@ -85,8 +85,8 @@ func (clo *CognitiveLoadOrchestrator) RecordInteraction(load InteractionLoad) er
 	// 1. Calcular carga da interação
 	interactionLoad := clo.calculateInteractionLoad(load)
 
-	// 2. Buscar estado atual
-	state, err := clo.GetCurrentState(load.PatientID)
+	// 2. Buscar estado atual (necessário para atualização incremental)
+	_, err := clo.GetCurrentState(load.PatientID)
 	if err != nil && err != sql.ErrNoRows {
 		return fmt.Errorf("erro ao buscar estado: %w", err)
 	}

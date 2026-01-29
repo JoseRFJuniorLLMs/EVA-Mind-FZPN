@@ -108,6 +108,20 @@ func CheckOriginWebSocket(config *CORSConfig) func(r *http.Request) bool {
 
 	return func(r *http.Request) bool {
 		origin := r.Header.Get("Origin")
+
+		// Permitir conexões sem Origin (apps nativos, chamadas internas)
+		if origin == "" {
+			return true
+		}
+
+		// Permitir conexões locais (127.0.0.1, localhost)
+		if strings.HasPrefix(origin, "http://127.0.0.1") ||
+			strings.HasPrefix(origin, "http://localhost") ||
+			strings.HasPrefix(origin, "https://127.0.0.1") ||
+			strings.HasPrefix(origin, "https://localhost") {
+			return true
+		}
+
 		return config.IsOriginAllowed(origin)
 	}
 }

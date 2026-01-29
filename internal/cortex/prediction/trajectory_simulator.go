@@ -3,7 +3,6 @@ package prediction
 import (
 	"database/sql"
 	"encoding/json"
-	"eva-mind/internal/cortex/explainability"
 	"fmt"
 	"log"
 	"math"

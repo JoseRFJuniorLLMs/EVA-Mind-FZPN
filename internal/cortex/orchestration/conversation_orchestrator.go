@@ -1,17 +1,14 @@
 package orchestration
 
 import (
-	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"log"
-	"time"
 
 	"eva-mind/internal/cortex/cognitive"
 	"eva-mind/internal/cortex/ethics"
 
-	"github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
 

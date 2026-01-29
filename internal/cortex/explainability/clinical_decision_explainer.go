@@ -325,7 +325,7 @@ func (cde *ClinicalDecisionExplainer) generateNaturalLanguageExplanation(
 
 	// Predição
 	sb.WriteString(fmt.Sprintf("Probabilidade: %.0f%% (%s)\n", prediction.PredictionScore*100, cde.translateSeverity(prediction.Severity)))
-	sb.WriteString(fmt.Sprintf("Janela temporal: %s\n\n", prediction.Timeframe))
+	sb.WriteString(fmt.Sprintf("Janela temporal: %s\n\n", prediction.PredictionTimeframe))
 
 	// Fatores principais
 	sb.WriteString("📊 FATORES PRINCIPAIS (por ordem de importância):\n\n")

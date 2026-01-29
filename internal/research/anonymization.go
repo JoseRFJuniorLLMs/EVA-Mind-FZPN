@@ -2,7 +2,6 @@ package research
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"log"
 	"time"

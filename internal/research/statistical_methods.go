@@ -25,7 +25,7 @@ func (sm *StatisticalMethods) PearsonCorrelation(x, y []float64) float64 {
 		return 0
 	}
 
-	n := float64(len(x))
+	_ = float64(len(x)) // n calculado mas não usado diretamente
 
 	// Calcular médias
 	meanX := sm.Mean(x)
@@ -111,7 +111,7 @@ func (sm *StatisticalMethods) SimpleLinearRegression(x, y []float64) (float64, f
 		return 0, 0, 0
 	}
 
-	n := float64(len(x))
+	_ = float64(len(x)) // n calculado mas não usado diretamente
 
 	// Calcular médias
 	meanX := sm.Mean(x)
@@ -294,8 +294,9 @@ func (sm *StatisticalMethods) TDistributionPValue(t float64, df int) float64 {
 
 	// Aproximação simples para df < 30
 	// (Para produção, usar biblioteca estatística completa)
-	x := df / (df + t*t)
-	p := 0.5 * math.Pow(x, float64(df)/2.0)
+	dfFloat := float64(df)
+	x := dfFloat / (dfFloat + t*t)
+	p := 0.5 * math.Pow(x, dfFloat/2.0)
 
 	return p
 }

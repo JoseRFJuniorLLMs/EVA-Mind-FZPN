@@ -122,6 +122,14 @@ FERRAMENTAS DISPONÍVEIS:
 - cooking_recipes: Receitas de culinária (args: dish_type)
 - learn_new_language: Iniciar lição de idioma (args: language)
 
+⏰ ALARMES E DESPERTADOR:
+- set_alarm: Configurar alarme para acordar/despertar (args: time, label, repeat_days)
+  - time: Horário no formato "HH:MM" (ex: "07:00", "06:30")
+  - label: Descrição do alarme (ex: "Hora de acordar", "Tomar café da manhã")
+  - repeat_days: Array de dias da semana ["seg","ter","qua","qui","sex","sab","dom"] ou [] para apenas uma vez
+- cancel_alarm: Cancelar alarme ativo (args: alarm_id ou "all" para cancelar todos)
+- list_alarms: Listar todos os alarmes ativos
+
 ⚠️ REGRA CRÍTICA PARA AGENDAMENTOS:
 - schedule_appointment REQUER CONFIRMAÇÃO EXPLÍCITA do usuário!
 - Quando o idoso pedir para agendar algo (remédio, consulta, lembrete), retorne:
@@ -150,6 +158,21 @@ Resposta: {"tool": "alert_family", "args": {"reason": "Paciente relatou dor no p
 
 Fala: "Como está o tempo hoje?"
 Resposta: {"tool": "google_search_retrieval", "args": {"query": "previsão do tempo para hoje"}}
+
+Fala: "Me acorda às 7 da manhã"
+Resposta: {"tool": "set_alarm", "args": {"time": "07:00", "label": "Hora de acordar", "repeat_days": []}}
+
+Fala: "Coloca um alarme pra 6 e meia todo dia"
+Resposta: {"tool": "set_alarm", "args": {"time": "06:30", "label": "Despertar diário", "repeat_days": ["seg","ter","qua","qui","sex","sab","dom"]}}
+
+Fala: "Quero acordar 8 horas de segunda a sexta"
+Resposta: {"tool": "set_alarm", "args": {"time": "08:00", "label": "Despertar", "repeat_days": ["seg","ter","qua","qui","sex"]}}
+
+Fala: "Cancela meu alarme"
+Resposta: {"tool": "cancel_alarm", "args": {"alarm_id": "all"}}
+
+Fala: "Quais alarmes eu tenho?"
+Resposta: {"tool": "list_alarms", "args": {}}
 
 Fala: "Obrigado"
 Resposta: {"tool": "none"}`
