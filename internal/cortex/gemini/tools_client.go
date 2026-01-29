@@ -138,6 +138,20 @@ FERRAMENTAS DISPONÍVEIS:
 - cancel_alarm: Cancelar alarme ativo (args: alarm_id ou "all" para cancelar todos)
 - list_alarms: Listar todos os alarmes ativos
 
+📋 GTD (CAPTURA DE TAREFAS - Getting Things Done):
+- capture_task: Capturar preocupação/tarefa vaga e transformar em ação concreta (args: raw_input, context, next_action, due_date, project)
+  - raw_input: O que o idoso disse (ex: "Preciso ver o joelho")
+  - context: Contexto opcional (ex: "saúde", "família", "casa")
+  - next_action: Ação física concreta (ex: "Ligar para ortopedista")
+  - due_date: Data sugerida se mencionada (formato ISO ou "amanhã", "segunda")
+  - project: Projeto maior se for parte de algo (ex: "Cuidar da saúde")
+- list_tasks: Listar próximas ações pendentes (args: context, limit)
+  - context: Filtrar por contexto (opcional)
+  - limit: Número máximo de tarefas (padrão 5)
+- complete_task: Marcar tarefa como concluída (args: task_id ou task_description)
+- clarify_task: Pedir mais informação para definir próxima ação (args: task_id, question)
+- weekly_review: Iniciar revisão semanal GTD (mostrar tarefas pendentes, projetos parados)
+
 ⚠️ REGRA CRÍTICA PARA AGENDAMENTOS:
 - schedule_appointment REQUER CONFIRMAÇÃO EXPLÍCITA do usuário!
 - Quando o idoso pedir para agendar algo (remédio, consulta, lembrete), retorne:

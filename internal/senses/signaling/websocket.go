@@ -34,6 +34,7 @@ import (
 	"eva-mind/internal/hippocampus/memory"
 	"eva-mind/internal/hippocampus/memory/superhuman"
 	"eva-mind/internal/hippocampus/stories"
+	"eva-mind/internal/hippocampus/zettelkasten"
 	"eva-mind/internal/motor/actions"
 	"eva-mind/internal/motor/email"
 	"eva-mind/internal/tools"
@@ -136,6 +137,9 @@ type SignalingServer struct {
 	demandDesireService   *lacan.DemandDesireService           // ✅ Demanda vs Desejo
 	grandAutreService     *lacan.GrandAutreService             // ✅ EVA como Grande Outro
 	fdpnEngine            *lacan.FDPNEngine                    // ✅ Grafo do Desejo
+
+	// 📚 Zettelkasten (Obsidian-like Knowledge Management)
+	zettelService         *zettelkasten.ZettelService          // ✅ Memória Externa Viva
 
 	// Services for Memory Saver
 	qdrantClient     *vector.QdrantClient
@@ -308,6 +312,14 @@ func NewSignalingServer(
 	if neo4jClient != nil {
 		server.fdpnEngine = lacan.NewFDPNEngine(neo4jClient)
 		log.Println("📊 Signaling: FDPNEngine initialized (Grafo do Desejo)")
+	}
+
+	// ============================================================================
+	// 📚 ZETTELKASTEN (Obsidian-like Knowledge Management)
+	// ============================================================================
+	if neo4jClient != nil {
+		server.zettelService = zettelkasten.NewZettelService(db, neo4jClient)
+		log.Println("📚 Signaling: ZettelService initialized (Memória Externa Viva)")
 	}
 
 	// ✅ NOVO: Inicializar Redis Client (Audio Buffer)
@@ -1165,6 +1177,29 @@ func (s *SignalingServer) saveTranscription(idosoID int64, role, content string)
 			return
 		}
 		log.Printf("📝 Novo histórico criado: #%d para idoso %d", historyID, idosoID)
+	}
+
+	// 📚 ZETTELKASTEN: Auto-criar zettels de mensagens do usuário
+	if role == "user" && s.zettelService != nil && len(content) > 30 {
+		go s.createZettelsFromConversation(idosoID, content)
+	}
+}
+
+// 📚 createZettelsFromConversation extrai conhecimento e cria zettels automaticamente
+func (s *SignalingServer) createZettelsFromConversation(idosoID int64, content string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	zettels, err := s.zettelService.CreateFromConversation(ctx, idosoID, content)
+	if err != nil {
+		log.Printf("⚠️ [ZETTEL] Erro ao criar zettels: %v", err)
+		return
+	}
+
+	if len(zettels) > 0 {
+		for _, z := range zettels {
+			log.Printf("📚 [ZETTEL] Novo zettel criado: %s (tipo=%s, idoso=%d)", z.Title, z.Type, idosoID)
+		}
 	}
 }
 
