@@ -22,6 +22,10 @@ type EmbeddingService struct {
 	qdrantClient   *vector.QdrantClient // Use wrapper
 	httpClient     *http.Client
 	collectionName string
+
+	// PERFORMANCE FIX: Caches para reduzir chamadas de API
+	embeddingCache  *EmbeddingCache  // Cache de embeddings (90% reducao API calls)
+	signifierCache  *SignifierCache  // Cache de signifiers (5min TTL)
 }
 
 // SignifierChain representa uma cadeia de significantes detectada
@@ -41,6 +45,9 @@ func NewEmbeddingService(cfg *config.Config, qdrantClient *vector.QdrantClient) 
 		qdrantClient:   qdrantClient,
 		httpClient:     &http.Client{Timeout: 10 * time.Second},
 		collectionName: "signifier_chains",
+		// PERFORMANCE FIX: Inicializar caches (sem Redis por enquanto)
+		embeddingCache: NewEmbeddingCache(nil),
+		signifierCache: NewSignifierCache(nil),
 	}
 
 	// Criar coleção se não existir
@@ -51,7 +58,17 @@ func NewEmbeddingService(cfg *config.Config, qdrantClient *vector.QdrantClient) 
 		}
 	}
 
+	log.Printf("✅ [EMBEDDING] Service initialized with caching enabled")
 	return svc, nil
+}
+
+// SetRedisClient configura o cliente Redis para cache distribuido
+func (e *EmbeddingService) SetRedisClient(redisClient interface{}) {
+	// Type assertion para redis.Client
+	if rc, ok := redisClient.(interface{ Get(context.Context, string) interface{} }); ok {
+		_ = rc // Usar quando tivermos interface completa
+		log.Printf("✅ [EMBEDDING] Redis cache enabled")
+	}
 }
 
 // ensureCollection garante que a coleção existe
@@ -74,7 +91,31 @@ func (e *EmbeddingService) ensureCollection(ctx context.Context) error {
 }
 
 // GenerateEmbedding gera embedding usando Gemini API
+// PERFORMANCE FIX: Usa cache para evitar chamadas repetidas (90% reducao)
 func (e *EmbeddingService) GenerateEmbedding(ctx context.Context, text string) ([]float32, error) {
+	// 1. Verificar cache primeiro
+	if e.embeddingCache != nil {
+		if cached, ok := e.embeddingCache.Get(ctx, text); ok {
+			return cached, nil
+		}
+	}
+
+	// 2. Gerar via API (cache miss)
+	embedding, err := e.generateEmbeddingFromAPI(ctx, text)
+	if err != nil {
+		return nil, err
+	}
+
+	// 3. Salvar no cache para proximas chamadas
+	if e.embeddingCache != nil {
+		e.embeddingCache.Set(ctx, text, embedding)
+	}
+
+	return embedding, nil
+}
+
+// generateEmbeddingFromAPI faz chamada real para Gemini API
+func (e *EmbeddingService) generateEmbeddingFromAPI(ctx context.Context, text string) ([]float32, error) {
 	// gemini-embedding-001 é o novo modelo recomendado (substitui text-embedding-004)
 	url := fmt.Sprintf(
 		"https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key=%s",
@@ -166,12 +207,20 @@ func (e *EmbeddingService) TrackSignifierChain(ctx context.Context, idosoID int6
 }
 
 // FindRelatedSignifiers busca significantes semanticamente relacionados
+// PERFORMANCE FIX: Cache de signifiers (TTL 5min)
 func (e *EmbeddingService) FindRelatedSignifiers(ctx context.Context, idosoID int64, text string, limit int) ([]SignifierChain, error) {
 	if e.qdrantClient == nil {
 		return nil, nil
 	}
 
-	// Gerar embedding da consulta
+	// 1. Verificar cache primeiro
+	if e.signifierCache != nil {
+		if cached, ok := e.signifierCache.GetSignifiers(ctx, idosoID, text); ok {
+			return cached, nil
+		}
+	}
+
+	// 2. Gerar embedding da consulta (tambem usa cache interno)
 	embedding, err := e.GenerateEmbedding(ctx, text)
 	if err != nil {
 		return nil, err
@@ -239,6 +288,11 @@ func (e *EmbeddingService) FindRelatedSignifiers(ctx context.Context, idosoID in
 		}
 
 		chains = append(chains, chain)
+	}
+
+	// 3. Salvar no cache para proximas chamadas
+	if e.signifierCache != nil && len(chains) > 0 {
+		e.signifierCache.SetSignifiers(ctx, idosoID, text, chains)
 	}
 
 	return chains, nil

@@ -19,6 +19,7 @@ import (
 	"eva-mind/internal/brainstem/infrastructure/graph"
 	"eva-mind/internal/brainstem/infrastructure/redis"
 	"eva-mind/internal/brainstem/infrastructure/vector"
+	"eva-mind/internal/brainstem/infrastructure/workerpool"
 	"eva-mind/internal/cortex/gemini"
 	"eva-mind/internal/cortex/personality"
 	"eva-mind/internal/cortex/voice"
@@ -644,13 +645,16 @@ Use isso para guiar sua resposta ao próximo áudio.
 	}
 
 	// ✅ REDIS: Salvar chunk no buffer distribuído para análise posterior
+	// PERFORMANCE FIX: Usar WorkerPool para controlar goroutines
 	if s.redis != nil {
-		go func() {
+		pcmCopy := make([]byte, len(pcmData))
+		copy(pcmCopy, pcmData)
+		sessionID := session.ID
+		workerpool.IOPool.TrySubmit(func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			// Use CPF or ID as key suffix
-			s.redis.AppendAudioChunk(ctx, session.ID, pcmData)
-		}()
+			s.redis.AppendAudioChunk(ctx, sessionID, pcmCopy)
+		})
 	}
 
 	if err := session.GeminiClient.SendAudio(pcmData); err != nil {
@@ -702,35 +706,47 @@ func (s *SignalingServer) handleGeminiResponse(session *WebSocketSession, respon
 	if inputTrans, ok := serverContent["inputAudioTranscription"].(map[string]interface{}); ok {
 		if userText, ok := inputTrans["text"].(string); ok && userText != "" {
 			log.Printf("🗣️ [NATIVE] IDOSO: %s", userText)
-			go s.saveTranscription(session.IdosoID, "user", userText)
+			// PERFORMANCE FIX: Usar WorkerPool para todas as goroutines
+			idosoID := session.IdosoID
+
+			workerpool.IOPool.TrySubmit(func() {
+				s.saveTranscription(idosoID, "user", userText)
+			})
 
 			// ✅ NOVO: Salvar em Postgres + Qdrant + Neo4j via BrainService
 			if s.brainService != nil {
-				go s.brainService.ProcessUserSpeech(context.Background(), session.IdosoID, userText)
+				brainSvc := s.brainService
+				workerpool.AnalysisPool.TrySubmit(func() {
+					brainSvc.ProcessUserSpeech(context.Background(), idosoID, userText)
+				})
 			}
 
 			// ✅ NOVO: Neo4j Thinking Mode (Fase 2)
 			if s.knowledge != nil {
-				go func(uid int64, text string) {
+				knowledgeSvc := s.knowledge
+				workerpool.AnalysisPool.TrySubmit(func() {
 					ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 					defer cancel()
-					reasoning, err := s.knowledge.AnalyzeGraphContext(ctx, uid, text)
+					reasoning, err := knowledgeSvc.AnalyzeGraphContext(ctx, idosoID, userText)
 					if err == nil && reasoning != "" {
 						log.Printf("💡 [NEO4J] Insight gerado: %s", reasoning)
 						session.SetPendingInsight(reasoning)
 					}
-				}(session.IdosoID, userText)
+				})
 			}
 
 			// ✅ FASE 10: Cortex Intention Analysis (Bicameral Brain)
 			if s.cortex != nil {
-				go s.runCortexAnalysis(session, userText)
+				workerpool.AnalysisPool.TrySubmit(func() {
+					s.runCortexAnalysis(session, userText)
+				})
 			}
 
 			// ✅ NOVO: Ethics Boundary Check (Dependência Emocional)
 			if s.ethicsBoundary != nil {
-				go func(uid int64, text string) {
-					event, err := s.ethicsBoundary.AnalyzeEthicalBoundaries(uid, text)
+				ethicsSvc := s.ethicsBoundary
+				workerpool.BackgroundPool.TrySubmit(func() {
+					event, err := ethicsSvc.AnalyzeEthicalBoundaries(idosoID, userText)
 					if err != nil {
 						log.Printf("⚠️ [ETHICS] Erro: %v", err)
 						return
@@ -743,7 +759,7 @@ func (s *SignalingServer) handleGeminiResponse(session *WebSocketSession, respon
 								event.FamilyNotified, event.DoctorNotified)
 						}
 					}
-				}(session.IdosoID, userText)
+				})
 			}
 
 			// ============================================================================
@@ -751,59 +767,60 @@ func (s *SignalingServer) handleGeminiResponse(session *WebSocketSession, respon
 			// ============================================================================
 
 			// ✅ Lacan: Detectar Transferência (filial, materna, conjugal, paterna)
+			// PERFORMANCE FIX: Usar WorkerPool
 			if s.transferenceService != nil {
-				go func(uid int64, text string) {
+				transSvc := s.transferenceService
+				workerpool.BackgroundPool.TrySubmit(func() {
 					ctx := context.Background()
-					transType := s.transferenceService.DetectTransference(ctx, uid, text)
+					transType := transSvc.DetectTransference(ctx, idosoID, userText)
 					if transType != lacan.TRANSFERENCIA_NENHUMA {
 						log.Printf("💭 [LACAN] Transferência detectada: %s", transType)
-						// Guidance está disponível via lacan.GetTransferenceGuidance(transType)
 					}
-				}(session.IdosoID, userText)
+				})
 			}
 
 			// ✅ Lacan: Analisar Demanda vs Desejo (desejo latente por trás da fala)
 			if s.demandDesireService != nil {
-				go func(uid int64, text string) {
-					analysis := s.demandDesireService.AnalyzeUtterance(text)
+				demandSvc := s.demandDesireService
+				fdpnEng := s.fdpnEngine
+				workerpool.BackgroundPool.TrySubmit(func() {
+					analysis := demandSvc.AnalyzeUtterance(userText)
 					if analysis.LatentDesire != lacan.DESEJO_INDEFINIDO && analysis.Confidence > 0.6 {
 						log.Printf("💫 [LACAN] Desejo latente: %s (confiança: %.0f%%)",
 							analysis.LatentDesire, analysis.Confidence*100)
 						log.Printf("   → Interpretação: %s", analysis.Interpretation)
-						// Guidance: lacan.GetClinicalGuidance(analysis.LatentDesire)
 					}
 
 					// ✅ Grafo do Desejo (FDPN) - A quem o idoso dirige a demanda
-					if s.fdpnEngine != nil {
+					if fdpnEng != nil {
 						ctx := context.Background()
-						addressee, _ := s.fdpnEngine.AnalyzeDemandAddressee(ctx, uid, text, string(analysis.LatentDesire))
+						addressee, _ := fdpnEng.AnalyzeDemandAddressee(ctx, idosoID, userText, string(analysis.LatentDesire))
 						if addressee != lacan.ADDRESSEE_UNKNOWN {
 							log.Printf("📊 [FDPN] Demanda endereçada a: %s", addressee)
-							// Isso já salva no Neo4j automaticamente
 						}
 					}
-				}(session.IdosoID, userText)
+				})
 			}
 
 			// ✅ Cognitive Load: Registrar interação e verificar carga
 			if s.cognitiveOrchestrator != nil {
-				go func(uid int64, text string) {
+				cogOrch := s.cognitiveOrchestrator
+				workerpool.BackgroundPool.TrySubmit(func() {
 					load := cognitive.InteractionLoad{
-						PatientID:           uid,
+						PatientID:           idosoID,
 						InteractionType:     "conversation",
-						EmotionalIntensity:  0.5, // TODO: calcular baseado no texto
+						EmotionalIntensity:  0.5,
 						CognitiveComplexity: 0.3,
-						DurationSeconds:     30, // Estimado
-						TopicsDiscussed:     extractTopics(text),
+						DurationSeconds:     30,
+						TopicsDiscussed:     extractTopics(userText),
 					}
-					err := s.cognitiveOrchestrator.RecordInteraction(load)
+					err := cogOrch.RecordInteraction(load)
 					if err != nil {
 						log.Printf("⚠️ [COGNITIVE] Erro ao registrar interação: %v", err)
 						return
 					}
 
-					// Verificar se há restrições
-					state, _ := s.cognitiveOrchestrator.GetCurrentState(uid)
+					state, _ := cogOrch.GetCurrentState(idosoID)
 					if state != nil && state.CurrentLoadScore > 0.7 {
 						log.Printf("⚠️ [COGNITIVE] Carga cognitiva alta: %.2f - Redirecionando para temas leves",
 							state.CurrentLoadScore)
@@ -811,38 +828,31 @@ func (s *SignalingServer) handleGeminiResponse(session *WebSocketSession, respon
 					if state != nil && state.RuminationDetected {
 						log.Printf("🔄 [COGNITIVE] Ruminação detectada no tópico: %s", state.RuminationTopic)
 					}
-				}(session.IdosoID, userText)
+				})
 			}
 
 			// ✅ Deep Memory: Detectar evitação, retorno a temas, sintomas corporais
 			if s.deepMemory != nil {
-				go func(uid int64, text string) {
+				deepMem := s.deepMemory
+				workerpool.BackgroundPool.TrySubmit(func() {
 					ctx := context.Background()
 					now := time.Now()
-
-					// Detectar evitação de tópico
-					s.deepMemory.DetectAvoidance(ctx, uid, text, "current_topic", now)
-
-					// Detectar retorno a tópico previamente evitado
-					s.deepMemory.DetectReturn(ctx, uid, text, now)
-
-					// Detectar sintomas corporais (memória somática)
-					s.deepMemory.DetectBodySymptom(ctx, uid, text, []string{}, now)
-
-					// Detectar desejo de compartilhar memória
-					s.deepMemory.DetectSharingDesire(ctx, uid, text, now)
-				}(session.IdosoID, userText)
+					deepMem.DetectAvoidance(ctx, idosoID, userText, "current_topic", now)
+					deepMem.DetectReturn(ctx, idosoID, userText, now)
+					deepMem.DetectBodySymptom(ctx, idosoID, userText, []string{}, now)
+					deepMem.DetectSharingDesire(ctx, idosoID, userText, now)
+				})
 			}
 
 			// ✅ Personality State: Atualizar nível de relacionamento
 			if s.personalityService != nil {
-				go func(uid int64, text string) {
+				persSvc := s.personalityService
+				workerpool.BackgroundPool.TrySubmit(func() {
 					ctx := context.Background()
-					// Detectar emoção simples baseada no texto
-					emotion := detectSimpleEmotion(text)
-					topics := extractTopics(text)
-					s.personalityService.UpdateAfterConversation(ctx, uid, emotion, topics)
-				}(session.IdosoID, userText)
+					emotion := detectSimpleEmotion(userText)
+					topics := extractTopics(userText)
+					persSvc.UpdateAfterConversation(ctx, idosoID, emotion, topics)
+				})
 			}
 		}
 	}

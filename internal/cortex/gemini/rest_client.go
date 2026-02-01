@@ -8,7 +8,24 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 )
+
+// ============================================================================
+// PERFORMANCE FIX: HTTP Client Singleton com Timeout
+// Issue: http.Post() sem timeout pode travar indefinidamente
+// Fix: Cliente reutilizavel com timeout de 30s e connection pooling
+// ============================================================================
+
+var httpClientWithTimeout = &http.Client{
+	Timeout: 30 * time.Second,
+	Transport: &http.Transport{
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 10,
+		IdleConnTimeout:     90 * time.Second,
+		DisableCompression:  false,
+	},
+}
 
 // AnalyzeText envia um prompt para o Gemini via REST API (não-stream)
 // Útil para raciocínio (Thinking) e análise de contexto
@@ -34,7 +51,8 @@ func AnalyzeText(cfg *config.Config, prompt string) (string, error) {
 		return "", fmt.Errorf("erro ao criar JSON: %w", err)
 	}
 
-	resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
+	// PERFORMANCE FIX: Usar HTTP client com timeout (30s)
+	resp, err := httpClientWithTimeout.Post(url, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return "", fmt.Errorf("erro na requisição HTTP: %w", err)
 	}
@@ -98,7 +116,8 @@ func AnalyzeAudio(cfg *config.Config, audioData []byte, prompt string) (string, 
 		return "", fmt.Errorf("erro ao criar JSON: %w", err)
 	}
 
-	resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
+	// PERFORMANCE FIX: Usar HTTP client com timeout (30s)
+	resp, err := httpClientWithTimeout.Post(url, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return "", fmt.Errorf("erro na requisição HTTP: %w", err)
 	}

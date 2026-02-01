@@ -262,12 +262,21 @@ func (c *Client) ReadResponse() (map[string]interface{}, error) {
 func (c *Client) HandleResponses(ctx context.Context) error {
 	log.Printf("👂 HandleResponses: loop iniciado")
 
+	// PERFORMANCE FIX: Constante para ReadDeadline
+	const readTimeout = 5 * time.Minute
+
 	for {
 		select {
 		case <-ctx.Done():
 			log.Printf("🛑 HandleResponses: contexto cancelado")
 			return ctx.Err()
 		default:
+			// PERFORMANCE FIX: Definir deadline antes de cada leitura
+			// Evita que o WebSocket fique bloqueado indefinidamente
+			if err := c.conn.SetReadDeadline(time.Now().Add(readTimeout)); err != nil {
+				log.Printf("⚠️ Erro ao definir ReadDeadline: %v", err)
+			}
+
 			resp, err := c.ReadResponse()
 			if err != nil {
 				select {

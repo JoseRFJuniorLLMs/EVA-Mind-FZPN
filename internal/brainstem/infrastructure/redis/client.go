@@ -61,8 +61,15 @@ func (c *Client) GetFullAudio(ctx context.Context, sessionID string, clear bool)
 		return nil, err
 	}
 
-	// Combinar chunks
-	var fullAudio []byte
+	// PERFORMANCE FIX: Pre-alocar buffer para evitar O(n²)
+	// Antes: append em loop realocava memoria a cada iteracao
+	// Depois: calcular tamanho total primeiro, alocar uma vez
+	totalSize := 0
+	for _, chunk := range chunks {
+		totalSize += len(chunk)
+	}
+
+	fullAudio := make([]byte, 0, totalSize)
 	for _, chunk := range chunks {
 		fullAudio = append(fullAudio, []byte(chunk)...)
 	}
