@@ -1002,23 +1002,56 @@ func (u *UnifiedRetrieval) RunDebugTest(ctx context.Context, cpf string) (map[st
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // getLanguageName converte código de idioma para nome legível
+// Baseado nos 30 idiomas suportados pelo Gemini Live API
 func getLanguageName(code string) string {
 	languages := map[string]string{
-		"pt-BR": "Português Brasileiro",
-		"pt-PT": "Português de Portugal",
-		"en-US": "English (US)",
-		"en-GB": "English (UK)",
-		"es-ES": "Español",
-		"es-MX": "Español (México)",
-		"fr-FR": "Français",
-		"de-DE": "Deutsch",
-		"it-IT": "Italiano",
-		"ja-JP": "日本語 (Japanese)",
-		"zh-CN": "中文 (Chinese)",
-		"ko-KR": "한국어 (Korean)",
-		"ru-RU": "Русский (Russian)",
-		"ar-SA": "العربية (Arabic)",
+		// Português
+		"pt-BR": "Português (Brasil)",
+
+		// Inglês
+		"en-US": "English (United States)",
+		"en-GB": "English (United Kingdom)",
+		"en-AU": "English (Australia)",
+		"en-IN": "English (India)",
+
+		// Espanhol
+		"es-ES": "Español (España)",
+		"es-US": "Español (Estados Unidos)",
+
+		// Francês
+		"fr-FR": "Français (France)",
+		"fr-CA": "Français (Canada)",
+
+		// Alemão
+		"de-DE": "Deutsch (Deutschland)",
+
+		// Italiano
+		"it-IT": "Italiano (Italia)",
+
+		// Asiáticos
+		"ja-JP":  "日本語 (Japanese)",
+		"ko-KR":  "한국어 (Korean)",
+		"cmn-CN": "中文 (Mandarin Chinese)",
+		"th-TH":  "ไทย (Thai)",
+		"vi-VN":  "Tiếng Việt (Vietnamese)",
+		"id-ID":  "Bahasa Indonesia",
+
+		// Indianos
 		"hi-IN": "हिन्दी (Hindi)",
+		"bn-IN": "বাংলা (Bengali)",
+		"gu-IN": "ગુજરાતી (Gujarati)",
+		"kn-IN": "ಕನ್ನಡ (Kannada)",
+		"ml-IN": "മലയാളം (Malayalam)",
+		"mr-IN": "मराठी (Marathi)",
+		"ta-IN": "தமிழ் (Tamil)",
+		"te-IN": "తెలుగు (Telugu)",
+
+		// Outros
+		"ar-XA": "العربية (Arabic)",
+		"nl-NL": "Nederlands (Dutch)",
+		"pl-PL": "Polski (Polish)",
+		"ru-RU": "Русский (Russian)",
+		"tr-TR": "Türkçe (Turkish)",
 	}
 
 	if name, ok := languages[code]; ok {
