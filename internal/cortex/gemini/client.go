@@ -244,12 +244,9 @@ func (c *Client) ReadResponse() (map[string]interface{}, error) {
 		return nil, err
 	}
 
-	// 🔍 DEBUG: Log raw response from Google
-	if len(message) < 1000 {
-		log.Printf("🔍 [GEMINI RAW] %s", string(message))
-	} else {
-		log.Printf("🔍 [GEMINI RAW] (Binary/Large Payload: %d bytes)", len(message))
-	}
+	// PERFORMANCE: Logs de debug removidos (causavam overhead de I/O)
+	// Para debug, descomentar linha abaixo:
+	// log.Printf("🔍 [GEMINI] Response: %d bytes", len(message))
 
 	var response map[string]interface{}
 	if err := json.Unmarshal(message, &response); err != nil {

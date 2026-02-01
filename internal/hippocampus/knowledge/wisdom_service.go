@@ -230,6 +230,12 @@ func (w *WisdomService) boostPreferredTypes(results []*WisdomResult, preferTypes
 
 // GetWisdomContext monta contexto de sabedoria para o prompt
 func (w *WisdomService) GetWisdomContext(ctx context.Context, query string, opts *WisdomSearchOptions) string {
+	// Validar query não vazia (evita erro 400 na API de embedding)
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return ""
+	}
+
 	results, err := w.SearchWisdom(ctx, query, opts)
 	if err != nil {
 		log.Printf("⚠️ [WISDOM] Erro na busca: %v", err)

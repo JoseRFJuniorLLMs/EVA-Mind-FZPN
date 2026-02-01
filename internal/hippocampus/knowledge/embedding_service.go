@@ -93,6 +93,12 @@ func (e *EmbeddingService) ensureCollection(ctx context.Context) error {
 // GenerateEmbedding gera embedding usando Gemini API
 // PERFORMANCE FIX: Usa cache para evitar chamadas repetidas (90% reducao)
 func (e *EmbeddingService) GenerateEmbedding(ctx context.Context, text string) ([]float32, error) {
+	// 0. Validar texto não vazio (evita erro 400 da API)
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return nil, fmt.Errorf("text content is empty")
+	}
+
 	// 1. Verificar cache primeiro
 	if e.embeddingCache != nil {
 		if cached, ok := e.embeddingCache.Get(ctx, text); ok {
@@ -300,6 +306,12 @@ func (e *EmbeddingService) FindRelatedSignifiers(ctx context.Context, idosoID in
 
 // GetSemanticContext monta contexto para o prompt usando similaridade semântica
 func (e *EmbeddingService) GetSemanticContext(ctx context.Context, idosoID int64, currentText string) string {
+	// Validar texto não vazio
+	currentText = strings.TrimSpace(currentText)
+	if currentText == "" {
+		return ""
+	}
+
 	chains, err := e.FindRelatedSignifiers(ctx, idosoID, currentText, 5)
 	if err != nil {
 		log.Printf("⚠️ Error finding related signifiers: %v", err)

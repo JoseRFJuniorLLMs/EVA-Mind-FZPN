@@ -1102,23 +1102,14 @@ func (s *SignalingServer) setupGeminiSession(client *PCMClient, voiceName string
 	}
 
 	// ⚡ BUILD FINAL PROMPT usando UnifiedRetrieval (RSI - Real, Simbólico, Imaginário)
-	log.Printf("🧠 [DEBUG] Gerando prompt unificado para idoso %d", client.IdosoID)
 	promptStart := time.Now()
 	instructions, err := s.brain.GetSystemPrompt(client.ctx, client.IdosoID)
-	log.Printf("🧠 [DEBUG] Prompt RSI gerado em %v", time.Since(promptStart))
+	promptDuration := time.Since(promptStart)
 	if err != nil {
-		log.Printf("❌ [CRÍTICO] Erro ao gerar prompt unificado: %v", err)
-		log.Printf("   Usando fallback (sem nome)")
-		// Fallback para prompt antigo se UnifiedRetrieval falhar
+		log.Printf("❌ Prompt fallback para idoso %d: %v", client.IdosoID, err)
 		instructions = gemini.BuildSystemPrompt(currentType, lacanState, medicalContext, patterns, nil)
 	} else {
-		log.Printf("✅ [DEBUG] Prompt unificado gerado com sucesso (%d chars)", len(instructions))
-		// Mostrar primeiras 200 chars para debug
-		preview := instructions
-		if len(preview) > 200 {
-			preview = preview[:200] + "..."
-		}
-		log.Printf("   Início: %s", preview)
+		log.Printf("⚡ Prompt gerado em %v (%d chars) para idoso %d", promptDuration, len(instructions), client.IdosoID)
 	}
 
 	log.Printf("🚀 Iniciando sessão Gemini (Co-Intelligence Mode)...")
@@ -1686,9 +1677,9 @@ func (s *SignalingServer) handleClientSend(client *PCMClient) {
 				return
 			}
 
-			// Debug DETALHADO: Loga a cada 10 pacotes
-			if sentCount%10 == 0 {
-				log.Printf(" [DEBUG-BIN] Enviado %d bytes (Chunk #%d). Status: OK", len(audio), sentCount)
+			// PERFORMANCE: Log reduzido (a cada 500 chunks em vez de 10)
+			if sentCount%500 == 0 {
+				log.Printf("📤 [AUDIO] %d chunks enviados", sentCount)
 			}
 		}
 	}
