@@ -131,6 +131,7 @@ type UnifiedContext struct {
 	IdosoID     int64
 	IdosoNome   string
 	IdosoCPF    string // CPF para identificação especial
+	IdosoIdioma string // Idioma preferido (pt-BR, en-US, es-ES, etc.)
 	IsDebugMode bool   // true se usuário é o Criador (José R F Junior)
 
 	// REAL (Corpo, Sintoma, Trauma)
@@ -237,7 +238,7 @@ func (u *UnifiedRetrieval) BuildUnifiedContext(
 
 	// Resultados das goroutines
 	var lacanResult *InterpretationResult
-	var medicalContext, name, cpf string
+	var medicalContext, name, cpf, idioma string
 	var agendamentos string
 	var recentMemories []string
 	var wisdomContext string
@@ -261,11 +262,12 @@ func (u *UnifiedRetrieval) BuildUnifiedContext(
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		mc, n, c := u.getMedicalContextAndName(ctxWithTimeout, idosoID)
+		mc, n, c, lang := u.getMedicalContextAndName(ctxWithTimeout, idosoID)
 		mu.Lock()
 		medicalContext = mc
 		name = n
 		cpf = c
+		idioma = lang
 		mu.Unlock()
 	}()
 
@@ -326,6 +328,7 @@ func (u *UnifiedRetrieval) BuildUnifiedContext(
 	unified.MedicalContext = medicalContext
 	unified.IdosoNome = name
 	unified.IdosoCPF = cpf
+	unified.IdosoIdioma = idioma
 	unified.Agendamentos = agendamentos
 	unified.RecentMemories = recentMemories
 	unified.SignifierChains = signifierChains
@@ -370,30 +373,31 @@ func (u *UnifiedRetrieval) BuildUnifiedContext(
 	return unified, nil
 }
 
-// getMedicalContextAndName recupera contexto médico, nome e CPF do paciente
-// NOME e CPF vem do POSTGRES (tabela idosos), NÃO do Neo4j!
+// getMedicalContextAndName recupera contexto médico, nome, CPF e idioma do paciente
+// NOME, CPF e IDIOMA vem do POSTGRES (tabela idosos), NÃO do Neo4j!
 // MEDICAMENTOS vêm da tabela AGENDAMENTOS (tipo='medicamento')
 // PERFORMANCE FIX: Adicionado timeout para evitar travamentos
-func (u *UnifiedRetrieval) getMedicalContextAndName(ctx context.Context, idosoID int64) (string, string, string) {
-	var name, cpf string
+func (u *UnifiedRetrieval) getMedicalContextAndName(ctx context.Context, idosoID int64) (string, string, string, string) {
+	var name, cpf, idioma string
 
 	// PERFORMANCE: Timeout específico para queries
 	ctxWithTimeout, cancel := context.WithTimeout(ctx, queryTimeout)
 	defer cancel()
 
-	// 1. BUSCAR NOME E CPF DA TABELA IDOSOS (usando idoso_id)
-	nameQuery := `SELECT nome, COALESCE(cpf, '') FROM idosos WHERE id = $1 LIMIT 1`
-	err := u.db.QueryRowContext(ctxWithTimeout, nameQuery, idosoID).Scan(&name, &cpf)
+	// 1. BUSCAR NOME, CPF E IDIOMA DA TABELA IDOSOS (usando idoso_id)
+	nameQuery := `SELECT nome, COALESCE(cpf, ''), COALESCE(idioma, 'pt-BR') FROM idosos WHERE id = $1 LIMIT 1`
+	err := u.db.QueryRowContext(ctxWithTimeout, nameQuery, idosoID).Scan(&name, &cpf, &idioma)
 	if err != nil {
-		log.Printf("⚠️ [UnifiedRetrieval] Nome/CPF não encontrado na tabela idosos: %v", err)
+		log.Printf("⚠️ [UnifiedRetrieval] Nome/CPF/Idioma não encontrado na tabela idosos: %v", err)
 		name = ""
 		cpf = ""
+		idioma = "pt-BR" // Default português brasileiro
 	} else {
 		cpfLog := "N/A"
 		if len(cpf) >= 3 {
 			cpfLog = cpf[:3] + "*****"
 		}
-		log.Printf("✅ [UnifiedRetrieval] Nome encontrado: '%s', CPF: '%s'", name, cpfLog)
+		log.Printf("✅ [UnifiedRetrieval] Nome: '%s', CPF: '%s', Idioma: '%s'", name, cpfLog, idioma)
 	}
 
 	var medicalContext string
@@ -455,7 +459,7 @@ func (u *UnifiedRetrieval) getMedicalContextAndName(ctx context.Context, idosoID
 		}
 	}
 
-	return medicalContext, name, cpf
+	return medicalContext, name, cpf, idioma
 }
 
 // getRecentMemories recupera memórias episódicas recentes
@@ -685,13 +689,17 @@ func (u *UnifiedRetrieval) buildIntegratedPrompt(unified *UnifiedContext) string
 
 	isCreator := CheckIfCreator(unified.IdosoCPF, unified.IdosoNome)
 
-	// Log detalhado para debug
-	log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	log.Printf("🔍 [DIRETIVA 01] Verificando usuário...")
-	log.Printf("   CPF recebido: '%s'", unified.IdosoCPF)
-	log.Printf("   Nome recebido: '%s'", unified.IdosoNome)
-	log.Printf("   É criador: %v", isCreator)
-	log.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	// ═══════════════════════════════════════════════════════════════════════════════
+	// 🌍 DIRETIVA DE IDIOMA - SISTEMA INTERNACIONAL
+	// ═══════════════════════════════════════════════════════════════════════════════
+	idioma := unified.IdosoIdioma
+	if idioma == "" {
+		idioma = "pt-BR" // Default
+	}
+	builder.WriteString(fmt.Sprintf("🌍 IDIOMA OBRIGATÓRIO: %s\n", getLanguageName(idioma)))
+	builder.WriteString(fmt.Sprintf("- SEMPRE responda no idioma: %s\n", getLanguageName(idioma)))
+	builder.WriteString("- Use linguagem simples, clara e acessível.\n")
+	builder.WriteString("- Seja calorosa e empática.\n\n")
 
 	if isCreator {
 		// ═══════════════════════════════════════════════════════════════════════════════
@@ -987,4 +995,34 @@ func (u *UnifiedRetrieval) RunDebugTest(ctx context.Context, cpf string) (map[st
 	}
 
 	return u.debugMode.RunSystemTest(ctx)
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 🌍 SUPORTE A IDIOMAS INTERNACIONAIS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// getLanguageName converte código de idioma para nome legível
+func getLanguageName(code string) string {
+	languages := map[string]string{
+		"pt-BR": "Português Brasileiro",
+		"pt-PT": "Português de Portugal",
+		"en-US": "English (US)",
+		"en-GB": "English (UK)",
+		"es-ES": "Español",
+		"es-MX": "Español (México)",
+		"fr-FR": "Français",
+		"de-DE": "Deutsch",
+		"it-IT": "Italiano",
+		"ja-JP": "日本語 (Japanese)",
+		"zh-CN": "中文 (Chinese)",
+		"ko-KR": "한국어 (Korean)",
+		"ru-RU": "Русский (Russian)",
+		"ar-SA": "العربية (Arabic)",
+		"hi-IN": "हिन्दी (Hindi)",
+	}
+
+	if name, ok := languages[code]; ok {
+		return name
+	}
+	return code // Retorna o código se não encontrar
 }
