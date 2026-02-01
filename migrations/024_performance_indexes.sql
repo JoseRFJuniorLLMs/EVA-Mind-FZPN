@@ -62,7 +62,7 @@ SELECT create_index_if_table_exists('idx_ethical_high_severity', 'ethical_bounda
 -- ============================================================================
 -- TABELA: clinical_decision_explanations
 -- ============================================================================
-SELECT create_index_if_table_exists('idx_clinical_decisions_patient', 'clinical_decision_explanations', 'patient_id, timestamp DESC');
+SELECT create_index_if_table_exists('idx_clinical_decisions_patient', 'clinical_decision_explanations', 'patient_id, created_at DESC');
 SELECT create_index_if_table_exists('idx_clinical_decisions_type', 'clinical_decision_explanations', 'decision_type');
 
 -- ============================================================================
