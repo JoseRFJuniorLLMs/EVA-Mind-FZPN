@@ -2,150 +2,123 @@
 -- PERFORMANCE MIGRATION: Indices para otimizacao de queries
 -- Issue: Full table scans em queries frequentes
 -- Fix: Criar indices compostos para colunas mais usadas
--- Impacto esperado: 3x melhoria em tempo de query
+-- NOTA: Usa verificacao de existencia para evitar erros em tabelas faltantes
 -- ============================================================================
+
+-- ============================================================================
+-- FUNCAO HELPER: Criar indice apenas se tabela existe
+-- ============================================================================
+CREATE OR REPLACE FUNCTION create_index_if_table_exists(
+    p_index_name TEXT,
+    p_table_name TEXT,
+    p_columns TEXT,
+    p_where_clause TEXT DEFAULT NULL
+) RETURNS VOID AS $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = p_table_name) THEN
+        IF p_where_clause IS NULL THEN
+            EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I (%s)',
+                p_index_name, p_table_name, p_columns);
+        ELSE
+            EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I (%s) WHERE %s',
+                p_index_name, p_table_name, p_columns, p_where_clause);
+        END IF;
+        RAISE NOTICE 'Index % created on %', p_index_name, p_table_name;
+    ELSE
+        RAISE NOTICE 'Table % does not exist, skipping index %', p_table_name, p_index_name;
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
 
 -- ============================================================================
 -- TABELA: idosos
--- Queries frequentes: by-cpf, by-id
 -- ============================================================================
-
--- Indice para busca por CPF (usado em login, validacao)
-CREATE INDEX IF NOT EXISTS idx_idosos_cpf
-ON idosos(cpf);
-
--- Indice para busca por telefone (usado em chamadas)
-CREATE INDEX IF NOT EXISTS idx_idosos_telefone
-ON idosos(telefone);
+SELECT create_index_if_table_exists('idx_idosos_cpf', 'idosos', 'cpf');
+SELECT create_index_if_table_exists('idx_idosos_telefone', 'idosos', 'telefone');
 
 -- ============================================================================
--- TABELA: memories (memorias do paciente)
--- Queries frequentes: GetRecent, por idoso_id + timestamp
+-- TABELA: memories
 -- ============================================================================
-
--- Indice composto para busca de memorias recentes por paciente
-CREATE INDEX IF NOT EXISTS idx_memories_idoso_timestamp
-ON memories(idoso_id, created_at DESC);
-
--- Indice para busca por tipo de memoria
-CREATE INDEX IF NOT EXISTS idx_memories_type
-ON memories(memory_type);
+SELECT create_index_if_table_exists('idx_memories_idoso_timestamp', 'memories', 'idoso_id, created_at DESC');
+SELECT create_index_if_table_exists('idx_memories_type', 'memories', 'memory_type');
 
 -- ============================================================================
--- TABELA: transcriptions (transcricoes de audio)
--- Queries frequentes: por sessao, por idoso, por data
+-- TABELA: transcriptions
 -- ============================================================================
-
-CREATE INDEX IF NOT EXISTS idx_transcriptions_idoso_timestamp
-ON transcriptions(idoso_id, timestamp DESC);
-
-CREATE INDEX IF NOT EXISTS idx_transcriptions_session
-ON transcriptions(session_id);
+SELECT create_index_if_table_exists('idx_transcriptions_idoso_timestamp', 'transcriptions', 'idoso_id, timestamp DESC');
+SELECT create_index_if_table_exists('idx_transcriptions_session', 'transcriptions', 'session_id');
 
 -- ============================================================================
--- TABELA: interaction_cognitive_load (carga cognitiva)
--- Queries frequentes: ultimas 24h por paciente
+-- TABELA: interaction_cognitive_load
 -- ============================================================================
-
-CREATE INDEX IF NOT EXISTS idx_cognitive_load_patient_time
-ON interaction_cognitive_load(patient_id, timestamp DESC);
+SELECT create_index_if_table_exists('idx_cognitive_load_patient_time', 'interaction_cognitive_load', 'patient_id, timestamp DESC');
 
 -- ============================================================================
--- TABELA: ethical_boundary_events (eventos eticos)
--- Queries frequentes: por paciente, por severidade
+-- TABELA: ethical_boundary_events
 -- ============================================================================
-
-CREATE INDEX IF NOT EXISTS idx_ethical_events_patient_severity
-ON ethical_boundary_events(patient_id, severity, timestamp DESC);
+SELECT create_index_if_table_exists('idx_ethical_events_patient_severity', 'ethical_boundary_events', 'patient_id, severity, timestamp DESC');
+SELECT create_index_if_table_exists('idx_ethical_high_severity', 'ethical_boundary_events', 'patient_id, timestamp DESC', 'severity IN (''high'', ''critical'')');
 
 -- ============================================================================
--- TABELA: clinical_decision_explanations (explicacoes clinicas)
--- Queries frequentes: por paciente, tipo de decisao
+-- TABELA: clinical_decision_explanations
 -- ============================================================================
-
-CREATE INDEX IF NOT EXISTS idx_clinical_decisions_patient
-ON clinical_decision_explanations(patient_id, timestamp DESC);
-
-CREATE INDEX IF NOT EXISTS idx_clinical_decisions_type
-ON clinical_decision_explanations(decision_type);
+SELECT create_index_if_table_exists('idx_clinical_decisions_patient', 'clinical_decision_explanations', 'patient_id, timestamp DESC');
+SELECT create_index_if_table_exists('idx_clinical_decisions_type', 'clinical_decision_explanations', 'decision_type');
 
 -- ============================================================================
--- TABELA: trajectory_simulations (simulacoes de trajetoria)
--- Queries frequentes: por paciente, data de simulacao
+-- TABELA: trajectory_simulations
 -- ============================================================================
-
-CREATE INDEX IF NOT EXISTS idx_trajectory_patient_date
-ON trajectory_simulations(patient_id, simulation_date DESC);
+SELECT create_index_if_table_exists('idx_trajectory_patient_date', 'trajectory_simulations', 'patient_id, simulation_date DESC');
 
 -- ============================================================================
--- TABELA: persona_sessions (sessoes de persona)
--- Queries frequentes: por paciente, tipo de persona
+-- TABELA: persona_sessions
 -- ============================================================================
-
-CREATE INDEX IF NOT EXISTS idx_persona_sessions_patient
-ON persona_sessions(patient_id, started_at DESC);
+SELECT create_index_if_table_exists('idx_persona_sessions_patient', 'persona_sessions', 'patient_id, started_at DESC');
 
 -- ============================================================================
--- TABELA: exit_protocols (protocolos de saida)
--- Queries frequentes: por paciente, fase atual
+-- TABELA: exit_protocols
 -- ============================================================================
-
-CREATE INDEX IF NOT EXISTS idx_exit_protocols_patient
-ON exit_protocols(patient_id, current_phase);
+SELECT create_index_if_table_exists('idx_exit_protocols_patient', 'exit_protocols', 'patient_id, current_phase');
 
 -- ============================================================================
--- TABELA: deep_memory_events (eventos de memoria profunda)
--- Queries frequentes: por paciente, tipo de evento
+-- TABELA: deep_memory_events
 -- ============================================================================
-
-CREATE INDEX IF NOT EXISTS idx_deep_memory_patient_type
-ON deep_memory_events(patient_id, event_type, detected_at DESC);
+SELECT create_index_if_table_exists('idx_deep_memory_patient_type', 'deep_memory_events', 'patient_id, event_type, detected_at DESC');
 
 -- ============================================================================
--- TABELA: device_tokens (tokens FCM)
--- Queries frequentes: por idoso_id
+-- TABELA: device_tokens
 -- ============================================================================
-
-CREATE INDEX IF NOT EXISTS idx_device_tokens_idoso
-ON device_tokens(idoso_id);
+SELECT create_index_if_table_exists('idx_device_tokens_idoso', 'device_tokens', 'idoso_id');
 
 -- ============================================================================
--- TABELA: enneagram_results (resultados Eneagrama)
--- Queries frequentes: por idoso_id
+-- TABELA: enneagram_results
 -- ============================================================================
-
-CREATE INDEX IF NOT EXISTS idx_enneagram_idoso
-ON enneagram_results(idoso_id);
+SELECT create_index_if_table_exists('idx_enneagram_idoso', 'enneagram_results', 'idoso_id');
 
 -- ============================================================================
--- PARTIAL INDEXES (para queries com filtros especificos)
+-- ANALYZE tabelas existentes
 -- ============================================================================
-
--- Indice parcial para eventos eticos de alta severidade (mais rapido para alertas)
-CREATE INDEX IF NOT EXISTS idx_ethical_high_severity
-ON ethical_boundary_events(patient_id, timestamp DESC)
-WHERE severity IN ('high', 'critical');
-
--- Indice parcial para memorias importantes (starred/flagged)
-CREATE INDEX IF NOT EXISTS idx_memories_important
-ON memories(idoso_id, created_at DESC)
-WHERE is_important = true;
-
--- ============================================================================
--- ANALYZE para atualizar estatisticas do planner
--- ============================================================================
-
-ANALYZE idosos;
-ANALYZE memories;
-ANALYZE transcriptions;
-ANALYZE interaction_cognitive_load;
-ANALYZE ethical_boundary_events;
-ANALYZE clinical_decision_explanations;
-ANALYZE trajectory_simulations;
-ANALYZE persona_sessions;
+DO $$
+DECLARE
+    tbl TEXT;
+    tables TEXT[] := ARRAY['idosos', 'memories', 'transcriptions', 'interaction_cognitive_load',
+                           'ethical_boundary_events', 'clinical_decision_explanations',
+                           'trajectory_simulations', 'persona_sessions', 'device_tokens'];
+BEGIN
+    FOREACH tbl IN ARRAY tables LOOP
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = tbl) THEN
+            EXECUTE format('ANALYZE %I', tbl);
+            RAISE NOTICE 'Analyzed table %', tbl;
+        END IF;
+    END LOOP;
+END $$;
 
 -- ============================================================================
--- COMENTARIO FINAL
--- Executar: psql -U postgres -d eva -f 024_performance_indexes.sql
--- Ou via make migrate
+-- Limpar funcao helper (opcional)
 -- ============================================================================
+-- DROP FUNCTION IF EXISTS create_index_if_table_exists;
+
+-- ============================================================================
+-- FIM DA MIGRATION
+-- ============================================================================
+SELECT 'Performance indexes migration complete!' AS status;
